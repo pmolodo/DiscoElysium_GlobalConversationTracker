@@ -16,6 +16,7 @@ pub mod passive_check;
 pub mod price;
 pub mod reputation;
 pub mod scene;
+pub mod skill_movers;
 pub mod state;
 pub mod substance;
 pub mod thought_effects;

@@ -584,7 +584,7 @@ impl<'a> Backward<'a> {
             }
 
             DialogueCheckKind::Passive => {
-                let passes = world.check_passes(node.id);
+                let passes = crate::world::passive_outcome(node, world);
                 let mut result = self.vars.bottom();
                 if passes != Ternary::False {
                     result = self.pre_charge(node, onward, image);
@@ -1301,6 +1301,45 @@ mod tests {
 
         agree(shape(), &counter(), 2, true);
         agree(shape(), &counter().set_seen(node(1), true), 2, false);
+    }
+
+    /// A passive check whose skill the group can move is carried both ways - the same fixtures
+    /// as the reference walk's.
+    #[test]
+    fn a_passive_check_whose_skill_can_move_is_undecided() {
+        let shape = |before: &str, actor: &str| {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1).script(before).links(&[2]),
+                Entry::new(2)
+                    .kind(DialogueCheckKind::Passive)
+                    .field("Actor", actor)
+                    .script(r#"SetVariableValue("fired", true)"#)
+                    .links(&[3]),
+                Entry::new(3).guard(r#"Variable["fired"]"#),
+            ]
+        };
+        let failing = || {
+            TestWorld::new()
+                .set_variable("fired", GuardValue::from_boolean(false))
+                .set_damage("VOLITION", 0.0)
+                .set_check_result(node(2), Ternary::False)
+        };
+        let volition = "405";
+        let encyclopedia = "399";
+
+        agree(shape("DamageVolition(1)", volition), &failing(), 3, true);
+        agree(
+            shape("DamageVolition(1)", encyclopedia),
+            &failing(),
+            3,
+            false,
+        );
+
+        let lose_hat = r#"LoseItem("hat_mullen")"#;
+        let wearing = || failing().set_equipped("HAT", "hat_mullen");
+        agree(shape(lose_hat, encyclopedia), &wearing(), 3, true);
+        agree(shape(lose_hat, encyclopedia), &failing(), 3, false);
     }
 
     /// A check's result pays out only while its thought is fixed - the same fixtures as the

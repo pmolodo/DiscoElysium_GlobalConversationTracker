@@ -59,7 +59,8 @@ use crate::world::ILookAheadWorld;
 /// the same. A search hunting an unread line, and a baseline naming where an outcome
 /// lands, are both about what the player would read.
 pub fn never_displays(node: &LookAheadNode, world: &dyn ILookAheadWorld) -> bool {
-    node.kind == DialogueCheckKind::Passive && world.check_passes(node.id) == Ternary::False
+    node.kind == DialogueCheckKind::Passive
+        && crate::world::passive_outcome(node, world) == Ternary::False
 }
 
 /// The single data state a search starts in, as a set of one.
@@ -305,7 +306,7 @@ impl<'a> Reachability<'a> {
             }
 
             DialogueCheckKind::Passive => {
-                let passes = world.check_passes(node.id);
+                let passes = crate::world::passive_outcome(node, world);
                 let mut result = self.vars.bottom();
                 if passes != Ternary::False {
                     result = self.charge(node, &allowed, image);

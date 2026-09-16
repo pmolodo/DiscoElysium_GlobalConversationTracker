@@ -144,6 +144,20 @@ pub trait ILookAheadWorld: Send + Sync {
     fn red_check_may_pass(&self, node: DialogueNodeId) -> bool;
 }
 
+/// Whether a passive check fires: the world's answer, or Unknown where the group can move the
+/// skill it compares - see [`crate::core::skill_movers`]. One place for the reference walk and
+/// both symbolic passes.
+pub fn passive_outcome(
+    node: &crate::graph::node::LookAheadNode,
+    world: &dyn ILookAheadWorld,
+) -> Ternary {
+    if node.check_settled {
+        world.check_passes(node.id)
+    } else {
+        Ternary::Unknown
+    }
+}
+
 /// Whether entering `node` can take its roll's success branch.
 ///
 /// Only a red check can be refused: a thought can force every red check to fail, and nothing

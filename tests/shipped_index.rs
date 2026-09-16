@@ -46,9 +46,10 @@ fn the_player_actor_is_you() {
     assert_eq!(actor["name"], "You");
 }
 
-/// The speakers whose passive checks pay a thought's price are the skills they are named for.
+/// The speakers the engine names by id - whose passive checks pay a thought's price, or test a
+/// skill damage moves - are the skills they are named for.
 #[test]
-fn the_passive_price_actors_are_their_skills() {
+fn the_skill_actors_are_their_skills() {
     let path = common::actors().expect("actor table is required");
     let text = std::fs::read_to_string(path).unwrap();
     let names: HashMap<String, String> = text
@@ -62,7 +63,10 @@ fn the_passive_price_actors_are_their_skills() {
         })
         .collect();
 
-    for (actor, skill) in lookahead_engine::core::thought_effects::PASSIVE_PRICE_ACTORS {
+    let named = lookahead_engine::core::thought_effects::PASSIVE_PRICE_ACTORS
+        .into_iter()
+        .chain(lookahead_engine::core::skill_movers::DAMAGEABLE_SKILL_ACTORS);
+    for (actor, skill) in named {
         assert_eq!(
             names.get(actor).map(|name| name.to_uppercase()).as_deref(),
             Some(skill),

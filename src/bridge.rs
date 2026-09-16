@@ -1421,10 +1421,17 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
     // sides, and a list that reordered itself between two calls would silently move every
     // answer onto the wrong question.
     // WHAT THE GRAPH IS FITTED TO, which no guard need name - see `LookAheadGraph::fit`: the
-    // game mode where a price depends on it, and whether each thought an action is conditioned
-    // on is fixed.
+    // game mode where a price depends on it, what is worn where the group takes items away
+    // beside a passive check, and whether each thought an action is conditioned on is fixed.
     if graph.prices_by_mode() {
         data.insert(DataRequest::set(DataKind::GameMode));
+    }
+    if !graph.items_lost_near_passive_checks().is_empty() {
+        data.extend(
+            crate::core::equipment::SLOTS
+                .iter()
+                .map(|slot| DataRequest::about(DataKind::EquippedInSlot, slot)),
+        );
     }
     let deciding = graph.thoughts_deciding_actions();
     if !deciding.is_empty() {

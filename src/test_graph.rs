@@ -192,6 +192,11 @@ impl GraphBuilder {
                 is_group: entry.is_group,
                 kind: entry.kind,
                 guard,
+                skill_moves: crate::core::skill_movers::SkillMoves::of(
+                    actions.iter().chain(&failure_actions),
+                    &symbols,
+                ),
+                damageable_skill: crate::index::damageable_skill(&entry.fields, entry.kind),
                 actions,
                 failure_actions,
                 links,

@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::action::DialogueAction;
 use crate::core::guard::Guard;
+use crate::core::skill_movers::SkillMoves;
 use crate::core::state::{ONCE_PREFIX, SEEN_PREFIX, StateSymbols};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId};
 use crate::graph::LookAheadGraph;
@@ -465,6 +466,8 @@ pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, V
                 is_group: entry.group,
                 kind,
                 guard,
+                skill_moves: SkillMoves::of(actions.iter().chain(&failure_actions), &symbols),
+                damageable_skill: damageable_skill(&entry.fields, kind),
                 actions,
                 failure_actions,
                 links: links_of(entry, conversation_id),
@@ -747,6 +750,18 @@ pub(crate) fn check_failure_actions(
         .into_iter()
         .map(|(thought, effect)| effect.action(thought, symbols, CHECK_RESULT.to_string()))
         .collect()
+}
+
+/// For a passive check on a skill damage moves, that skill - see [`crate::core::skill_movers`].
+pub(crate) fn damageable_skill(
+    fields: &HashMap<String, String>,
+    kind: DialogueCheckKind,
+) -> Option<String> {
+    (kind == DialogueCheckKind::Passive)
+        .then(|| fields.get(ACTOR_FIELD))
+        .flatten()
+        .and_then(|actor| crate::core::skill_movers::damageable_skill_of_actor(actor))
+        .map(str::to_string)
 }
 
 /// What the actions a check's result adds are named in reports.

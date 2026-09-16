@@ -234,7 +234,7 @@ pub fn choice_distances(
         let node = graph.get(id)?;
         if !node.is_group
             && !(node.kind == DialogueCheckKind::Passive
-                && world.check_passes(id) == Ternary::False)
+                && crate::world::passive_outcome(node, world) == Ternary::False)
         {
             distances
                 .entry(id)
@@ -339,7 +339,7 @@ fn enter(
         }
 
         DialogueCheckKind::Passive => {
-            let passes = context.world.check_passes(node.id);
+            let passes = crate::world::passive_outcome(node, context.world);
             if passes != Ternary::False {
                 results.push(charge(node, state, caps, context.world));
             }
@@ -500,6 +500,41 @@ mod tests {
             "a fixture this small should be exhaustible"
         );
         walk
+    }
+
+    /// A passive check the world says fails is carried both ways where the group can move its
+    /// skill: a blow to Volition before a Volition check, or taking off a worn hat - and only
+    /// then. What the check's own script raises is what shows it was entered.
+    #[test]
+    fn a_passive_check_whose_skill_can_move_is_undecided() {
+        let shape = |before: &str, actor: &str| {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1).script(before).links(&[2]),
+                Entry::new(2)
+                    .kind(DialogueCheckKind::Passive)
+                    .field("Actor", actor)
+                    .script(r#"SetVariableValue("fired", true)"#)
+                    .links(&[3]),
+                Entry::new(3).guard(r#"Variable["fired"]"#),
+            ]
+        };
+        let failing = || {
+            TestWorld::new()
+                .set_variable("fired", GuardValue::from_boolean(false))
+                .set_damage("VOLITION", 0.0)
+                .set_check_result(node(2), Ternary::False)
+        };
+        let volition = "405";
+        let encyclopedia = "399";
+
+        assert!(walked(shape("DamageVolition(1)", volition), &failing()).reached(node(3)));
+        assert!(!walked(shape("DamageVolition(1)", encyclopedia), &failing()).reached(node(3)));
+
+        let lose_hat = r#"LoseItem("hat_mullen")"#;
+        let wearing = || failing().set_equipped("HAT", "hat_mullen");
+        assert!(walked(shape(lose_hat, encyclopedia), &wearing()).reached(node(3)));
+        assert!(!walked(shape(lose_hat, encyclopedia), &failing()).reached(node(3)));
     }
 
     /// A failed Logic check pays out with Return on Investment fixed, and an Encyclopedia passive

@@ -5,6 +5,11 @@ use std::fmt;
 use crate::core::action::DialogueAction;
 use crate::core::guard::Guard;
 use crate::core::price::PriceScale;
+use crate::core::skill_movers::SkillMoves;
+
+fn settled_by_default() -> bool {
+    true
+}
 use crate::core::types::{DialogueCheckKind, DialogueNodeId};
 
 /// One dialogue entry as the look-ahead needs it.
@@ -22,6 +27,16 @@ pub struct LookAheadNode {
     /// after the failure flag - see [`crate::core::thought_effects`]. Empty for anything else.
     #[serde(default)]
     pub failure_actions: Vec<DialogueAction>,
+    /// What this entry's actions do to skill values - see [`crate::core::skill_movers`].
+    #[serde(default)]
+    pub skill_moves: SkillMoves,
+    /// For a passive check on Volition or Endurance, that skill: the one damage moves.
+    #[serde(default)]
+    pub damageable_skill: Option<String>,
+    /// Whether a passive check's outcome is the world's answer, or Unknown because the group
+    /// can move the skill it compares - set by [`crate::graph::LookAheadGraph::fit`].
+    #[serde(default = "settled_by_default")]
+    pub check_settled: bool,
     pub links: Vec<DialogueNodeId>,
     /// The price a search charges and checks the purse against: [`Self::click_cost`] as
     /// [`crate::graph::LookAheadGraph::fit`] last priced it for a game mode.
@@ -68,6 +83,9 @@ impl LookAheadNode {
             guard: Guard::always_true(),
             actions: Vec::new(),
             failure_actions: Vec::new(),
+            skill_moves: SkillMoves::default(),
+            damageable_skill: None,
+            check_settled: true,
             links: Vec::new(),
             cost: 0,
             click_cost: 0,

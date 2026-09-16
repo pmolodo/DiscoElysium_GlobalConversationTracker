@@ -7,7 +7,7 @@ use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
 
 use crate::core::state::StateSymbols;
-use crate::core::types::{DialogueNodeId, Novelty};
+use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty};
 use crate::graph::node::LookAheadNode;
 
 /// What a graph needs to know about its world before a search: the facts a search takes as
@@ -18,12 +18,23 @@ pub struct Fitting {
     pub hardcore: bool,
     /// The thoughts the world holds fixed, among those an action is conditioned on.
     pub fixed: BTreeSet<String>,
+    /// Whether the group can take off an item the world has on, which moves skill values - see
+    /// [`crate::core::skill_movers`]. A slot the world could not read counts as holding one.
+    pub lost_worn: bool,
 }
 
 impl Fitting {
     /// What `world` says about everything `graph` depends on, and nothing else - so two worlds
     /// that differ only in what the graph never asks give the same fitting.
     pub fn read(graph: &LookAheadGraph, world: &dyn crate::world::ILookAheadWorld) -> Self {
+        let lost = graph.items_lost_near_passive_checks();
+        let lost_worn = !lost.is_empty()
+            && crate::core::equipment::SLOTS
+                .iter()
+                .any(|slot| match world.item_in_slot(slot) {
+                    Some(item) => lost.contains(item.as_str()),
+                    None => true,
+                });
         Self {
             hardcore: graph.prices_by_mode() && crate::core::game_mode::is_hardcore(world),
             fixed: graph
@@ -32,6 +43,7 @@ impl Fitting {
                 .filter(|thought| crate::core::thought_effects::is_fixed(world, thought))
                 .map(str::to_string)
                 .collect(),
+            lost_worn,
         }
     }
 }
@@ -217,20 +229,50 @@ impl LookAheadGraph {
             .collect()
     }
 
+    /// Every item the group takes away, where it also holds a passive check whose skill that
+    /// could move - see [`crate::core::skill_movers`]. Empty otherwise.
+    pub fn items_lost_near_passive_checks(&self) -> BTreeSet<&str> {
+        if !self
+            .nodes()
+            .any(|node| node.kind == DialogueCheckKind::Passive)
+        {
+            return BTreeSet::new();
+        }
+        self.nodes()
+            .flat_map(|node| &node.skill_moves.lost_items)
+            .map(String::as_str)
+            .collect()
+    }
+
     /// Whether anything in the graph depends on a [`Fitting`].
     pub fn needs_fitting(&self) -> bool {
-        self.prices_by_mode() || !self.thoughts_deciding_actions().is_empty()
+        self.prices_by_mode()
+            || !self.thoughts_deciding_actions().is_empty()
+            || !self.items_lost_near_passive_checks().is_empty()
     }
 
     /// Fits the graph to a world: every price to the game mode - see [`crate::core::price`] -
-    /// and every conditional action on or off by its thought - see
-    /// [`crate::core::thought_effects`].
+    /// every conditional action on or off by its thought - see
+    /// [`crate::core::thought_effects`] - and every passive check settled or not by whether the
+    /// group can move its skill - see [`crate::core::skill_movers`].
     ///
-    /// A graph is built as for a normal-mode world holding no thought fixed. Fitting starts
-    /// from [`LookAheadNode::click_cost`] and each action's own condition every time, so a graph
-    /// can be fitted to one world and then another.
+    /// A graph is built as for a normal-mode world holding no thought fixed and wearing nothing
+    /// the group takes. Fitting starts from each node's own data every time, so a graph can be
+    /// fitted to one world and then another.
     pub fn fit(&mut self, fitting: &Fitting) {
+        let puts_on = self.nodes().any(|node| node.skill_moves.puts_on);
+        let damaged: HashSet<String> = self
+            .nodes()
+            .flat_map(|node| node.skill_moves.damaged_skills.iter().cloned())
+            .collect();
         for node in self.nodes.values_mut() {
+            node.check_settled = node.kind != DialogueCheckKind::Passive
+                || !(fitting.lost_worn
+                    || puts_on
+                    || node
+                        .damageable_skill
+                        .as_ref()
+                        .is_some_and(|skill| damaged.contains(skill)));
             node.cost =
                 crate::core::price::price(node.click_cost, node.price_scale, fitting.hardcore);
             for action in node.actions.iter_mut().chain(&mut node.failure_actions) {
