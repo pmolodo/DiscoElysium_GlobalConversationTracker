@@ -133,6 +133,12 @@ namespace GlobalConversationTracker
                         return ThoughtsWhere(questions.Thoughts, "IsTHCFixed");
                     case DataKind.EquippedInSlot:
                         return EquippedIn(wanted.Subject);
+                    case DataKind.TabHoldsItems:
+                        return TabHoldsItems(wanted.Subject);
+                    case DataKind.ItemsInGroup:
+                        return ItemsInGroup(wanted.Subject);
+                    case DataKind.HeldItemsInGroup:
+                        return HeldItemsInGroup(wanted.Subject);
                     default:
                         return DataAnswer.Unreadable();
                 }
@@ -163,6 +169,97 @@ namespace GlobalConversationTracker
             }
 
             return DataAnswer.Of(WireValue.FromText(inventory.GetEquipped(type) ?? string.Empty));
+        }
+
+        /// <summary>Whether one inventory tab holds anything, named by its tab group.</summary>
+        /// <remarks>
+        /// A read of the inventory's own tab table through
+        /// <c>InventoryViewData.IsTabEmpty</c>. A tab name this build does not know is
+        /// unserviced.
+        /// </remarks>
+        /// <param name="tab">An <c>ItemTabGroup</c> name, such as <c>PAWNABLES</c>.</param>
+        private static DataAnswer TabHoldsItems(string tab)
+        {
+            InventoryViewData? inventory = InventoryViewData.Singleton;
+            if (inventory == null
+                || !System.Enum.TryParse(tab, ignoreCase: false, out ItemTabGroup group))
+            {
+                return DataAnswer.Unreadable();
+            }
+
+            return DataAnswer.Of(WireValue.FromBoolean(!inventory.IsTabEmpty(group)));
+        }
+
+        /// <summary>The database field an item's group index is stored in.</summary>
+        private const string ItemGroupField = "itemGroup";
+
+        /// <summary>Every item the dialogue database files under one group.</summary>
+        /// <remarks>
+        /// The database stores the group as an index into the game's own
+        /// <c>ItemUtil.itemGroup</c> table, which is what <c>Inventory.CheckItemGroup</c>
+        /// compares by name - so the name is looked up there rather than restated.
+        /// </remarks>
+        /// <param name="group">An item group's name, such as <c>alcohol</c>.</param>
+        private static DataAnswer ItemsInGroup(string group)
+        {
+            List<string>? members = MembersOf(group);
+            return members == null ? DataAnswer.Unreadable() : DataAnswer.OfNames(members);
+        }
+
+        /// <summary>The items of one group the player holds.</summary>
+        /// <remarks>
+        /// Held is <c>CheckItem</c>, asked per member the way <see cref="FillMembers"/> asks
+        /// it: a pure read. One member the game will not answer unmakes the whole set,
+        /// since a set missing a held item would say the group is not held.
+        /// </remarks>
+        /// <param name="group">An item group's name, such as <c>alcohol</c>.</param>
+        private static DataAnswer HeldItemsInGroup(string group)
+        {
+            List<string>? members = MembersOf(group);
+            if (members == null)
+            {
+                return DataAnswer.Unreadable();
+            }
+
+            var held = new List<string>();
+            foreach (string item in members)
+            {
+                Lua.Result? result = GameFacts.Run("CheckItem(\"" + item + "\")");
+                if (result == null)
+                {
+                    return DataAnswer.Unreadable();
+                }
+
+                if (IsTrue(result))
+                {
+                    held.Add(item);
+                }
+            }
+
+            return DataAnswer.OfNames(held);
+        }
+
+        /// <summary>The names of the database's items in one group, or null if unreadable.</summary>
+        private static List<string>? MembersOf(string group)
+        {
+            DialogueDatabase? database = DialogueManager.masterDatabase;
+            string[]? names = ItemUtil.itemGroup;
+            if (database == null || database.items == null || names == null)
+            {
+                return null;
+            }
+
+            var members = new List<string>();
+            foreach (Item item in database.items)
+            {
+                int index = Field.LookupInt(item.fields, ItemGroupField);
+                if (index >= 0 && index < names.Length && names[index] == group)
+                {
+                    members.Add(item.Name);
+                }
+            }
+
+            return members;
         }
 
         /// <summary>Which of the thoughts the group asks about are in one state.</summary>

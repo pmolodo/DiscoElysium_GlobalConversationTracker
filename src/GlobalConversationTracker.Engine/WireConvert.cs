@@ -306,6 +306,12 @@ namespace GlobalConversationTracker.Engine
                     return DataKind.ThoughtsFixed;
                 case Wire.DataKind.EquippedInSlot:
                     return DataKind.EquippedInSlot;
+                case Wire.DataKind.TabHoldsItems:
+                    return DataKind.TabHoldsItems;
+                case Wire.DataKind.ItemsInGroup:
+                    return DataKind.ItemsInGroup;
+                case Wire.DataKind.HeldItemsInGroup:
+                    return DataKind.HeldItemsInGroup;
                 default:
                     return DataKind.Unspecified;
             }

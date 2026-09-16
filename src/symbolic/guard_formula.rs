@@ -538,6 +538,56 @@ impl<'a> GuardCompiler<'a> {
                 }
             }
 
+            // AN ITEM GROUP, as `BoundContext::query` answers it: held when any member is,
+            // each member read off its `item:` slot where the group moves it and from the
+            // starting inventory where it does not. So the rail is the union of the tracked
+            // members' slots, or everything where an untracked member is already held.
+            //
+            // An untracked member the world cannot answer, or a group whose members it cannot
+            // name, is undecided - permissive, like the engine's Unknown.
+            GuardExpression::Call(name, args)
+                if name == crate::core::item_group::CHECK_ITEM_GROUP =>
+            {
+                let (Some(group), Some(world)) = (Self::text_argument(args), self.world) else {
+                    return Plan::Settled(
+                        self.undecided("call: item group not answerable", guard.to_string()),
+                    );
+                };
+                let Some(members) = world.items_in_group(&group) else {
+                    return Plan::Settled(
+                        self.undecided("call: item group members unknown", guard.to_string()),
+                    );
+                };
+                let held = world.initially_held_in_group(&group);
+
+                let mut holds = self.bottom();
+                let mut unanswered = false;
+                for item in &members {
+                    if let Some(slot) = self.slot_is_set(&format!("{ITEM_PREFIX}{item}")) {
+                        match holds.or(&slot) {
+                            Ok(joined) => holds = joined,
+                            Err(_) => return Plan::Settled(self.no_room(guard.to_string())),
+                        }
+                        continue;
+                    }
+
+                    match held.as_ref().map(|held| held.iter().any(|h| h == item)) {
+                        Some(true) => {
+                            let t = self.top();
+                            return Plan::Settled(self.decided(t));
+                        }
+                        Some(false) => {}
+                        None => unanswered = true,
+                    }
+                }
+
+                if unanswered {
+                    self.undecided("call: item group member unknown", guard.to_string())
+                } else {
+                    self.decided(holds)
+                }
+            }
+
             // The clock, TRACKED: read straight off its own register. Every clock
             // question in the language is a question about the HOUR, so each one becomes
             // the union of the minute ranges of the hours that satisfy it - at most
@@ -1232,6 +1282,7 @@ impl<'a> GuardCompiler<'a> {
             || Self::slot_backed_query(name).is_some()
             || crate::world::flag_query(name).is_some()
             || crate::core::reputation::range_of(name).is_some()
+            || name == crate::core::item_group::CHECK_ITEM_GROUP
             || crate::core::clock::ClockTime::owns(name)
     }
 

@@ -6,6 +6,8 @@ pub mod env;
 pub mod equipment;
 pub mod guard;
 pub mod guard_value;
+pub mod inventory_tabs;
+pub mod item_group;
 pub mod modelling;
 pub mod passive_check;
 pub mod reputation;

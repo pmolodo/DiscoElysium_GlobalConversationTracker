@@ -47,6 +47,8 @@ use serde::{Deserialize, Serialize};
 use crate::core::equipment;
 use crate::core::guard::{Guard, GuardExpression};
 use crate::core::guard_value::{GuardValue, GuardValueKind};
+use crate::core::inventory_tabs;
+use crate::core::item_group;
 use crate::core::state::{ITEM_PREFIX, TASK_PREFIX, THOUGHT_PREFIX, VariableRef};
 use crate::core::types::StartBranch;
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, Ternary};
@@ -524,6 +526,14 @@ impl ILookAheadWorld for Unlocked<'_> {
         self.inner.initially_has_thought(name)
     }
 
+    fn items_in_group(&self, group: &str) -> Option<Vec<String>> {
+        self.inner.items_in_group(group)
+    }
+
+    fn initially_held_in_group(&self, group: &str) -> Option<Vec<String>> {
+        self.inner.initially_held_in_group(group)
+    }
+
     fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue {
         self.inner.query(name, arguments)
     }
@@ -638,6 +648,13 @@ impl SnapshotWorld {
             _ => None,
         }
     }
+
+    /// The names a per-subject, set-valued request answered with, or `None` where it was
+    /// not read.
+    fn names_about(&self, kind: DataKind, subject: &str) -> Option<Vec<String>> {
+        let answer = self.snapshot.data.get(&DataRequest::about(kind, subject))?;
+        answer.read.then(|| answer.names.clone())
+    }
 }
 
 /// The sets a cabinet question is answered from, or `None` for anything else.
@@ -701,7 +718,27 @@ impl ILookAheadWorld for SnapshotWorld {
         self.snapshot.thoughts.contains(name)
     }
 
+    fn items_in_group(&self, group: &str) -> Option<Vec<String>> {
+        self.names_about(DataKind::ItemsInGroup, group)
+    }
+
+    fn initially_held_in_group(&self, group: &str) -> Option<Vec<String>> {
+        self.names_about(DataKind::HeldItemsInGroup, group)
+    }
+
     fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue {
+        // WHETHER A TAB HOLDS ANYTHING, as the plugin read it. No query key behind it.
+        if let Some(tab) = inventory_tabs::tab_read_by(name) {
+            return match self
+                .snapshot
+                .data
+                .get(&DataRequest::about(DataKind::TabHoldsItems, tab))
+            {
+                Some(answer) if answer.read => GuardValue::from(&answer.value),
+                _ => GuardValue::unknown(),
+            };
+        }
+
         // THE CABINET'S NARROW QUESTIONS, answered from the sets the plugin enumerated.
         // Nothing asks it to evaluate these any more - see `collect` - so there is no query
         // key to fall back to, and a set nobody sent leaves the question Unknown.
@@ -798,6 +835,15 @@ pub enum DataKind {
     /// `InventoryViewData.GetEquipped`. Answered as text: the item, or empty for an empty
     /// slot. See [`crate::core::equipment`].
     EquippedInSlot,
+    /// Whether one inventory tab holds anything, named in the subject by its `ItemTabGroup`
+    /// name. Answered as a boolean. See [`crate::core::inventory_tabs`].
+    TabHoldsItems,
+    /// Every item the database files under one item group, named in the subject. Answered as
+    /// a set of names. See [`crate::core::item_group`].
+    ItemsInGroup,
+    /// The items of one item group the player holds when the request is built. Answered as a
+    /// set of names.
+    HeldItemsInGroup,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -805,7 +851,7 @@ pub struct DataRequest {
     pub kind: DataKind,
     /// What it is about, for a kind that names one thing.
     ///
-    /// A set-valued kind leaves this empty. [`DataKind::EquippedInSlot`] names the slot.
+    /// A set-valued kind leaves this empty. A per-subject kind names its slot, tab or group.
     ///
     /// A STRING, though the possible values are as closed a set as [`DataKind`] is: item and
     /// thought names are DERIVED GAME DATA, versioned with the content rather than with this
@@ -1418,6 +1464,19 @@ fn collect(
                     // WHAT IS WORN, read slot by slot rather than asked as a call: the answer
                     // is the equipment table itself, and the same few reads serve every
                     // item and clothing question a group asks. See `core::equipment`.
+                    (name, _) if inventory_tabs::tab_read_by(name).is_some() => {
+                        let tab = inventory_tabs::tab_read_by(name).expect("just matched");
+                        data.insert(DataRequest::about(DataKind::TabHoldsItems, tab));
+                    }
+                    // WHICH ITEMS MAKE UP A GROUP, and which of them are held, both read as
+                    // data. The engine answers from these and the item slots together, so a
+                    // group that gains a bottle sees it - see `core::item_group`. A computed
+                    // group name reads Unknown.
+                    (item_group::CHECK_ITEM_GROUP, Some(group)) => {
+                        data.insert(DataRequest::about(DataKind::ItemsInGroup, &group));
+                        data.insert(DataRequest::about(DataKind::HeldItemsInGroup, &group));
+                    }
+                    (item_group::CHECK_ITEM_GROUP, None) => {}
                     (name, _) if !equipment::slots_read_by(name).is_empty() => {
                         data.extend(
                             equipment::slots_read_by(name)
@@ -2849,6 +2908,25 @@ mod tests {
             found.queries.is_empty(),
             "answered from the variables, not asked as a call: {:?}",
             found.queries
+        );
+    }
+
+    /// An item group and the pawnables tab are read as data, and never run.
+    #[test]
+    fn an_item_group_and_a_tab_are_read_rather_than_run() {
+        let found = asked(r#"CheckItemGroup("alcohol") or HasPawnablesInInventory()"#);
+        assert!(
+            found.queries.is_empty(),
+            "asked as a call: {:?}",
+            found.queries
+        );
+        assert_eq!(
+            found.data,
+            vec![
+                DataRequest::about(DataKind::TabHoldsItems, "PAWNABLES"),
+                DataRequest::about(DataKind::ItemsInGroup, "alcohol"),
+                DataRequest::about(DataKind::HeldItemsInGroup, "alcohol"),
+            ]
         );
     }
 

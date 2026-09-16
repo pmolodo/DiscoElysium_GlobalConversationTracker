@@ -114,6 +114,16 @@ enum DataKind {
   // HELDRIGHT - and answered as a text value: the item's name, or empty for an empty slot.
   // InventoryViewData.GetEquipped(EquipmentSlotType).
   DATA_KIND_EQUIPPED_IN_SLOT = 3;
+  // Whether one inventory tab holds anything, named in subject by its ItemTabGroup name -
+  // PAWNABLES - and answered as a boolean. Not InventoryViewData.IsTabEmpty, its negation.
+  DATA_KIND_TAB_HOLDS_ITEMS = 4;
+  // Every item the dialogue database files under one ItemGroup, named in subject by the
+  // group's name - alcohol - and answered as a set of item names. Database data, not
+  // inventory: what the group is made of, whoever holds it.
+  DATA_KIND_ITEMS_IN_GROUP = 5;
+  // The items of one ItemGroup the player holds when the request is built, named as
+  // DATA_KIND_ITEMS_IN_GROUP names it and answered as a set of item names.
+  DATA_KIND_HELD_ITEMS_IN_GROUP = 6;
 }
 
 message DataRequest {

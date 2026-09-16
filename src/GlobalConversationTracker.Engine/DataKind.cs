@@ -34,5 +34,24 @@ namespace GlobalConversationTracker.Engine
         /// Answered as text: the item's name, or empty for an empty slot.
         /// </summary>
         EquippedInSlot = 3,
+
+        /// <summary>
+        /// Whether one inventory tab holds anything - the negation of
+        /// <c>InventoryViewData.IsTabEmpty</c> - with the tab named by its <c>ItemTabGroup</c>
+        /// name in <see cref="DataRequest.Subject"/>. Answered as a boolean.
+        /// </summary>
+        TabHoldsItems = 4,
+
+        /// <summary>
+        /// Every item the dialogue database files under one <c>ItemGroup</c>, named in
+        /// <see cref="DataRequest.Subject"/>. Answered as a set of item names.
+        /// </summary>
+        ItemsInGroup = 5,
+
+        /// <summary>
+        /// The items of one <c>ItemGroup</c> the player holds, named in
+        /// <see cref="DataRequest.Subject"/>. Answered as a set of item names.
+        /// </summary>
+        HeldItemsInGroup = 6,
     }
 }

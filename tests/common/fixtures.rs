@@ -1216,6 +1216,9 @@ pub struct Holdings {
     /// What each equipment slot holds, by `EquipmentSlotType` name: what CheckEquipped
     /// answers about. A slot the save does not name is empty.
     pub equipment: HashMap<String, String>,
+    /// How many items each inventory tab holds, by `ItemTabGroup` name: what
+    /// HasPawnablesInInventory answers about. A tab the save does not name is empty.
+    pub tab_counts: HashMap<String, usize>,
     /// Journal tasks taken and not yet closed.
     pub tasks: HashSet<String>,
     /// Thoughts the cabinet has reached, whatever state they are in.
@@ -1304,6 +1307,18 @@ impl Holdings {
                         .cloned()
                         .unwrap_or_default(),
                 }),
+                DataKind::TabHoldsItems => DataAnswer::of_value(WireValue::Bool {
+                    value: self
+                        .tab_counts
+                        .get(&request.subject)
+                        .is_some_and(|count| *count > 0),
+                }),
+                DataKind::ItemsInGroup => items_in_group(&request.subject, |_| true)
+                    .map_or_else(DataAnswer::default, DataAnswer::of_names),
+                DataKind::HeldItemsInGroup => {
+                    items_in_group(&request.subject, |item| self.items.contains(item))
+                        .map_or_else(DataAnswer::default, DataAnswer::of_names)
+                }
             })
             .collect()
     }
@@ -1340,16 +1355,6 @@ impl Holdings {
             // permissive - about a question the save settles exactly.
             "IsTHCCooking" => Some(WireValue::Bool {
                 value: self.thought_states.get(argument?).map(String::as_str) == Some(COOKING),
-            }),
-            // WHETHER ANYTHING HELD IS IN THAT GROUP, which is what the game walks the bag to
-            // decide. The group of an item is database data, carried in the item table beside
-            // its stack and display names - see [`item_table`].
-            //
-            // The five the guards ask about are alcohol, smokes, speed, pyrholidon and tare.
-            // A sixth, ghb, is in the game's own group table but on no item in the shipped
-            // database, so it answers false here for the same reason it does in the game.
-            "CheckItemGroup" => Some(WireValue::Bool {
-                value: groups_held(&self.items).contains(argument?),
             }),
             "IsTHCCookingOrFixed" => Some(WireValue::Bool {
                 value: matches!(
@@ -1436,6 +1441,7 @@ pub fn holdings_in_save(save: &str) -> Holdings {
             .chain(bullets_held(&carried))
             .collect(),
         equipment,
+        tab_counts: tab_counts(&carried),
         tasks: active_tasks(&journal),
         // WHAT gainedThoughts HOLDS, which is neither of the two states that mean the
         // player does not have the thought: never reached, or reached and given up.
@@ -1592,6 +1598,27 @@ fn held(inventory: &serde_json::Value) -> HashSet<String> {
         .collect()
 }
 
+/// How many items each inventory tab holds, by tab name.
+///
+/// The same record [`held`] reads - `inventoryViewState.inventory`, the game's
+/// `TabbedSlotData.tabContents` written out by tab - counted rather than named, because
+/// `IsTabEmpty` counts.
+fn tab_counts(inventory: &serde_json::Value) -> HashMap<String, usize> {
+    inventory["inventoryViewState"]["inventory"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .map(|(tab, contents)| {
+            let count = match contents {
+                serde_json::Value::Array(entries) => entries.len(),
+                serde_json::Value::Object(entries) => entries.len(),
+                _ => 0,
+            };
+            (tab.clone(), count)
+        })
+        .collect()
+}
+
 /// The item table: each item's stack name, English display name and group.
 ///
 /// DERIVED FROM TWO PLACES, and read here rather than rebuilt: `DialogueExtract item-names`
@@ -1683,21 +1710,30 @@ fn keys_held(inventory: &serde_json::Value) -> HashSet<String> {
     found
 }
 
-/// The groups the held items belong to, which is what `CheckItemGroup` asks about.
+/// The items of one group that `keep` accepts, which is what `CheckItemGroup` is answered over.
 ///
-/// THE GAME WALKS THE BAG, not a table: `Inventory.CheckItemGroup` iterates the gained items
-/// and compares `ItemUtil.GetItemGroup(item.group)` to the name asked about. So a group is
-/// held when anything held is in it, and this turns the held set into the set of groups.
+/// The group of an item is database data, carried in the item table beside its stack and
+/// display names - see [`item_table`]. The five groups the guards ask about are alcohol,
+/// smokes, speed, pyrholidon and tare. A sixth, ghb, is in the game's own group table but on
+/// no item in the shipped database, so it has no members here for the same reason it has none
+/// in the game.
 ///
-/// `none` is deliberately kept rather than filtered: an item in no group really is in the
-/// group called `none`, and no guard asks about it - all 25 calls in the database ask for
-/// alcohol, smokes, speed, pyrholidon or tare.
-fn groups_held(items: &HashSet<String>) -> HashSet<String> {
-    item_table()
+/// `None` where the item table could not be had, so the request stays unread rather than
+/// saying the group is empty.
+fn items_in_group(group: &str, keep: impl Fn(&str) -> bool) -> Option<Vec<String>> {
+    let table = item_table();
+    if table.is_empty() {
+        return None;
+    }
+
+    let mut found: Vec<String> = table
         .iter()
-        .filter(|row| items.contains(&row.name))
-        .map(|row| row.group.clone())
-        .collect()
+        .filter(|row| row.group == group && keep(&row.name))
+        .map(|row| row.name.clone())
+        .collect();
+    found.sort();
+    found.dedup();
+    Some(found)
 }
 
 /// The bullet item, where the save's count is above zero.

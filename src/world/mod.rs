@@ -84,6 +84,24 @@ pub trait ILookAheadWorld: Send + Sync {
     /// internalised: see [`crate::core::state::THOUGHT_PREFIX`] for why those are
     /// different questions, and why only this one moves.
     fn initially_has_thought(&self, name: &str) -> bool;
+
+    /// Every item the database files under an item group, or `None` where it is not known.
+    ///
+    /// What `CheckItemGroup` is answered over - see `core::item_group`. A world that cannot
+    /// say leaves the question Unknown, which is permissive.
+    fn items_in_group(&self, _group: &str) -> Option<Vec<String>> {
+        None
+    }
+
+    /// The items of a group the player holds WHEN THE SEARCH STARTS, or `None` where it is
+    /// not known.
+    ///
+    /// The same restriction as [`Self::initially_has_item`]: for a member the search moves,
+    /// the slot is the truth and this is stale.
+    fn initially_held_in_group(&self, _group: &str) -> Option<Vec<String>> {
+        None
+    }
+
     fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue;
     fn check_passes(&self, node: DialogueNodeId) -> Ternary;
     fn is_seen(&self, node: DialogueNodeId) -> bool;
@@ -332,6 +350,31 @@ impl IGuardContext for BoundContext<'_> {
                     Some(winner) => GuardValue::from_boolean(winner == Some(wanted)),
                     None => GuardValue::unknown(),
                 }
+            }
+            // WHETHER ANYTHING IN AN ITEM GROUP IS HELD, each member answered the way
+            // `CheckItem` is - from its slot where the group moves it, from the starting
+            // inventory where it does not. See `core::item_group`.
+            crate::core::item_group::CHECK_ITEM_GROUP => {
+                let Some(group) = arguments
+                    .first()
+                    .filter(|v| v.kind() == GuardValueKind::Text)
+                    .map(|v| v.text())
+                else {
+                    return GuardValue::unknown();
+                };
+
+                let members = self.world.items_in_group(group);
+                let held = self.world.initially_held_in_group(group);
+                crate::core::item_group::any_held(
+                    members.as_deref(),
+                    |item| {
+                        let state = self.state?;
+                        let slot = self.symbols.find(&format!("{ITEM_PREFIX}{item}"))?;
+                        Some(state.is_set(slot))
+                    },
+                    |item| held.as_ref().map(|held| held.iter().any(|h| h == item)),
+                )
+                .map_or_else(GuardValue::unknown, GuardValue::from_boolean)
             }
             // HOW OFTEN A SUBSTANCE WAS USED, from the count variable the group declares for
             // it. A computed argument names no declared variable and reads Unknown.

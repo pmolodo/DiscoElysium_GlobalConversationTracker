@@ -175,6 +175,9 @@ fn written_kind(kind: DataKind) -> wire::DataKind {
         DataKind::ThoughtsCooking => wire::DataKind::ThoughtsCooking,
         DataKind::ThoughtsFixed => wire::DataKind::ThoughtsFixed,
         DataKind::EquippedInSlot => wire::DataKind::EquippedInSlot,
+        DataKind::TabHoldsItems => wire::DataKind::TabHoldsItems,
+        DataKind::ItemsInGroup => wire::DataKind::ItemsInGroup,
+        DataKind::HeldItemsInGroup => wire::DataKind::HeldItemsInGroup,
     }
 }
 
