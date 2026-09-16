@@ -31,7 +31,8 @@ namespace GlobalConversationTracker.Engine
             IReadOnlyList<string> tasks,
             IReadOnlyList<string> thoughts,
             IReadOnlyList<NodeRef> checks,
-            IReadOnlyList<NodeRef> entries)
+            IReadOnlyList<NodeRef> entries,
+            IReadOnlyList<DataRequest> data)
         {
             Conversations = conversations;
             Variables = variables;
@@ -41,6 +42,7 @@ namespace GlobalConversationTracker.Engine
             Thoughts = thoughts;
             Checks = checks;
             Entries = entries;
+            Data = data;
         }
 
         /// <summary>
@@ -72,6 +74,14 @@ namespace GlobalConversationTracker.Engine
         /// <summary>Every entry in the group, because any of them may have been seen.</summary>
         public IReadOnlyList<NodeRef> Entries { get; }
 
+        /// <summary>World state the engine wants READ rather than evaluated.</summary>
+        /// <remarks>
+        /// Answered in this order, as <see cref="WorldSnapshot.DataValues"/>. Unlike
+        /// <see cref="Queries"/>, servicing one of these is a read of game state and never
+        /// the running of a dialogue function - see <see cref="DataRequest"/>.
+        /// </remarks>
+        public IReadOnlyList<DataRequest> Data { get; }
+
         /// <summary>Composes the questions from what crossed.</summary>
         /// <remarks>
         /// For <c>WireConvert</c>, which is the only thing that builds one: these are what
@@ -86,6 +96,7 @@ namespace GlobalConversationTracker.Engine
         /// <param name="thoughts">Thoughts some guard asks about.</param>
         /// <param name="checks">Entries carrying a skill check.</param>
         /// <param name="entries">Every entry, because any may have been seen.</param>
+        /// <param name="data">World state the engine wants read rather than evaluated.</param>
         internal static LookAheadQuestions Of(
             IReadOnlyList<int> conversations,
             IReadOnlyList<string> variables,
@@ -94,10 +105,11 @@ namespace GlobalConversationTracker.Engine
             IReadOnlyList<string> tasks,
             IReadOnlyList<string> thoughts,
             IReadOnlyList<NodeRef> checks,
-            IReadOnlyList<NodeRef> entries)
+            IReadOnlyList<NodeRef> entries,
+            IReadOnlyList<DataRequest> data)
         {
             return new LookAheadQuestions(
-                conversations, variables, queries, items, tasks, thoughts, checks, entries);
+                conversations, variables, queries, items, tasks, thoughts, checks, entries, data);
         }
     }
 }

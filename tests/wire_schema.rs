@@ -87,6 +87,20 @@ fn full_snapshot() -> wire::WorldSnapshot {
         seen: Some(runs(9, &[(0, 40), (42, 42), (50, 99)])),
         failed_white_checks: vec!["whirling.kim_inland_mystery_created".to_string()],
         red_checks_fail: true,
+        // BOTH SHAPES OF ANSWER, so neither is dropped without this failing: a kind that
+        // answers about one subject, and a kind that answers with a whole set.
+        data_values: vec![
+            wire::DataAnswer {
+                value: Some(text_value("cooking")),
+                names: Vec::new(),
+                read: true,
+            },
+            wire::DataAnswer {
+                value: None,
+                names: vec!["aces_high".to_string(), "jamais_vu".to_string()],
+                read: true,
+            },
+        ],
     }
 }
 
@@ -156,6 +170,18 @@ fn the_questions_survive_the_wire() {
         thoughts: vec!["the_precarious_world".to_string()],
         checks: vec![node(9, 50)],
         entries: vec![node(9, 0), node(9, 1)],
+        data: vec![
+            // BOTH SHAPES OF REQUEST: a kind that answers with a whole set and names no
+            // subject, and one that asks about a named thing.
+            wire::DataRequest {
+                kind: wire::DataKind::ThoughtsCooking as i32,
+                subject: String::new(),
+            },
+            wire::DataRequest {
+                kind: wire::DataKind::ThoughtsFixed as i32,
+                subject: "aces_high".to_string(),
+            },
+        ],
     });
 }
 

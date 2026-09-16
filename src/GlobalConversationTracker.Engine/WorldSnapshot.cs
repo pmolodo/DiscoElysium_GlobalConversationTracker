@@ -66,6 +66,18 @@ namespace GlobalConversationTracker.Engine
         /// </summary>
         public IList<WireValue> QueryValues { get; } = new List<WireValue>();
 
+        /// <summary>
+        /// What was read for each of <see cref="LookAheadQuestions.Data"/>, in that order.
+        /// </summary>
+        /// <remarks>
+        /// By position and subject to the same length rule as
+        /// <see cref="VariableValues"/>: either empty, or exactly as long as the requests
+        /// asked. A request that could not be serviced still takes its place in the list, as
+        /// <see cref="DataAnswer.Unreadable"/> - leaving it out would shift every answer
+        /// after it onto the wrong request.
+        /// </remarks>
+        public IList<DataAnswer> DataValues { get; } = new List<DataAnswer>();
+
         /// <summary>Items held when the crawl starts.</summary>
         public ISet<string> Items { get; } = new HashSet<string>();
 

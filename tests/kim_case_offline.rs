@@ -210,6 +210,9 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
             // run of the game is in. See de-3jec.
             clock_locked: true,
             queries: answered,
+            // WHAT THE ENGINE ASKED TO HAVE READ, positionally, as the plugin sends it -
+            // the cabinet's two sets rather than a call per thought.
+            data_values: holdings.data_for(&asked.data),
             items: holdings.items,
             tasks: holdings.tasks,
             thoughts: holdings.thoughts,

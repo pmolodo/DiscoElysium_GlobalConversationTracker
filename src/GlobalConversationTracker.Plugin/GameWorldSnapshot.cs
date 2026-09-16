@@ -31,6 +31,7 @@ namespace GlobalConversationTracker
     /// </remarks>
     internal static class GameWorldSnapshot
     {
+
         /// <summary>
         /// Builds a request for one conversation group, with the world filled in and every
         /// entry's novelty decided. The caller adds the options to score.
@@ -73,6 +74,11 @@ namespace GlobalConversationTracker
             FillMembers(questions.Tasks, "IsTaskActive", world.Tasks);
             FillMembers(questions.Thoughts, "IsTHCPresent", world.Thoughts);
 
+            foreach (DataRequest ask in questions.Data)
+            {
+                world.DataValues.Add(Serviced(ask, questions));
+            }
+
             FillChecks(questions.Checks, world);
             FillFailedWhiteChecks(world);
             FillRedChecksFail(world);
@@ -97,6 +103,91 @@ namespace GlobalConversationTracker
         {
             Lua.Result? result = GameFacts.Run(call);
             return result == null ? WireValue.Unknown : Convert(result);
+        }
+
+        /// <summary>What the game says for one data request, READ rather than evaluated.</summary>
+        /// <remarks>
+        /// <para>The difference from <see cref="Evaluate"/> is the whole point of this
+        /// channel: nothing here runs a dialogue function, so no request can move the game.
+        /// A kind this build does not know is reported unserviced rather than guessed at.</para>
+        ///
+        /// <para>UNSERVICED IS NOT EMPTY. Every path that cannot read returns
+        /// <see cref="DataAnswer.Unreadable"/>, because an empty set would tell the engine
+        /// the subject is definitely not in it - which closes routes the game opens. That
+        /// matters more than usual here: naming a thought needs
+        /// <c>SingletonComponent&lt;ThoughtCabinetProjectList&gt;</c>, a static on a GENERIC
+        /// BASE CLASS, and those answer null through the IL2CPP interop layer however alive
+        /// the object is. That is de-3jec, which sent every crawl to midnight on day one for
+        /// exactly this reason, so the failure is expected rather than hypothetical.</para>
+        /// </remarks>
+        private static DataAnswer Serviced(DataRequest wanted, LookAheadQuestions questions)
+        {
+            try
+            {
+                switch (wanted.Kind)
+                {
+                    case DataKind.ThoughtsCooking:
+                        return ThoughtsWhere(questions.Thoughts, "IsTHCCooking");
+                    case DataKind.ThoughtsFixed:
+                        return ThoughtsWhere(questions.Thoughts, "IsTHCFixed");
+                    default:
+                        return DataAnswer.Unreadable();
+                }
+            }
+            catch (System.Exception)
+            {
+                // Reaching into the game from a UI callback: if anything is half-built,
+                // unserviced keeps the crawl correct rather than guessing.
+                return DataAnswer.Unreadable();
+            }
+        }
+
+        /// <summary>Which of the thoughts the group asks about are in one state.</summary>
+        /// <remarks>
+        /// <para>ASKED PER NAME, THOUGH THE ANSWER IS A SET, and the two are worth keeping
+        /// apart. The engine asks for the set because the game HOLDS one - the cabinet's
+        /// cooking and fixed thoughts are two collections, and a save records them as two
+        /// lists - so a set is the shape both sides should speak. How the plugin fills it is
+        /// its own business.</para>
+        ///
+        /// <para>Walking those collections directly is what this wanted to do, the way
+        /// <c>CharacterSheetPersister</c> does when writing a save. It is not available here:
+        /// Il2CppInterop generates <c>CharacterThoughts</c> without <c>cookingEffects</c> or
+        /// <c>fixedEffects</c>, which are <c>Dictionary&lt;ThoughtCabinetProject,
+        /// CharacterEffect[]&gt;</c> and do not project. So the set is built by asking, over
+        /// the thoughts the group named - the same list <see cref="FillMembers"/> walks.</para>
+        ///
+        /// <para>That leaves this family still evaluating Lua, which the data channel exists
+        /// to stop. It is a PURE READ, which is the distinction that matters: the hazard the
+        /// channel was built for is a guard calling <c>FinishTask</c> and closing a journal
+        /// task, and nothing of that kind is here. What is still gained is that both sides
+        /// now answer the question from one set rather than each deciding
+        /// cooking-or-fixed for themselves.</para>
+        /// </remarks>
+        /// <param name="named">The thoughts the group asks about.</param>
+        /// <param name="query">The Lua question that decides the state.</param>
+        private static DataAnswer ThoughtsWhere(IReadOnlyList<string> named, string query)
+        {
+            var found = new List<string>();
+            foreach (string thought in named)
+            {
+                Lua.Result? result = GameFacts.Run(query + "(\"" + thought + "\")");
+                if (result == null)
+                {
+                    // THE WHOLE SET IS UNREADABLE, not this one thought. A set missing a
+                    // member says the thought is definitely not in that state, and the
+                    // engine would read it that way - so a question the game would not
+                    // answer has to unmake the answer rather than shrink it.
+                    return DataAnswer.Unreadable();
+                }
+
+                if (IsTrue(result))
+                {
+                    found.Add(thought);
+                }
+            }
+
+            return DataAnswer.OfNames(found);
         }
 
         /// <summary>Asks a yes/no query per name, keeping the names that said yes.</summary>

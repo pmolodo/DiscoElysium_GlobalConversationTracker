@@ -77,6 +77,69 @@ message WireValue {
   }
 }
 
+// One thing the engine wants to know about the world.
+//
+// A KIND RATHER THAN AN EXPRESSION, and that is the whole difference. The other way the
+// engine asks - see Questions.queries - is by handing over a rendered Lua call for the
+// plugin to RUN, which is exact because the game answers it, and is also how a guard
+// calling FinishTask came to close a journal task every time a menu opened. A kind names
+// data instead, so servicing a request is a read and cannot be anything else.
+//
+// A kind that answers about one thing names it in subject; a kind that answers with a whole
+// set leaves subject empty. Both exist because both are natural somewhere: which group an
+// item is in is per-item, while what is cooking in the thought cabinet is one enumeration
+// that would otherwise be a request per thought.
+// The vocabulary of things that can be asked for.
+//
+// AN ENUM RATHER THAN A STRING, so a kind spelled wrong on one side is a compile error
+// rather than a request that comes back unserviced and reads Unknown - permissive, silent,
+// and indistinguishable from a plugin that genuinely could not read.
+//
+// The SUBJECT stays a string, and not because its values are open-ended - item and thought
+// names are as closed a set as this is, 259 and 53 of them in the shipped database. They are
+// DERIVED GAME DATA, versioned with the content rather than with this protocol, so putting
+// them here would mean regenerating the wire whenever the game changed. The names already
+// cross as strings in Questions.items, .tasks and .thoughts, which are the same names again.
+// A kind, by contrast, is this protocol's own vocabulary and nothing else defines it.
+//
+// A value this build does not know still decodes, as the raw number, so a newer engine
+// talking to an older plugin degrades to unserviced rather than failing.
+enum DataKind {
+  DATA_KIND_UNSPECIFIED = 0;
+  // The thoughts the cabinet is working on - CharacterThoughts.cookingEffects.
+  DATA_KIND_THOUGHTS_COOKING = 1;
+  // The thoughts already internalised - CharacterThoughts.fixedEffects.
+  DATA_KIND_THOUGHTS_FIXED = 2;
+}
+
+message DataRequest {
+  DataKind kind = 1;
+  string subject = 2;
+}
+
+// What the plugin found, in the order the requests were asked.
+//
+// TWO SHAPES IN ONE MESSAGE rather than two channels, because proto3 cannot put a repeated
+// field in a oneof and two parallel lists would be two things to keep aligned instead of
+// one. A kind answers in one shape or the other, and which is part of what the kind means.
+//
+// An answer that is neither - no value and no names - is "not knowable", the same
+// permissive default an unset WireValue carries.
+message DataAnswer {
+  // For a kind that answers about one subject.
+  WireValue value = 1;
+  // For a kind that answers with a set of names.
+  repeated string names = 2;
+  // Whether this request was serviced at all.
+  //
+  // EXPLICIT, because an empty names list would otherwise mean two different things: a set
+  // that was read and is empty, and a set the plugin could not read. Those want opposite
+  // answers - the first says the subject is not in it, the second is not knowable - and
+  // guessing the first when it is the second CLOSES routes the game opens, which is the one
+  // direction this wire is not allowed to be wrong in.
+  bool read = 3;
+}
+
 // ---------------------------------------------------------------------------
 // What the plugin sends
 // ---------------------------------------------------------------------------
@@ -134,6 +197,13 @@ message WorldSnapshot {
   // The game's ThoughtAlterant.RedChecksFail. While it is set a red check's success is closed
   // to every crawl, and the check's Pass half is answered only for what passing would open.
   bool red_checks_fail = 16;
+
+  // What the plugin found for each of Questions.data, in that order.
+  //
+  // POSITIONAL, like variable_values and for the same reason: the requests are constant for
+  // a group and the plugin already holds them, so sending them back would be sending back
+  // what the engine itself said. A list of the wrong length is refused outright.
+  repeated DataAnswer data_values = 17;
 }
 
 // What the plugin asks for one response menu.
@@ -278,6 +348,8 @@ message Questions {
   repeated NodeRef checks = 7;
   // Every entry, because any of them may have been seen.
   repeated NodeRef entries = 8;
+  // World state the engine wants read rather than evaluated - see DataRequest.
+  repeated DataRequest data = 9;
 }
 
 // ---------------------------------------------------------------------------

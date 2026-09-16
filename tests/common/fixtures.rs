@@ -17,7 +17,9 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use lookahead_engine::bridge::{NodeRef, NodeSet, Questions, WireValue};
+use lookahead_engine::bridge::{
+    DataAnswer, DataKind, DataRequest, NodeRef, NodeSet, Questions, WireValue,
+};
 use lookahead_engine::core::passive_check;
 use lookahead_engine::core::types::Ternary;
 use lookahead_engine::formats::global_state::{self, GlobalState, Status};
@@ -1278,6 +1280,36 @@ impl Holdings {
         }
 
         answers
+    }
+
+    /// What the engine asked to have READ rather than evaluated, answered from the save.
+    ///
+    /// The cabinet's two sets, which is how the game holds them and how the save records
+    /// them - `cookingThoughts` and `fixedThoughts`, written from `cookingEffects` and
+    /// `fixedEffects`. Asked for once each per group rather than once per thought.
+    ///
+    /// A request this cannot service is left out, exactly as an unanswerable query is: the
+    /// engine then reads Unknown for it, which is permissive.
+    pub fn data_for(&self, asked: &[DataRequest]) -> Vec<DataAnswer> {
+        asked
+            .iter()
+            .map(|request| match request.kind {
+                DataKind::ThoughtsCooking => DataAnswer::of_names(self.thoughts_in(COOKING)),
+                DataKind::ThoughtsFixed => DataAnswer::of_names(self.thoughts_in(FIXED)),
+            })
+            .collect()
+    }
+
+    /// The thoughts the cabinet holds in one state.
+    fn thoughts_in(&self, state: &str) -> Vec<String> {
+        let mut found: Vec<String> = self
+            .thought_states
+            .iter()
+            .filter(|(_, held)| *held == state)
+            .map(|(name, _)| name.clone())
+            .collect();
+        found.sort();
+        found
     }
 
     /// One query, where this can answer it.

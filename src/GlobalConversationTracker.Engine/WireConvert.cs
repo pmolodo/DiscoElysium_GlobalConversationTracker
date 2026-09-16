@@ -172,6 +172,18 @@ namespace GlobalConversationTracker.Engine
                 written.QueryValues.Add(Write(value));
             }
 
+            foreach (DataAnswer answer in world.DataValues)
+            {
+                var read = new Wire.DataAnswer { Read = answer.Read };
+                if (!answer.Value.IsUnknown)
+                {
+                    read.Value = Write(answer.Value);
+                }
+
+                read.Names.AddRange(answer.Names);
+                written.DataValues.Add(read);
+            }
+
             written.Items.AddRange(world.Items);
             written.Tasks.AddRange(world.Tasks);
             written.Thoughts.AddRange(world.Thoughts);
@@ -270,7 +282,31 @@ namespace GlobalConversationTracker.Engine
                 questions.Tasks.ToArray(),
                 questions.Thoughts.ToArray(),
                 questions.Checks.Select(Read).ToArray(),
-                questions.Entries.Select(Read).ToArray());
+                questions.Entries.Select(Read).ToArray(),
+                questions.Data
+                    .Select(request => new DataRequest(Read(request.Kind), request.Subject))
+                    .ToArray());
+        }
+
+        /// <summary>One data kind, as the engine's callers speak it.</summary>
+        /// <remarks>
+        /// Written out rather than cast, so a value added on one side fails to compile here
+        /// rather than arriving as a number nothing handles. A kind this build does not know
+        /// becomes <see cref="DataKind.Unspecified"/>, which is serviced by nobody and reads
+        /// Unknown - the permissive answer, and the right one for a newer engine talking to
+        /// an older plugin.
+        /// </remarks>
+        private static DataKind Read(Wire.DataKind kind)
+        {
+            switch (kind)
+            {
+                case Wire.DataKind.ThoughtsCooking:
+                    return DataKind.ThoughtsCooking;
+                case Wire.DataKind.ThoughtsFixed:
+                    return DataKind.ThoughtsFixed;
+                default:
+                    return DataKind.Unspecified;
+            }
         }
     }
 }

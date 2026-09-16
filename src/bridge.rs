@@ -354,6 +354,20 @@ pub struct WorldSnapshot {
     /// [`ILookAheadWorld::red_check_may_pass`].
     #[serde(default)]
     pub red_checks_fail: bool,
+    /// What was read for each request, by the request that asked for it.
+    ///
+    /// Named rather than positional, the way [`Self::variables`] is: a fixture or a test can
+    /// say what it means, and what it says wins over a positional answer.
+    #[serde(default)]
+    pub data: HashMap<DataRequest, DataAnswer>,
+    /// The same answers, in the order [`Questions::data`] listed the requests.
+    ///
+    /// POSITIONAL, like [`Self::variable_values`] and for the same reason: the requests are
+    /// constant for a group and the plugin already holds them, so sending them back would be
+    /// sending back what the engine itself said. A list of the wrong LENGTH is refused
+    /// outright by [`Self::resolve`].
+    #[serde(default)]
+    pub data_values: Vec<DataAnswer>,
 }
 
 impl WorldSnapshot {
@@ -377,10 +391,45 @@ impl WorldSnapshot {
             &self.query_values,
             &mut self.queries,
         )?;
+        place_data(&questions.data, &self.data_values, &mut self.data)?;
         self.variable_values.clear();
         self.query_values.clear();
+        self.data_values.clear();
         Ok(())
     }
+}
+
+/// Names `answers` by the requests that asked for them, without disturbing anything `named`
+/// already says.
+///
+/// The same three rules as [`place`], for the same reasons: an empty list is a caller that
+/// did not use the channel, a wrong-length one is refused rather than zipped as far as it
+/// goes, and an answer already named wins over a positional one.
+fn place_data(
+    asked: &[DataRequest],
+    answers: &[DataAnswer],
+    named: &mut HashMap<DataRequest, DataAnswer>,
+) -> Result<(), String> {
+    if answers.is_empty() {
+        return Ok(());
+    }
+
+    if answers.len() != asked.len() {
+        return Err(format!(
+            "{} data answers came back for {} requests; the caller is answering a \
+             different list of them than this group asks",
+            answers.len(),
+            asked.len(),
+        ));
+    }
+
+    for (request, answer) in asked.iter().zip(answers) {
+        named
+            .entry(request.clone())
+            .or_insert_with(|| answer.clone());
+    }
+
+    Ok(())
 }
 
 /// Answers every failed white check's failure slot as true, among the named variables.
@@ -555,6 +604,36 @@ impl SnapshotWorld {
     pub fn declaring(snapshot: WorldSnapshot, declared: Option<Arc<VariableTable>>) -> Self {
         Self { snapshot, declared }
     }
+
+    /// Whether `subject` is in the set `kind` answered with.
+    ///
+    /// `None` where nothing answered that request at all, which stays Unknown rather than
+    /// reading as "not in the set": a set nobody sent is not an empty set.
+    fn in_set(&self, kind: DataKind, subject: &str) -> Option<bool> {
+        let answer = self.snapshot.data.get(&DataRequest::set(kind))?;
+        // NOT READ IS NOT EMPTY. A plugin that could not reach the cabinet sends an answer
+        // saying so, and treating that as an empty set would answer "not in it" for
+        // everything - which closes routes rather than opening them.
+        if !answer.read {
+            return None;
+        }
+
+        Some(answer.names.iter().any(|name| name == subject))
+    }
+}
+
+/// The sets a cabinet question is answered from, or `None` for anything else.
+///
+/// `IsTHCCookingOrFixed` is two sets because that is what it is - cooking with a fallthrough
+/// to fixed - and keeping it as a pair here is what stops it being confused with
+/// `IsTHCPresent`, which is the BROADER question and has burnt this code once already.
+fn thought_state_kinds(name: &str) -> Option<&'static [DataKind]> {
+    match name {
+        "IsTHCCooking" => Some(&[DataKind::ThoughtsCooking]),
+        "IsTHCFixed" => Some(&[DataKind::ThoughtsFixed]),
+        "IsTHCCookingOrFixed" => Some(&[DataKind::ThoughtsCooking, DataKind::ThoughtsFixed]),
+        _ => None,
+    }
 }
 
 impl ILookAheadWorld for SnapshotWorld {
@@ -605,6 +684,36 @@ impl ILookAheadWorld for SnapshotWorld {
     }
 
     fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue {
+        // THE CABINET'S NARROW QUESTIONS, answered from the sets the plugin enumerated.
+        // Nothing asks it to evaluate these any more - see `collect` - so there is no query
+        // key to fall back to, and a set nobody sent leaves the question Unknown.
+        if let Some(kinds) = thought_state_kinds(name) {
+            let Some(subject) = arguments
+                .first()
+                .filter(|value| value.kind() == GuardValueKind::Text)
+                .map(|value| value.text())
+            else {
+                return GuardValue::unknown();
+            };
+
+            let mut answered = false;
+            for kind in kinds.iter().copied() {
+                match self.in_set(kind, subject) {
+                    // IN ANY OF THEM IS ENOUGH, which is what cooking-or-fixed means and is
+                    // the only case for the other two.
+                    Some(true) => return GuardValue::from_boolean(true),
+                    Some(false) => answered = true,
+                    None => {}
+                }
+            }
+
+            return if answered {
+                GuardValue::from_boolean(false)
+            } else {
+                GuardValue::unknown()
+            };
+        }
+
         self.snapshot
             .queries
             .get(&query_key(name, arguments))
@@ -642,6 +751,109 @@ pub fn query_key(name: &str, arguments: &[GuardValue]) -> String {
     format!("{name}({})", rendered.join(", "))
 }
 
+/// One thing the engine wants READ rather than evaluated.
+///
+/// The other way it asks - [`Questions::queries`] - hands over a rendered Lua call for the
+/// plugin to run. That is exact, because the game answers it, and it is also why a guard
+/// calling `FinishTask` closed a journal task every time a menu opened. A kind names data
+/// instead, so servicing one is a read and cannot be anything else.
+///
+/// `subject` names the one thing a per-subject kind asks about, and is empty for a kind that
+/// answers with a whole set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum DataKind {
+    /// The thoughts the cabinet is working on - `CharacterThoughts.cookingEffects`.
+    ThoughtsCooking,
+    /// The thoughts already internalised - `CharacterThoughts.fixedEffects`.
+    ThoughtsFixed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct DataRequest {
+    pub kind: DataKind,
+    /// What it is about, for a kind that names one thing.
+    ///
+    /// A set-valued kind leaves this empty, which is every kind there is today - nothing
+    /// uses this yet, and it is here because the item-group question is the next family and
+    /// is per-subject.
+    ///
+    /// A STRING, though the possible values are as closed a set as [`DataKind`] is: item and
+    /// thought names are DERIVED GAME DATA, versioned with the content rather than with this
+    /// crate, and they already cross as strings in [`Questions::items`], [`Questions::tasks`]
+    /// and [`Questions::thoughts`]. A kind is this protocol's own vocabulary, which is what
+    /// makes it an enum and this not.
+    #[serde(default)]
+    pub subject: String,
+}
+
+impl DataRequest {
+    /// A request for a whole set, which names no subject.
+    ///
+    /// A SET RATHER THAN A QUESTION PER SUBJECT where the game holds one: the cabinet's
+    /// cooking and fixed thoughts are two collections the plugin walks once, which is both
+    /// cheaper than a request per thought and the shape a save already stores them in.
+    pub fn set(kind: DataKind) -> Self {
+        Self {
+            kind,
+            subject: String::new(),
+        }
+    }
+}
+
+/// What an unanswered data request carries.
+fn unknown_value() -> WireValue {
+    WireValue::Unknown
+}
+
+/// What the plugin found for one [`DataRequest`].
+///
+/// Two shapes in one, because a kind answers in one or the other and which it uses is part
+/// of what the kind means. Neither present is "not knowable", the same permissive default an
+/// unanswered query carries.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataAnswer {
+    /// For a kind that answers about one subject.
+    ///
+    /// [`WireValue::Unknown`] where the plugin could not say, which is the permissive answer
+    /// and is spelled the one way the rest of the wire spells it - there is deliberately no
+    /// second way to mean "no answer" here.
+    #[serde(default = "unknown_value")]
+    pub value: WireValue,
+    /// For a kind that answers with a set of names.
+    #[serde(default)]
+    pub names: Vec<String>,
+    /// Whether the request was serviced at all.
+    ///
+    /// EXPLICIT, because an empty [`Self::names`] means two different things without it: a
+    /// set that was read and is empty, and a set nobody could read. The first says the
+    /// subject is not in it; the second is not knowable. Reading the second as the first
+    /// CLOSES a route the game opens, and this engine is only allowed to be wrong the other
+    /// way.
+    #[serde(default)]
+    pub read: bool,
+}
+
+impl Default for DataAnswer {
+    fn default() -> Self {
+        Self {
+            value: WireValue::Unknown,
+            names: Vec::new(),
+            read: false,
+        }
+    }
+}
+
+impl DataAnswer {
+    /// An answer that is a whole set of names, read successfully.
+    pub fn of_names(names: impl IntoIterator<Item = String>) -> Self {
+        Self {
+            value: WireValue::Unknown,
+            names: names.into_iter().collect(),
+            read: true,
+        }
+    }
+}
+
 /// Everything a search over one group can ask the world.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Questions {
@@ -661,6 +873,9 @@ pub struct Questions {
     pub checks: Vec<NodeRef>,
     /// Every entry, because any of them may have been seen.
     pub entries: Vec<NodeRef>,
+    /// World state the engine wants read rather than evaluated.
+    #[serde(default)]
+    pub data: Vec<DataRequest>,
 }
 
 /// What the plugin asks.
@@ -1014,6 +1229,7 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
     let mut items = HashSet::new();
     let mut tasks = HashSet::new();
     let mut thoughts = HashSet::new();
+    let mut data = HashSet::new();
 
     for node in graph.nodes() {
         collect(
@@ -1022,6 +1238,7 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
             &mut items,
             &mut tasks,
             &mut thoughts,
+            &mut data,
         );
 
         found.entries.push(NodeRef::from(node.id));
@@ -1059,6 +1276,13 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
     found.items = sorted(items);
     found.tasks = sorted(tasks);
     found.thoughts = sorted(thoughts);
+    // SORTED for the same reason the rest are: the answers come back positionally, so the
+    // order is the agreement between the two sides.
+    found.data = {
+        let mut requests: Vec<DataRequest> = data.into_iter().collect();
+        requests.sort_by(|a, b| (a.kind as i32, &a.subject).cmp(&(b.kind as i32, &b.subject)));
+        requests
+    };
     found
         .entries
         .sort_by_key(|node| (node.conversation, node.entry));
@@ -1087,6 +1311,7 @@ fn collect(
     items: &mut HashSet<String>,
     tasks: &mut HashSet<String>,
     thoughts: &mut HashSet<String>,
+    data: &mut HashSet<DataRequest>,
 ) {
     // A SWEEP RATHER THAN A WALK. Every node contributes wherever it sits, so this needs
     // the shape of one node at a time and never the shape between two.
@@ -1126,6 +1351,20 @@ fn collect(
                     // call it would be answered once from the world and go stale the moment
                     // the group's own ReputationGrows moved one.
                     (other, _) if crate::core::reputation::range_of(other).is_some() => {}
+                    // THE CABINET'S NARROW QUESTIONS, answered from sets the plugin
+                    // ENUMERATES rather than from a call per thought. Asked as calls these
+                    // were three Lua runs per subject; asked as data they are at most two
+                    // reads for the whole group, and the same two the save already records.
+                    ("IsTHCCooking", _) => {
+                        data.insert(DataRequest::set(DataKind::ThoughtsCooking));
+                    }
+                    ("IsTHCFixed", _) => {
+                        data.insert(DataRequest::set(DataKind::ThoughtsFixed));
+                    }
+                    ("IsTHCCookingOrFixed", _) => {
+                        data.insert(DataRequest::set(DataKind::ThoughtsCooking));
+                        data.insert(DataRequest::set(DataKind::ThoughtsFixed));
+                    }
                     _ => {
                         // Only literal arguments can be answered ahead of time. A computed
                         // argument would have to be evaluated per state, which is exactly

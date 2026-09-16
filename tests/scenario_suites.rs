@@ -257,6 +257,10 @@ fn stage(
                 // run of the game is in. See de-3jec.
                 clock_locked: true,
                 queries: holdings.answers_to(&asked.queries),
+                // WHAT THE ENGINE ASKED TO HAVE READ, positionally, as the plugin sends it.
+                // The cabinet's two sets arrive this way rather than as a call per thought -
+                // see `bridge::DataRequest`.
+                data_values: holdings.data_for(&asked.data),
                 items: holdings.items,
                 tasks: holdings.tasks,
                 thoughts: holdings.thoughts,
