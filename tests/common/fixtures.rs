@@ -1454,11 +1454,59 @@ pub fn holdings_in_save(save: &str) -> Holdings {
 
 /// Who is with the player, as the save's `partyState` records it.
 ///
-/// WRITTEN DOWN IN EVERY SAVE, beside the area, in the first blob. The game's `IsKimHere()`
-/// and `IsKimInParty()` are `PartyManager` methods whose bodies are stripped from every
-/// export, so which flags `IsKimHere` combines is read off the flags the save keeps beside
-/// `isKimInParty`: Kim left waiting outside, away until morning, or asleep in his room is in
-/// the party and not here.
+/// WRITTEN DOWN IN EVERY SAVE, beside the area, in the first blob. All three queries this
+/// answers are thin wrappers over two flags, and the pre-final-cut export carries their
+/// bodies in full - `PartyManager`:
+///
+/// ```text
+/// public static bool IsKimInParty()
+/// {
+///     return SingletonComponent<KimKitsuragi>.Singleton.IsInParty;
+/// }
+///
+/// public static bool IsKimHere()
+/// {
+///     if (SingletonComponent<KimKitsuragi>.Singleton.IsInParty)
+///     {
+///         return !SingletonComponent<KimKitsuragi>.Singleton.IsLeftOutside;
+///     }
+///     return false;
+/// }
+///
+/// public static bool IsCunoInParty()
+/// {
+///     return SingletonComponent<Cuno>.Singleton.IsInParty;
+/// }
+/// ```
+///
+/// `IsKimHere` NAMES TWO FLAGS AND NO OTHERS, which is worth saying because the save keeps
+/// two more that read as though they belonged - and those two are not known to the same
+/// standard.
+///
+/// `isKimAwayUpToMorning` is SETTLED FROM SOURCE. It exists in both builds, and the build
+/// whose `IsKimHere` body is readable declares `PartyManager.IsKimAwayUpToMorning` in that
+/// very class - written by `KitsuragiWillReturnTomorrow` and `RestoreReturnState` - and
+/// `IsKimHere` still does not read it.
+///
+/// `isKimSleepingInHisRoom` is INFERRED. It is Final Cut only, absent from the pre-final-cut
+/// `PartyPersister.PartyState` and carried in Final Cut's beside a
+/// `timeSinceKimWentSleepingInHisRoom` counter - so the build that has the flag is the build
+/// whose body is stripped. It is left out because Final Cut kept `_isLeftOutside` on
+/// `PartyMember<T>` and kept `isKimLeftOutside` in the save, so the mechanism this query runs
+/// on is intact there and nothing suggests a second term joined it. If that is ever wrong,
+/// this is the line to revisit.
+///
+/// Both are state the game keeps to decide WHERE Kim is and when he wakes, rather than terms
+/// in "is he standing next to you". Reading them here would also panic on a pre-final-cut
+/// save, which has no `isKimSleepingInHisRoom` field at all.
+///
+/// IN-GAME THIS STAYS A QUERY rather than being composed from the flags, because the plugin
+/// cannot obtain `IsLeftOutside`: it is a property of the generic base `PartyMember<T>`,
+/// reached through `SingletonComponent<T>.Singleton`, and a static on a generic base answers
+/// null through the IL2CPP interop layer however alive the object is - de-3jec. Lua is no way
+/// round it either, registering only `IsKimInParty`, `IsKimHere` and `IsCunoInParty`, and
+/// none of the flags behind them. So the game composes it there and this composes it here,
+/// from the same two flags and the same body.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Party {
     pub kim_in_party: bool,
@@ -1482,10 +1530,7 @@ fn party_in_save(save: &str) -> Party {
     let kim_in_party = flag("isKimInParty");
     Party {
         kim_in_party,
-        kim_here: kim_in_party
-            && !flag("isKimLeftOutside")
-            && !flag("isKimAwayUpToMorning")
-            && !flag("isKimSleepingInHisRoom"),
+        kim_here: kim_in_party && !flag("isKimLeftOutside"),
         cuno_in_party: flag("isCunoInParty"),
     }
 }
