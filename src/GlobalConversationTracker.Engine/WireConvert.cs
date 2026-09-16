@@ -320,6 +320,8 @@ namespace GlobalConversationTracker.Engine
                     return DataKind.GameMode;
                 case Wire.DataKind.HardcorePlaythroughCompleted:
                     return DataKind.HardcorePlaythroughCompleted;
+                case Wire.DataKind.PartyFlag:
+                    return DataKind.PartyFlag;
                 default:
                     return DataKind.Unspecified;
             }

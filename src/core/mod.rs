@@ -11,6 +11,7 @@ pub mod guard_value;
 pub mod inventory_tabs;
 pub mod item_group;
 pub mod modelling;
+pub mod party;
 pub mod passive_check;
 pub mod reputation;
 pub mod scene;

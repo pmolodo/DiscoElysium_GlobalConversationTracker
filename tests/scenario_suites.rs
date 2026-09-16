@@ -257,10 +257,9 @@ fn stage(
                 // where it found it. A fixture that let time pass would be staging a world no
                 // run of the game is in. See de-3jec.
                 clock_locked: true,
-                queries: holdings.answers_to(&asked.queries),
-                // WHAT THE ENGINE ASKED TO HAVE READ, positionally, as the plugin sends it.
-                // The cabinet's two sets arrive this way rather than as a call per thought -
-                // see `bridge::DataRequest`.
+                // WHAT THE ENGINE ASKED TO HAVE READ, positionally, as the plugin sends it -
+                // see `bridge::DataRequest`. No query keys: a save cannot answer a call, and
+                // `every_question_the_suites_ask_is_answered_offline` fails if a group asks one.
                 data_values: holdings.data_for(&asked.data),
                 items: holdings.items,
                 tasks: holdings.tasks,

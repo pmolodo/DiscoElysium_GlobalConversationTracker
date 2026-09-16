@@ -135,18 +135,11 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
     let holdings = fixtures::holdings_in_save(&scenario.save);
 
     let asked = lookahead_engine::bridge::questions_of(&graph, group.clone());
-    let answered = holdings.answers_to(&asked.queries);
-
     // WHAT THE WORLD COULD NOT BE TOLD, on every run of this report rather than in a note
-    // that goes stale. The plugin answers every one of these from the running game; a
-    // question left unanswered here is a question this menu is answered more permissively
-    // than the game answers it, and the list is the shortest statement of what de-bnh6 has
-    // left to do.
-    let unanswered: Vec<&String> = asked
-        .queries
-        .iter()
-        .filter(|key| !answered.contains_key(*key))
-        .collect();
+    // that goes stale. A query key is a call the plugin would run in the game, and no save
+    // can answer one, so every key a group still hands out is a question this menu is
+    // answered more permissively offline than the game answers it.
+    let unanswered: Vec<&String> = asked.queries.iter().collect();
 
     println!(
         "\nthe group asks {} variables, {} queries, {} items, {} tasks and {} thoughts",
@@ -209,9 +202,7 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
             // where it found it. A fixture that let time pass would be staging a world no
             // run of the game is in. See de-3jec.
             clock_locked: true,
-            queries: answered,
-            // WHAT THE ENGINE ASKED TO HAVE READ, positionally, as the plugin sends it -
-            // the cabinet's two sets rather than a call per thought.
+            // WHAT THE ENGINE ASKED TO HAVE READ, positionally, as the plugin sends it.
             data_values: holdings.data_for(&asked.data),
             items: holdings.items,
             tasks: holdings.tasks,

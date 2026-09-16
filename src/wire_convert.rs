@@ -182,6 +182,7 @@ fn written_kind(kind: DataKind) -> wire::DataKind {
         DataKind::SkillDamage => wire::DataKind::SkillDamage,
         DataKind::GameMode => wire::DataKind::GameMode,
         DataKind::HardcorePlaythroughCompleted => wire::DataKind::HardcorePlaythroughCompleted,
+        DataKind::PartyFlag => wire::DataKind::PartyFlag,
     }
 }
 

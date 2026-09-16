@@ -137,6 +137,9 @@ enum DataKind {
   // GameStatsManager.HardcorePlaythroughCompleted, profile state no save records. Names no
   // subject; answered as a boolean.
   DATA_KIND_HARDCORE_PLAYTHROUGH_COMPLETED = 10;
+  // One party flag, named in subject as a save's partyState names it - isKimInParty,
+  // isKimLeftOutside, isCunoInParty - and answered as a boolean.
+  DATA_KIND_PARTY_FLAG = 11;
 }
 
 message DataRequest {

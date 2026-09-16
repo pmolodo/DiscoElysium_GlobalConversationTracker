@@ -145,6 +145,8 @@ namespace GlobalConversationTracker
                         return SkillDamage(wanted.Subject);
                     case DataKind.GameMode:
                         return GameMode();
+                    case DataKind.PartyFlag:
+                        return PartyFlag(wanted.Subject);
                     case DataKind.HardcorePlaythroughCompleted:
                         return DataAnswer.Of(
                             WireValue.FromBoolean(GameStatsManager.HardcorePlaythroughCompleted));
@@ -222,6 +224,29 @@ namespace GlobalConversationTracker
             }
 
             return DataAnswer.Unreadable();
+        }
+
+        /// <summary>One party flag, read off the party member it belongs to.</summary>
+        /// <remarks>
+        /// What <c>PartyManager.IsKimHere</c> and its siblings read - see <c>core::party</c> in
+        /// the engine. The members are found by type rather than through
+        /// <c>SingletonComponent&lt;T&gt;.Singleton</c>, a static on a generic base that
+        /// answers null through the interop layer.
+        /// </remarks>
+        /// <param name="flag">A <c>partyState</c> field name.</param>
+        private static DataAnswer PartyFlag(string flag)
+        {
+            bool? value = flag switch
+            {
+                "isKimInParty" => UnityEngine.Object.FindObjectOfType<Sunshine.Hack.KimKitsuragi>()?.IsInParty,
+                "isKimLeftOutside" => UnityEngine.Object.FindObjectOfType<Sunshine.Hack.KimKitsuragi>()?.IsLeftOutside,
+                "isCunoInParty" => UnityEngine.Object.FindObjectOfType<Cuno>()?.IsInParty,
+                _ => null,
+            };
+
+            return value == null
+                ? DataAnswer.Unreadable()
+                : DataAnswer.Of(WireValue.FromBoolean(value.Value));
         }
 
         /// <summary>The game mode, by its enum name.</summary>

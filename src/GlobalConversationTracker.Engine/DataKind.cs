@@ -80,5 +80,12 @@ namespace GlobalConversationTracker.Engine
         /// boolean.
         /// </summary>
         HardcorePlaythroughCompleted = 10,
+
+        /// <summary>
+        /// One party flag, named in <see cref="DataRequest.Subject"/> as a save's
+        /// <c>partyState</c> names it - <c>isKimInParty</c>, <c>isKimLeftOutside</c>,
+        /// <c>isCunoInParty</c>. Answered as a boolean.
+        /// </summary>
+        PartyFlag = 11,
     }
 }

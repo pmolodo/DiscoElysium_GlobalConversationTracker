@@ -742,6 +742,14 @@ impl ILookAheadWorld for SnapshotWorld {
         if name == crate::core::game_mode::WAS_GAME_BEATEN_IN_HARDCORE_MODE {
             return read_value(DataRequest::set(DataKind::HardcorePlaythroughCompleted));
         }
+        // WHO IS WITH THE PLAYER, from the party flags the plugin read.
+        let party_flag = |flag: &str| {
+            let value = read_value(DataRequest::about(DataKind::PartyFlag, flag));
+            (value.kind() == GuardValueKind::Boolean).then(|| value.boolean())
+        };
+        if let Some(here) = crate::core::party::answer(name, party_flag) {
+            return here.map_or_else(GuardValue::unknown, GuardValue::from_boolean);
+        }
         if name == crate::core::game_mode::IS_HARDCORE_MODE_ACTIVE {
             let mode = read_value(DataRequest::set(DataKind::GameMode));
             return if mode.kind() == GuardValueKind::Text {
@@ -881,6 +889,10 @@ pub enum DataKind {
     /// Whether a game has been finished in hardcore mode -
     /// `GameStatsManager.HardcorePlaythroughCompleted`. Names no subject; answered as a boolean.
     HardcorePlaythroughCompleted,
+    /// One party flag, named in the subject as a save's `partyState` names it -
+    /// `isKimInParty`, `isKimLeftOutside`, `isCunoInParty`. Answered as a boolean. See
+    /// [`crate::core::party`].
+    PartyFlag,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1484,6 +1496,8 @@ fn collect(
                     // A substance question, answered from the use-count VARIABLE the group
                     // declares for it - see `core::substance`.
                     (other, _) if crate::core::substance::owns(other) => {}
+                    // THE BALANCE, answered from the money the plugin already sends.
+                    (crate::world::MONEY_QUERY, _) => {}
                     // THE CLOCK AND THE DAY, answered by `ClockTime` from the clock the plugin
                     // already sends - see `BoundContext::query`.
                     (other, _)
@@ -1502,6 +1516,14 @@ fn collect(
                     }
                     (crate::core::game_mode::WAS_GAME_BEATEN_IN_HARDCORE_MODE, _) => {
                         data.insert(DataRequest::set(DataKind::HardcorePlaythroughCompleted));
+                    }
+                    // WHO IS WITH THE PLAYER, read off the party members.
+                    (name, _) if !crate::core::party::flags_read_by(name).is_empty() => {
+                        data.extend(
+                            crate::core::party::flags_read_by(name)
+                                .iter()
+                                .map(|flag| DataRequest::about(DataKind::PartyFlag, flag)),
+                        );
                     }
                     // HOW DAMAGED A SKILL IS, read off the character sheet.
                     (other, _) if crate::core::damage::skill_read_by(other).is_some() => {
@@ -3099,12 +3121,20 @@ mod tests {
         );
     }
 
+    /// A call the engine does not answer itself is asked for by its rendered key.
+    ///
+    /// NO FUNCTION IN THE SHIPPED CORPUS takes this path any more, so the calls here are made
+    /// up; what is under test is the channel, which a function the database gains later
+    /// would fall into.
     #[test]
     fn an_ordinary_query_is_asked_for_by_its_key() {
-        let found = asked(r#"IsCunoInParty() and IsKimHere()"#);
+        let found = asked(r#"UnportedQuery("a", 2) and OtherUnportedQuery()"#);
         assert_eq!(
             found.queries,
-            vec!["IsCunoInParty()".to_string(), "IsKimHere()".to_string()],
+            vec![
+                "OtherUnportedQuery()".to_string(),
+                "UnportedQuery(\"a\", 2)".to_string()
+            ],
         );
     }
 
@@ -3112,7 +3142,7 @@ mod tests {
     /// because the two sides agreeing is the whole point of naming them here.
     #[test]
     fn the_key_asked_for_is_the_key_answered() {
-        let found = asked(r#"IsKimHere()"#);
+        let found = asked(r#"UnportedQuery("a", 2)"#);
         let key = &found.queries[0];
 
         let mut world = WorldSnapshot::default();
@@ -3121,7 +3151,13 @@ mod tests {
             .insert(key.clone(), WireValue::Bool { value: true });
         let world = SnapshotWorld::new(world);
 
-        let answer = world.query("IsKimHere", &[]);
+        let answer = world.query(
+            "UnportedQuery",
+            &[
+                GuardValue::from_text("a".to_string()),
+                GuardValue::from_number(2.0),
+            ],
+        );
         assert!(
             answer.boolean(),
             "the answer did not come back under the key given"
@@ -3281,7 +3317,7 @@ mod tests {
     fn positional_answers_are_put_back_onto_their_names() {
         let questions = Questions {
             variables: vec!["a.first".to_string(), "b.second".to_string()],
-            queries: vec!["IsKimHere()".to_string()],
+            queries: vec!["UnportedQuery()".to_string()],
             ..Default::default()
         };
 
@@ -3300,7 +3336,7 @@ mod tests {
         let world = SnapshotWorld::new(snapshot);
         assert_eq!(read(&world, "a.first").try_as_number(), Some(4.0));
         assert!(read(&world, "b.second").boolean());
-        assert!(world.query("IsKimHere", &[]).boolean());
+        assert!(world.query("UnportedQuery", &[]).boolean());
     }
 
     /// A named answer beats a positional one, because naming it says more.

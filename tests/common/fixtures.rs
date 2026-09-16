@@ -1268,30 +1268,6 @@ const COOKING: &str = "COOKING";
 const FORGOTTEN: &str = "FORGOTTEN";
 
 impl Holdings {
-    /// The world queries this can answer, out of the ones a group asks.
-    ///
-    /// ## Why some are answered and some are left alone
-    ///
-    /// A QUERY KEY IS THE LUA CALL ITSELF - `MoneyAmount()`, `IsTHCFixed("aces_high")` -
-    /// and the plugin answers one by running it in the game. A save answers some of them
-    /// exactly: the balance, the day, and what state a thought is in are all written down
-    /// in it. Others are about the scene rather than the character - whether it is raining,
-    /// whether this is outdoors, what is worn - and where this cannot answer one it says
-    /// NOTHING, which is what the plugin sends for a query it could not run and what the
-    /// engine treats as unknown. See de-bnh6 for where the rest of them live.
-    pub fn answers_to(&self, asked: &[String]) -> HashMap<String, WireValue> {
-        let mut answers = HashMap::new();
-        for key in asked {
-            let Some(answer) = self.answer(key) else {
-                continue;
-            };
-
-            answers.insert(key.clone(), answer);
-        }
-
-        answers
-    }
-
     /// What the engine asked to have READ rather than evaluated, answered from the save.
     ///
     /// The cabinet's two sets, which is how the game holds them and how the save records
@@ -1322,6 +1298,11 @@ impl Holdings {
                 // PROFILE STATE, which no save records - see `core::game_mode` - so it is left
                 // unread, and the question reads Unknown offline.
                 DataKind::HardcorePlaythroughCompleted => DataAnswer::default(),
+                // WHO IS WITH THE PLAYER, which the save keeps in its party state.
+                DataKind::PartyFlag => match self.party.flag(&request.subject) {
+                    Some(value) => DataAnswer::of_value(WireValue::Bool { value }),
+                    None => DataAnswer::default(),
+                },
                 DataKind::GameMode => DataAnswer::of_value(WireValue::Text {
                     value: self.game_mode.clone(),
                 }),
@@ -1356,64 +1337,6 @@ impl Holdings {
         found.sort();
         found
     }
-
-    /// One query, where this can answer it.
-    fn answer(&self, key: &str) -> Option<WireValue> {
-        let (call, argument) = split_call(key);
-
-        match call {
-            "MoneyAmount" => Some(WireValue::Number {
-                value: f64::from(self.money),
-            }),
-            "DayCount" => Some(WireValue::Number {
-                value: f64::from(self.day_counter),
-            }),
-            "IsTHCFixed" => Some(WireValue::Bool {
-                value: self.thought_states.get(argument?).map(String::as_str) == Some(FIXED),
-            }),
-            // COOKING ALONE, which is the narrowest of the three cabinet questions and was
-            // the one this could not answer. The save records the state and the other two
-            // are read from it, so leaving this one out said "unknown" - and unknown is
-            // permissive - about a question the save settles exactly.
-            "IsTHCCooking" => Some(WireValue::Bool {
-                value: self.thought_states.get(argument?).map(String::as_str) == Some(COOKING),
-            }),
-            "IsTHCCookingOrFixed" => Some(WireValue::Bool {
-                value: matches!(
-                    self.thought_states.get(argument?).map(String::as_str),
-                    Some(FIXED) | Some(COOKING)
-                ),
-            }),
-            // WHO IS WITH THE PLAYER, which the save keeps in its party state.
-            "IsKimHere" => Some(WireValue::Bool {
-                value: self.party.kim_here,
-            }),
-            "IsKimInParty" => Some(WireValue::Bool {
-                value: self.party.kim_in_party,
-            }),
-            "IsCunoInParty" => Some(WireValue::Bool {
-                value: self.party.cuno_in_party,
-            }),
-            _ => None,
-        }
-    }
-}
-
-/// A query key as the call it is: the name, and the one string argument where it has one.
-fn split_call(key: &str) -> (&str, Option<&str>) {
-    let Some((call, rest)) = key.split_once('(') else {
-        return (key, None);
-    };
-
-    let argument = rest.trim_end_matches(')').trim_matches('"');
-    (
-        call,
-        if argument.is_empty() {
-            None
-        } else {
-            Some(argument)
-        },
-    )
 }
 
 /// What one save holds, for the world a scenario is answered against.
@@ -1551,18 +1474,26 @@ pub fn holdings_in_save(save: &str) -> Holdings {
 /// in "is he standing next to you". Reading them here would also panic on a pre-final-cut
 /// save, which has no `isKimSleepingInHisRoom` field at all.
 ///
-/// IN-GAME THIS STAYS A QUERY rather than being composed from the flags, because the plugin
-/// cannot obtain `IsLeftOutside`: it is a property of the generic base `PartyMember<T>`,
-/// reached through `SingletonComponent<T>.Singleton`, and a static on a generic base answers
-/// null through the IL2CPP interop layer however alive the object is - de-3jec. Lua is no way
-/// round it either, registering only `IsKimInParty`, `IsKimHere` and `IsCunoInParty`, and
-/// none of the flags behind them. So the game composes it there and this composes it here,
-/// from the same two flags and the same body.
+/// BOTH WORLDS SEND THE FLAGS AND THE ENGINE COMPOSES THEM, in `core::party`: the plugin reads
+/// `IsInParty` and `IsLeftOutside` off the party members, found by type, and this reads the
+/// same three flags out of the save.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Party {
     pub kim_in_party: bool,
-    pub kim_here: bool,
+    pub kim_left_outside: bool,
     pub cuno_in_party: bool,
+}
+
+impl Party {
+    /// One flag by its `partyState` name, or `None` for a name that is not one of the three.
+    pub fn flag(&self, name: &str) -> Option<bool> {
+        match name {
+            lookahead_engine::core::party::KIM_IN_PARTY => Some(self.kim_in_party),
+            lookahead_engine::core::party::KIM_LEFT_OUTSIDE => Some(self.kim_left_outside),
+            lookahead_engine::core::party::CUNO_IN_PARTY => Some(self.cuno_in_party),
+            _ => None,
+        }
+    }
 }
 
 /// Reads [`Party`] out of a save.
@@ -1578,11 +1509,10 @@ fn party_in_save(save: &str) -> Party {
             .unwrap_or_else(|| panic!("{save}'s party state has no {name}"))
     };
 
-    let kim_in_party = flag("isKimInParty");
     Party {
-        kim_in_party,
-        kim_here: kim_in_party && !flag("isKimLeftOutside"),
-        cuno_in_party: flag("isCunoInParty"),
+        kim_in_party: flag(lookahead_engine::core::party::KIM_IN_PARTY),
+        kim_left_outside: flag(lookahead_engine::core::party::KIM_LEFT_OUTSIDE),
+        cuno_in_party: flag(lookahead_engine::core::party::CUNO_IN_PARTY),
     }
 }
 

@@ -298,13 +298,13 @@ impl IGuardContext for BoundContext<'_> {
                     _ => self.world.query(name, arguments),
                 }
             }
-            MONEY_QUERY => {
-                if let Some(state) = self.state {
-                    GuardValue::from_number(state.money() as f64)
-                } else {
-                    self.world.query(name, arguments)
-                }
-            }
+            // The balance, from search state or - before there is one - the balance the world
+            // starts the search with, which the plugin already sends. Never asked as a call.
+            MONEY_QUERY => GuardValue::from_number(
+                self.state
+                    .map_or_else(|| self.world.money(), |state| state.money())
+                    as f64,
+            ),
             // The three questions the search's own actions can change the answer to:
             // inventory, journal, thought cabinet. Each is answered from a slot where
             // this group moves the subject and from the world where it does not.
