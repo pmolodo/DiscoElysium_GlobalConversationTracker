@@ -1284,6 +1284,13 @@ impl Holdings {
             "IsTHCFixed" => Some(WireValue::Bool {
                 value: self.thought_states.get(argument?).map(String::as_str) == Some(FIXED),
             }),
+            // COOKING ALONE, which is the narrowest of the three cabinet questions and was
+            // the one this could not answer. The save records the state and the other two
+            // are read from it, so leaving this one out said "unknown" - and unknown is
+            // permissive - about a question the save settles exactly.
+            "IsTHCCooking" => Some(WireValue::Bool {
+                value: self.thought_states.get(argument?).map(String::as_str) == Some(COOKING),
+            }),
             "CheckEquipped" => Some(WireValue::Bool {
                 value: self.equipped.contains(argument?),
             }),

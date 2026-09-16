@@ -83,6 +83,18 @@ impl Decision {
 ///
 /// The same shape of answer as the thought cabinet's, and found the same way: read what
 /// the game lets dialogue call, rather than reasoning about what it might.
+///
+/// THE CABINET'S THREE NARROW QUESTIONS ARE HERE FOR THE SAME REASON, and the argument is
+/// worth stating because it does not look true either. `GainThought` is a modelled write, so
+/// `IsTHCCooking`, `IsTHCFixed` and `IsTHCCookingOrFixed` plainly ask about something a
+/// conversation moves. They do not. `CharacterThoughts.GainThought` adds to `gainedThoughts`
+/// and sets the thought's state to `KNOWN`, while `ThoughtCooking` reads `cookingEffects` and
+/// `ThoughtFixed` reads `fixedEffects` - different collections, which only the cabinet screen
+/// fills. `THCLuaFunctions` registers exactly five functions and `GainThought` is the only
+/// writer among them, so nothing dialogue can call moves these three.
+///
+/// `IsTHCPresent` is the one that DOES move, and it is not here: it is `gainedThoughts`
+/// itself, which is exactly what `GainThought` adds to.
 pub const CONSTANT_BY_CONSTRUCTION: &[&str] = &[
     "CheckEquipped",
     "CheckEquippedGroup",
@@ -94,6 +106,9 @@ pub const CONSTANT_BY_CONSTRUCTION: &[&str] = &[
     "HasPants",
     "HasShirt",
     "HasShoes",
+    "IsTHCCooking",
+    "IsTHCCookingOrFixed",
+    "IsTHCFixed",
     "WeirdClothing",
 ];
 
