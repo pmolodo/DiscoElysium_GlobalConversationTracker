@@ -577,6 +577,19 @@ impl<'a> GuardCompiler<'a> {
                 }
             }
 
+            // An ACTION the database calls from a guard, which the plugin is never asked to
+            // run because running it writes to the player's save. `BoundContext::query`
+            // answers it false - a function returning nothing answers nil, and `nil == true`
+            // is false - and this has to agree. Left to fall through, the world has no
+            // answer for a question nobody asked, so the compiler would go undecided and
+            // stay permissive exactly where the search is decisive.
+            GuardExpression::Call(name, _)
+                if crate::core::modelling::is_action_used_as_guard(name) =>
+            {
+                let f = self.bottom();
+                self.decided(f)
+            }
+
             // A query the SEARCH cannot change is a constant, and the engine says which
             // those are: `BoundContext::query` intercepts MoneyAmount, CheckItem,
             // IsTaskActive and the clock, and lets everything else fall through to the

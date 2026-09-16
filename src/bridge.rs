@@ -1114,6 +1114,12 @@ fn collect(
                     // named by a literal is one of the group's variables, which are asked
                     // for whole rather than here.
                     (crate::world::FLAG_SET_QUERY, Some(_)) => {}
+                    // An ACTION the database calls from a guard. Never asked of the plugin,
+                    // because the plugin answers a query by RUNNING it - and running these
+                    // finishes a task or awards experience in the player's save. Answered
+                    // instead by `BoundContext::query`; see
+                    // `modelling::ACTIONS_USED_AS_GUARDS`.
+                    (other, _) if crate::core::modelling::is_action_used_as_guard(other) => {}
                     _ => {
                         // Only literal arguments can be answered ahead of time. A computed
                         // argument would have to be evaluated per state, which is exactly
@@ -2438,6 +2444,27 @@ mod tests {
             found.queries.is_empty(),
             "these must not also be asked as calls"
         );
+    }
+
+    /// An action called from a guard is never asked of the plugin, because ASKING RUNS IT.
+    ///
+    /// Both of these return nothing and exist only for their effect - one closes a journal
+    /// task, the other awards experience - and the plugin answers a query by running it as
+    /// Lua in the live game. A name that reaches this list is a write to the player's save
+    /// on every crawl of the group.
+    #[test]
+    fn an_action_called_from_a_guard_is_never_asked_for() {
+        for guard in [
+            r#"FinishTask("TASK.pissing_competition_done") == true"#,
+            r#"XPStandardSetBool("XP.cuno_suspicion") == true"#,
+        ] {
+            let found = asked(guard);
+            assert!(
+                found.queries.is_empty(),
+                "asking the plugin for this would run it: {guard} -> {:?}",
+                found.queries
+            );
+        }
     }
 
     /// A flag is a dialogue variable written another way, and is asked for as one.

@@ -256,7 +256,14 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
         "conversation {conversation}, save '{}', state '{}'",
         scenario.save, suite.state,
     );
-    println!("{}", scenario.what);
+    // THE FIRST STOP'S, which is this scenario's: one menu is checked here, against MENU
+    // below. The same reading the C# side takes, where `Why` is `Stops[0].What`.
+    let what = &scenario
+        .stops
+        .first()
+        .expect("a scenario names at least one stop")
+        .what;
+    println!("{what}");
     println!();
 
     for (position, (entry, line)) in MENU.iter().enumerate() {

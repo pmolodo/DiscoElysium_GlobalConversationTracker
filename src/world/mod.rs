@@ -255,6 +255,14 @@ impl IGuardContext for BoundContext<'_> {
                     world.initially_has_thought(subject)
                 })
             }
+            // An ACTION the database calls from a guard. The plugin was never asked for it,
+            // because asking means running it, so there is nothing in the world to fall
+            // through to. Answered as the game's own return would be: a function returning
+            // nothing answers nil, the guards compare it against `true`, and `nil == true`
+            // is false. See `modelling::ACTIONS_USED_AS_GUARDS`.
+            other if crate::core::modelling::is_action_used_as_guard(other) => {
+                GuardValue::from_boolean(false)
+            }
             _ => self.world.query(name, arguments),
         }
     }

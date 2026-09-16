@@ -97,6 +97,41 @@ pub const CONSTANT_BY_CONSTRUCTION: &[&str] = &[
     "WeirdClothing",
 ];
 
+/// Actions the database calls FROM A GUARD, which must never be run to answer one.
+///
+/// Two functions in the shipped corpus return nothing and exist only for their effect, yet
+/// appear where a condition is expected. `FinishTask` closes a journal task;
+/// `XPStandardSetBool` sets a dialogue variable and awards experience. Three guards in all -
+/// conversation 369 entry 94, and conversation 850 entries 109 and 110.
+///
+/// WHY THIS LIST HAS TO EXIST. The plugin answers a query by running it as Lua in the live
+/// game, so a name that reaches the query list is a name the mod EXECUTES - against the
+/// player's save, on every crawl of that group, for a node the player may never reach. The
+/// game runs them too when it evaluates the link itself, so the effect is the writers' doing
+/// rather than ours; what a look-ahead adds is doing it early, often, and for branches
+/// nobody takes.
+///
+/// So they are kept out of the query list and answered here instead. The answer is FALSE,
+/// and that is the game's answer rather than a convenient one: a function returning nothing
+/// answers Lua nil, all three guards compare the call against `true`, and `nil == true` is
+/// false.
+///
+/// NOT A MODEL OF THE EFFECT. The game really does finish that task while deciding whether
+/// to show the line, and the search does not follow it. That is a deliberate omission - a
+/// guard is evaluated speculatively and thousands of times per menu, and a write on that
+/// path would be a different feature.
+pub const ACTIONS_USED_AS_GUARDS: &[&str] = &["FinishTask", "XPStandardSetBool"];
+
+/// Whether `name` is an action a guard calls, which must be answered rather than run.
+///
+/// Three places agree about this and each would be wrong alone: `bridge::collect` keeps the
+/// name out of what the plugin is asked, `BoundContext::query` answers it, and the guard
+/// compiler decides it. A name dropped from the questions but left unanswered would read
+/// Unknown, which is permissive - safe for the save and wrong for the marker.
+pub fn is_action_used_as_guard(name: &str) -> bool {
+    ACTIONS_USED_AS_GUARDS.contains(&name)
+}
+
 /// Every decision taken so far.
 pub const DECISIONS: &[Decision] = &[
     Decision {

@@ -197,9 +197,9 @@ fn collect_diffs(directory: &Path, found: &mut Vec<PathBuf>) {
     }
 }
 
-/// How many text-member diffs the scenarios carry: two made scenario saves, and at-garte-kitchen
-/// and at-leo, saves from real playthroughs.
-const TEXT_DIFFS: usize = 4;
+/// How many text-member diffs the scenarios carry: three made scenario saves - at-klaasjes-flower,
+/// at-trashcan and at-manana - and at-garte-kitchen and at-leo, saves from real playthroughs.
+const TEXT_DIFFS: usize = 5;
 
 /// Every committed text diff is in a shape this build can read.
 ///
