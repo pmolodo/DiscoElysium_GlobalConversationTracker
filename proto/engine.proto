@@ -124,6 +124,9 @@ enum DataKind {
   // The items of one ItemGroup the player holds when the request is built, named as
   // DATA_KIND_ITEMS_IN_GROUP names it and answered as a set of item names.
   DATA_KIND_HELD_ITEMS_IN_GROUP = 6;
+  // Whether the current scene is outdoors - ApplicationManager.CurrentSceneProperties.IsOutside.
+  // Names no subject; answered as a boolean.
+  DATA_KIND_SCENE_IS_OUTSIDE = 7;
 }
 
 message DataRequest {

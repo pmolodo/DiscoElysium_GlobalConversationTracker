@@ -114,6 +114,14 @@ impl LookAheadGraph {
                             variables.push(value.text().to_string());
                         }
                     }
+                    // A weather question reads a fixed variable - see `core::scene`.
+                    crate::core::guard::GuardExpression::Call(function, _)
+                        if crate::core::scene::variable_read_by(function).is_some() =>
+                    {
+                        variables.extend(
+                            crate::core::scene::variable_read_by(function).map(str::to_string),
+                        );
+                    }
                     // A substance question reads the count variable its literal names - see
                     // `core::substance`.
                     crate::core::guard::GuardExpression::Call(function, arguments)

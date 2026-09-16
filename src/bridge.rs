@@ -727,16 +727,17 @@ impl ILookAheadWorld for SnapshotWorld {
     }
 
     fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue {
-        // WHETHER A TAB HOLDS ANYTHING, as the plugin read it. No query key behind it.
+        // WHETHER A TAB HOLDS ANYTHING, and whether the scene is outdoors, as the plugin read
+        // them. No query key behind either.
+        let read_value = |request: DataRequest| match self.snapshot.data.get(&request) {
+            Some(answer) if answer.read => GuardValue::from(&answer.value),
+            _ => GuardValue::unknown(),
+        };
         if let Some(tab) = inventory_tabs::tab_read_by(name) {
-            return match self
-                .snapshot
-                .data
-                .get(&DataRequest::about(DataKind::TabHoldsItems, tab))
-            {
-                Some(answer) if answer.read => GuardValue::from(&answer.value),
-                _ => GuardValue::unknown(),
-            };
+            return read_value(DataRequest::about(DataKind::TabHoldsItems, tab));
+        }
+        if name == crate::core::scene::IS_EXTERIOR {
+            return read_value(DataRequest::set(DataKind::SceneIsOutside));
         }
 
         // THE CABINET'S NARROW QUESTIONS, answered from the sets the plugin enumerated.
@@ -849,6 +850,9 @@ pub enum DataKind {
     /// The items of one item group the player holds when the request is built. Answered as a
     /// set of names.
     HeldItemsInGroup,
+    /// Whether the current scene is outdoors - `CurrentSceneProperties.IsOutside`. Names no
+    /// subject; answered as a boolean. See [`crate::core::scene`].
+    SceneIsOutside,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1452,6 +1456,13 @@ fn collect(
                     // A substance question, answered from the use-count VARIABLE the group
                     // declares for it - see `core::substance`.
                     (other, _) if crate::core::substance::owns(other) => {}
+                    // A weather question, answered from the weather VARIABLE the group
+                    // declares - see `core::scene`.
+                    (other, _) if crate::core::scene::variable_read_by(other).is_some() => {}
+                    // WHETHER THE SCENE IS OUTDOORS, read from the scene's own properties.
+                    (crate::core::scene::IS_EXTERIOR, _) => {
+                        data.insert(DataRequest::set(DataKind::SceneIsOutside));
+                    }
                     // THE CABINET'S NARROW QUESTIONS, answered from sets the plugin
                     // ENUMERATES rather than from a call per thought. Asked as calls these
                     // were three Lua runs per subject; asked as data they are at most two

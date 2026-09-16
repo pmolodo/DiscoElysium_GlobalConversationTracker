@@ -53,5 +53,12 @@ namespace GlobalConversationTracker.Engine
         /// <see cref="DataRequest.Subject"/>. Answered as a set of item names.
         /// </summary>
         HeldItemsInGroup = 6,
+
+        /// <summary>
+        /// Whether the current scene is outdoors -
+        /// <c>ApplicationManager.CurrentSceneProperties.IsOutside</c>. Names no subject; answered
+        /// as a boolean.
+        /// </summary>
+        SceneIsOutside = 7,
     }
 }

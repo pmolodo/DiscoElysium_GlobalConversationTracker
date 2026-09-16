@@ -11,6 +11,7 @@ pub mod item_group;
 pub mod modelling;
 pub mod passive_check;
 pub mod reputation;
+pub mod scene;
 pub mod state;
 pub mod substance;
 pub mod types;

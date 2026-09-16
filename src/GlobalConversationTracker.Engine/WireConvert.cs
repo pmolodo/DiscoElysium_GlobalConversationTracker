@@ -312,6 +312,8 @@ namespace GlobalConversationTracker.Engine
                     return DataKind.ItemsInGroup;
                 case Wire.DataKind.HeldItemsInGroup:
                     return DataKind.HeldItemsInGroup;
+                case Wire.DataKind.SceneIsOutside:
+                    return DataKind.SceneIsOutside;
                 default:
                     return DataKind.Unspecified;
             }

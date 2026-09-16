@@ -1313,6 +1313,9 @@ impl Holdings {
                         .get(&request.subject)
                         .is_some_and(|count| *count > 0),
                 }),
+                DataKind::SceneIsOutside => DataAnswer::of_value(WireValue::Bool {
+                    value: self.scene.outside,
+                }),
                 DataKind::ItemsInGroup => items_in_group(&request.subject, |_| true)
                     .map_or_else(DataAnswer::default, DataAnswer::of_names),
                 DataKind::HeldItemsInGroup => {
@@ -1361,18 +1364,6 @@ impl Holdings {
                     self.thought_states.get(argument?).map(String::as_str),
                     Some(FIXED) | Some(COOKING)
                 ),
-            }),
-            // THE THREE THAT ASK ABOUT THE SCENE. Each half of a complementary pair, so
-            // leaving one unanswered opens both halves rather than losing a line - see
-            // [`Scene`].
-            "IsExterior" => Some(WireValue::Bool {
-                value: self.scene.outside,
-            }),
-            "IsRaining" => Some(WireValue::Bool {
-                value: self.scene.raining,
-            }),
-            "IsSnowing" => Some(WireValue::Bool {
-                value: self.scene.snowing,
             }),
             // WHO IS WITH THE PLAYER, which the save keeps in its party state.
             "IsKimHere" => Some(WireValue::Bool {

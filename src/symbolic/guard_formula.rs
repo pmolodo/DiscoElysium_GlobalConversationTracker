@@ -1351,6 +1351,14 @@ impl<'a> GuardCompiler<'a> {
         // closes, and one that answered differently would be worse than either.
         let answer = if crate::core::clock::ClockTime::owns_day(name) {
             crate::core::clock::ClockTime::day_answer(name, &values, world.day_counter())
+        } else if crate::core::scene::variable_read_by(name).is_some() {
+            // The weather is a variable nothing in a group writes - read the way
+            // `BoundContext::query` reads it.
+            let vars: &'a DataVars<'a> = self.vars;
+            crate::core::scene::weather_answer(name, |variable| {
+                Some(world.get_variable(vars.symbols().variable_ref(variable)?))
+            })
+            .expect("just matched")
         } else if crate::core::substance::owns(name) {
             // A substance count is a variable nothing in a group writes, so the world's value
             // is the value at every state - read the way `BoundContext::query` reads it.

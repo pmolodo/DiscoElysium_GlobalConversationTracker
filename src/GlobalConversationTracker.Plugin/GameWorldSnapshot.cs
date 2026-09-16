@@ -139,6 +139,8 @@ namespace GlobalConversationTracker
                         return ItemsInGroup(wanted.Subject);
                     case DataKind.HeldItemsInGroup:
                         return HeldItemsInGroup(wanted.Subject);
+                    case DataKind.SceneIsOutside:
+                        return SceneIsOutside();
                     default:
                         return DataAnswer.Unreadable();
                 }
@@ -188,6 +190,31 @@ namespace GlobalConversationTracker
             }
 
             return DataAnswer.Of(WireValue.FromBoolean(!inventory.IsTabEmpty(group)));
+        }
+
+        /// <summary>Whether the current scene is outdoors.</summary>
+        /// <remarks>
+        /// <para>What <c>MapLuaFunctions.IsExterior</c> returns, read directly:
+        /// <c>ApplicationManager.CurrentSceneProperties.IsOutside</c>.</para>
+        ///
+        /// <para>FOUND BY TYPE rather than through <c>SingletonScriptable&lt;ApplicationManager&gt;
+        /// .Singleton</c>, because a static on a generic base answers null through the IL2CPP
+        /// interop layer however alive the object is - de-3jec. No scene properties yet is
+        /// unserviced: asked through Lua at that moment, the call threw.</para>
+        /// </remarks>
+        private static DataAnswer SceneIsOutside()
+        {
+            foreach (FortressOccident.ApplicationManager manager in
+                UnityEngine.Resources.FindObjectsOfTypeAll<FortressOccident.ApplicationManager>())
+            {
+                SceneProperties? scene = manager?.CurrentSceneProperties;
+                if (scene != null)
+                {
+                    return DataAnswer.Of(WireValue.FromBoolean(scene.IsOutside));
+                }
+            }
+
+            return DataAnswer.Unreadable();
         }
 
         /// <summary>The database field an item's group index is stored in.</summary>

@@ -376,6 +376,14 @@ impl IGuardContext for BoundContext<'_> {
                 )
                 .map_or_else(GuardValue::unknown, GuardValue::from_boolean)
             }
+            // THE WEATHER, from the variable the group declares for it. See `core::scene`.
+            other if crate::core::scene::variable_read_by(other).is_some() => {
+                crate::core::scene::weather_answer(other, |variable| {
+                    self.symbols.variable_ref(variable)?;
+                    Some(self.get_variable(variable))
+                })
+                .expect("just matched")
+            }
             // HOW OFTEN A SUBSTANCE WAS USED, from the count variable the group declares for
             // it. A computed argument names no declared variable and reads Unknown.
             other if crate::core::substance::owns(other) => {

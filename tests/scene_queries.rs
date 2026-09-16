@@ -37,13 +37,64 @@
 
 use std::collections::BTreeSet;
 
-use lookahead_engine::bridge::WireValue;
+use lookahead_engine::bridge::{
+    DataKind, DataRequest, Questions, SnapshotWorld, WireValue, WorldSnapshot,
+};
+use lookahead_engine::core::guard_value::GuardValueKind;
 use lookahead_engine::service::Service;
+use lookahead_engine::world::ILookAheadWorld;
 
 mod common;
 
-/// The queries that ask about the scene, as the engine renders their keys.
-const SCENE_QUERIES: [&str; 3] = ["IsExterior()", "IsRaining()", "IsSnowing()"];
+/// The weather variables the two weather queries read - see `core::scene`.
+const WEATHER_VARIABLES: [&str; 2] = ["auto.is_raining", "auto.is_snowing"];
+
+/// Whether a group's questions ask about the scene: the outdoors read, or a weather variable.
+fn asks_outdoors(questions: &Questions) -> bool {
+    questions
+        .data
+        .contains(&DataRequest::set(DataKind::SceneIsOutside))
+}
+
+/// Whether a group's questions name a weather variable.
+fn asks_weather(questions: &Questions, variable: &str) -> bool {
+    questions.variables.iter().any(|asked| asked == variable)
+}
+
+/// What a save answers the three scene questions with, as a group asking them sees it:
+/// `IsExterior` through the world's data read, and each weather query's variable as sent.
+fn scene_answers(save: &str, asked: &Questions) -> [WireValue; 3] {
+    let holdings = common::fixtures::holdings_in_save(save);
+    let variables = common::fixtures::variables_sent(save, asked);
+
+    let mut snapshot = WorldSnapshot {
+        data_values: holdings.data_for(&asked.data),
+        ..Default::default()
+    };
+    snapshot
+        .resolve(asked)
+        .expect("the fixture answers the list it was asked");
+    let exterior = SnapshotWorld::new(snapshot).query("IsExterior", &[]);
+    let outdoors = if exterior.kind() == GuardValueKind::Boolean {
+        WireValue::Bool {
+            value: exterior.boolean(),
+        }
+    } else {
+        WireValue::Unknown
+    };
+    let weather = |variable: &str| {
+        variables
+            .get(variable)
+            .cloned()
+            .unwrap_or(WireValue::Unknown)
+    };
+
+    [
+        outdoors,
+        weather(WEATHER_VARIABLES[0]),
+        weather(WEATHER_VARIABLES[1]),
+    ]
+}
 
 /// The conversation whose group asks all three.
 ///
@@ -99,11 +150,23 @@ fn the_engine_asks_about_the_scene_where_the_guards_do() {
 
     let questions = engine.questions(ASKS_ALL_THREE).expect("the group builds");
 
-    for query in SCENE_QUERIES {
+    assert!(
+        asks_outdoors(&questions),
+        "conversation {ASKS_ALL_THREE}'s group does not read whether the scene is outdoors; it \
+         reads {:?}",
+        questions.data,
+    );
+    for variable in WEATHER_VARIABLES {
         assert!(
-            questions.queries.iter().any(|asked| asked == query),
-            "conversation {ASKS_ALL_THREE}'s group does not ask {query}; it asks {:?}",
-            questions.queries,
+            asks_weather(&questions, variable),
+            "conversation {ASKS_ALL_THREE}'s group does not ask for {variable}",
+        );
+    }
+    // AND NONE OF THE THREE IS RUN: each is answered from what was read.
+    for call in ["IsExterior()", "IsRaining()", "IsSnowing()"] {
+        assert!(
+            !questions.queries.iter().any(|asked| asked == call),
+            "conversation {ASKS_ALL_THREE}'s group still asks the game to run {call}",
         );
     }
 }
@@ -125,10 +188,10 @@ fn every_conversation_that_guards_on_the_scene_asks_about_it() {
             .unwrap_or_else(|why| panic!("conversation {conversation}: {why:?}"));
 
         assert!(
-            questions
-                .queries
-                .iter()
-                .any(|asked| SCENE_QUERIES.contains(&asked.as_str())),
+            asks_outdoors(&questions)
+                || WEATHER_VARIABLES
+                    .iter()
+                    .any(|variable| asks_weather(&questions, variable)),
             "conversation {conversation}'s group asks about no part of the scene",
         );
     }
@@ -324,30 +387,13 @@ fn no_committed_save_leaves_a_scene_query_unanswered() {
     let engine = Service::open(&path, None).expect("the index reads");
     let asked = engine.questions(ASKS_ALL_THREE).expect("the group builds");
 
-    let scene: Vec<String> = asked
-        .queries
-        .iter()
-        .filter(|query| SCENE_QUERIES.contains(&query.as_str()))
-        .cloned()
-        .collect();
-    assert_eq!(
-        scene.len(),
-        SCENE_QUERIES.len(),
-        "conversation {ASKS_ALL_THREE} asks {scene:?}, and this needs all three",
-    );
-
     for save in common::fixtures::committed_saves() {
-        let holdings = common::fixtures::holdings_in_save(&save);
-        let answers = holdings.answers_to(&scene);
-
-        let missing: Vec<&String> = scene
-            .iter()
-            .filter(|query| !answers.contains_key(*query))
-            .collect();
+        let answers = scene_answers(&save, &asked);
         assert!(
-            missing.is_empty(),
-            "{save}, in {}, cannot answer {missing:?}",
-            holdings.scene.area,
+            answers
+                .iter()
+                .all(|answer| matches!(answer, WireValue::Bool { .. })),
+            "{save} leaves part of the scene unanswered: {answers:?}",
         );
     }
 }
@@ -355,21 +401,21 @@ fn no_committed_save_leaves_a_scene_query_unanswered() {
 /// And what it answers is a boolean, which is what a guard compares against.
 #[test]
 fn the_scene_is_answered_as_something_a_guard_can_compare() {
-    let holdings = common::fixtures::holdings_in_save(OUTDOORS);
-
-    let answers = holdings.answers_to(&SCENE_QUERIES.map(str::to_string));
-    let says = |query: &str| match answers.get(query) {
-        Some(WireValue::Bool { value }) => *value,
-        other => panic!("{query} is answered {other:?}, and a guard compares booleans"),
+    let Some(path) = common::conversation_index() else {
+        return;
     };
+    let engine = Service::open(&path, None).expect("the index reads");
+    let asked = engine.questions(ASKS_ALL_THREE).expect("the group builds");
 
+    let says = |answer: &WireValue| match answer {
+        WireValue::Bool { value } => *value,
+        other => panic!("answered {other:?}, and a guard compares booleans"),
+    };
+    let [outdoors, raining, snowing] = scene_answers(OUTDOORS, &asked);
+
+    assert!(says(&outdoors), "{OUTDOORS} is outdoors");
     assert!(
-        says(SCENE_QUERIES[0]),
-        "{OUTDOORS} is in {}, which is outdoors",
-        holdings.scene.area,
-    );
-    assert!(
-        !says(SCENE_QUERIES[1]) && !says(SCENE_QUERIES[2]),
+        !says(&raining) && !says(&snowing),
         "{OUTDOORS} is in no weather",
     );
 }
