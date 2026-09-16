@@ -1274,6 +1274,25 @@ mod tests {
         );
     }
 
+    /// A once-only raise on an entry the save has shown has already fired, so what only it
+    /// opens stays shut - the seed carries the `once:` slot as set.
+    #[test]
+    fn a_once_raise_on_a_shown_entry_opens_nothing() {
+        let shape = || {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1)
+                    .script(r#"SetVariableValue("raised", Variable["raised"] + once(1))"#)
+                    .links(&[2]),
+                Entry::new(2).guard(r#"Variable["raised"] >= 1"#),
+            ]
+        };
+        let counter = || TestWorld::new().set_variable("raised", GuardValue::from_number(0.0));
+
+        agree(shape(), &counter(), 2, true);
+        agree(shape(), &counter().set_seen(node(1), true), 2, false);
+    }
+
     #[test]
     fn an_unguarded_chain_is_reachable_end_to_end() {
         agree(

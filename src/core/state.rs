@@ -436,10 +436,24 @@ pub fn seed_state(
         }
     }
 
-    // Seed seen slots from save
+    // WHAT THE SAVE HAS ALREADY SHOWN, which two slots read. A `seen:` slot closes an entry
+    // that shuts once seen. A `once:` slot says an entry's one-time effects have fired, and an
+    // entry the save has shown has fired them in the game's eyes: `GenericLuaFunctions.Once`
+    // is
+    //
+    //     if (SunshineNode.IsSeen(ConversationLogger.LastDialogueEntry)) return 0.0;
+    //
+    // with `LastDialogueIsSeen` captured before the entry is marked displayed, and
+    // `CostOptionNode.HandleEntry` skips a `CostOnce` charge on the same test. So a once-only
+    // increment, reputation change, payment or charge on a shown entry does nothing.
     for node in graph.nodes() {
-        if node.seen_slot >= 0 && world.is_seen(node.id) {
-            state = state.with(node.seen_slot as usize, 1);
+        if !world.is_seen(node.id) {
+            continue;
+        }
+        for slot in [node.seen_slot, node.once_slot] {
+            if slot >= 0 {
+                state = state.with(slot as usize, 1);
+            }
         }
     }
 

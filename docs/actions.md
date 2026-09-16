@@ -51,7 +51,7 @@ today; `verdict` is how that compares with the game for the writes a downstream 
 | function                           | family          | calls |  live | engine                                    | verdict                                   |
 | ---------------------------------- | --------------- | ----: | ----: | ----------------------------------------- | ----------------------------------------- |
 | SetVariableValue                   | variables       | 9,829 | 5,582 | assign or increment a variable slot       | ported; computed values wrong - de-70eo.5 |
-| ReputationGrows                    | reputation      | 1,106 |   101 | once-increment `reputation.<name>`        | ported; once ignores seen - de-70eo.4     |
+| ReputationGrows                    | reputation      | 1,106 |   101 | once-increment `reputation.<name>`        | ported                                    |
 | GainTask                           | journal         |   810 |   222 | `task:<argument>` = 1                     | divergent - de-70eo.3                     |
 | FinishTask                         | journal         |   744 |   367 | `task:<argument>` = 0                     | divergent - de-70eo.3                     |
 | XPPicoSetBool                      | variables       |   486 |    10 | assign the variable 1                     | ported                                    |
@@ -60,7 +60,7 @@ today; `verdict` is how that compares with the game for the writes a downstream 
 | GainItem                           | items           |   242 |    92 | `item:<name>` = 1                         | ported for the item; see Items            |
 | DamageVolition                     | damage          |   220 |    32 | held by decision                          | not applied - de-70eo.6                   |
 | PassTime                           | clock           |   207 |    72 | clock +15 min unless locked; plugin locks | held - de-70eo.8                          |
-| ReputationLowers                   | reputation      |   178 |    27 | once-decrement `reputation.<name>`        | ported; once ignores seen - de-70eo.4     |
+| ReputationLowers                   | reputation      |   178 |    27 | once-decrement `reputation.<name>`        | ported                                    |
 | LoseItem                           | items           |   177 |   108 | `item:<name>` = 0                         | unequip not applied - de-70eo.7           |
 | XPMinorSetBool                     | variables       |   172 |    32 | assign the variable 1                     | ported                                    |
 | HealVolition                       | damage          |   106 |     8 | held by decision                          | not applied - de-70eo.6                   |
@@ -71,7 +71,7 @@ today; `verdict` is how that compares with the game for the writes a downstream 
 | XPStandardSetBool                  | variables       |    36 |     8 | assign the variable 1                     | ported                                    |
 | GainMoneyOnce                      | money           |    28 |     0 | once-add to the money register            | excluded; ported anyway                   |
 | ShowVisCal                         | presentation    |    22 |     0 | declared, no effect                       | excluded                                  |
-| Reputation                         | reputation      |    19 |     6 | once-add `reputation.<name>`              | ported; once ignores seen - de-70eo.4     |
+| Reputation                         | reputation      |    19 |     6 | once-add `reputation.<name>`              | ported                                    |
 | NewspaperEndgame                   | endgame         |    17 |     0 | declared, no effect                       | excluded                                  |
 | XPMajorSetBool                     | variables       |    14 |     4 | assign the variable 1                     | ported                                    |
 | UseSubstanceInHand                 | substances      |    12 |     0 | held by decision                          | excluded                                  |
@@ -182,10 +182,11 @@ captures before it marks the entry displayed. Reputation, `GainMoneyOnce`, `Lose
 `HealVolition` and `HealEndurance` in conversation, and every `+ once(N)` increment go through
 it.
 
-**ENGINE.** A node whose actions fire once gets a `once:` slot, set when they fire. The slot
-starts at 0 for every crawl: `core::state::seed_state` seeds `seen:` slots from
-`ILookAheadWorld::is_seen` but not `once:` slots. So an entry the player saw on an earlier visit
-fires its once-actions again during the crawl, where the game fires nothing. de-70eo.4.
+**ENGINE.** A node whose actions fire once, or whose price is charged once, gets a `once:`
+slot, set when they fire. `core::state::seed_state` starts that slot set for an entry
+`ILookAheadWorld::is_seen` reports, so an entry the player saw on an earlier visit fires nothing
+once-only during the crawl, as in the game. Every search seeds from `seed_state`, so the
+reference walk and both symbolic passes agree on it.
 
 ## Journal
 
@@ -265,7 +266,8 @@ regained, and no crawl can forget one. 9 live call sites.
 `PlayerCharacter.Money` by the amount; the `Once` forms move it by `Once(amount)`.
 
 **ENGINE.** The money register, read by `MoneyAmount`. Ported. `GainMoneyAlways` (6) and
-`LoseMoneyAlways` (3) have live sites; the once forms have none, but their `once` is subject to
+`LoseMoneyAlways` (3) have live sites; the once forms have none. Their `once` reads the seen
+record - see
 [Once](#once).
 
 ## Damage

@@ -705,6 +705,66 @@ mod tests {
         assert!(either.reached(node(1)) && either.reached(node(2)));
     }
 
+    /// A once-only effect on an entry the save has already shown does not fire again.
+    ///
+    /// 1 raises a counter once, and 2 opens only on it. Unseen, the raise happens and 2 is
+    /// reachable; seen, the game's `Once` returns 0 and 2 stays shut.
+    #[test]
+    fn a_once_effect_on_a_shown_entry_does_not_fire() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(
+                Entry::new(1)
+                    .script(r#"SetVariableValue("raised", Variable["raised"] + once(1))"#)
+                    .links(&[2]),
+            )
+            .add(Entry::new(2).guard(r#"Variable["raised"] >= 1"#))
+            .build();
+
+        // A NUMBER, as the database declares a counter: an unread variable reads as a flag,
+        // and a flag compared against a number is undecided, which would open 2 either way.
+        let counter = || TestWorld::new().set_variable("raised", GuardValue::from_number(0.0));
+
+        let unseen = walk(&graph, node(0), &counter(), COUNTER_CAP);
+        assert!(
+            unseen.reached(node(2)),
+            "an unshown entry's once effect fires"
+        );
+
+        let shown = counter().set_seen(node(1), true);
+        let seen = walk(&graph, node(0), &shown, COUNTER_CAP);
+        assert!(
+            !seen.reached(node(2)),
+            "a shown entry's once effect has already fired"
+        );
+    }
+
+    /// A once-only price on an entry the save has shown is not charged again.
+    #[test]
+    fn a_once_price_on_a_shown_entry_is_not_charged() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).cost(5).cost_once().links(&[2]))
+            .add(Entry::new(2).cost(5).links(&[3]))
+            .add(Entry::new(3))
+            .build();
+
+        let unseen = walk(
+            &graph,
+            node(0),
+            &TestWorld::new().with_money(5),
+            COUNTER_CAP,
+        );
+        assert!(!unseen.reached(node(3)), "paying both prices needs ten");
+
+        let shown = TestWorld::new().with_money(5).set_seen(node(1), true);
+        let seen = walk(&graph, node(0), &shown, COUNTER_CAP);
+        assert!(
+            seen.reached(node(3)),
+            "the first price was paid on the earlier visit"
+        );
+    }
+
     #[test]
     fn a_check_already_resolved_is_closed() {
         let graph = GraphBuilder::new()
