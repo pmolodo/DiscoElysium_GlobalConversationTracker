@@ -75,7 +75,6 @@ namespace GlobalConversationTracker.LookAhead.Tests
             snapshot.Queries.Add("is_indoors", Text("no"));
             snapshot.QueryValues.Add(Text("raining"));
             snapshot.Items.Add("FALN_sneakers");
-            snapshot.Tasks.Add("find_the_body");
             snapshot.Thoughts.Add("the_precarious_world");
             return snapshot;
         }
@@ -149,7 +148,6 @@ namespace GlobalConversationTracker.LookAhead.Tests
             questions.Variables.Add("kim_trust");
             questions.Queries.Add("is_indoors");
             questions.Items.Add("FALN_sneakers");
-            questions.Tasks.Add("find_the_body");
             questions.Thoughts.Add("the_precarious_world");
             questions.Checks.Add(Node(9, 50));
             questions.Entries.AddRange(new[] { Node(9, 0), Node(9, 1) });

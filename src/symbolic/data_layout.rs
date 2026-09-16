@@ -27,9 +27,7 @@ use crate::core::clock::ClockReading;
 use std::collections::{HashMap, HashSet};
 
 use crate::core::guard::{Guard, GuardExpression, GuardRef};
-use crate::core::state::{
-    ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, StateSymbols, TASK_PREFIX, THOUGHT_PREFIX,
-};
+use crate::core::state::{ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, StateSymbols, THOUGHT_PREFIX};
 use crate::core::types::DialogueNodeId;
 use crate::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
@@ -314,22 +312,16 @@ impl DataLayout {
 
         // THE SEED MUST BE RECOVERABLE FROM THE VARIABLE'S OWN VALUE, because the rewriting
         // has to reproduce exactly what the slot would have started at. `seed_state` fills
-        // these five kinds from somewhere else - the inventory, the journal, the thought
-        // cabinet, and the entries the save records as seen - so a rebasing of one of them
+        // these four kinds from somewhere else - the inventory, the thought cabinet, and the
+        // entries the save records as seen or once-fired - so a rebasing of one of them
         // would be rebasing by the wrong number. None of them is a counter in this content;
         // barring them costs nothing and removes the whole question.
         let symbols = graph.symbols();
         let elsewhere = |slot: usize| {
             symbols.name_of(slot).is_some_and(|name| {
-                [
-                    ITEM_PREFIX,
-                    TASK_PREFIX,
-                    THOUGHT_PREFIX,
-                    ONCE_PREFIX,
-                    SEEN_PREFIX,
-                ]
-                .iter()
-                .any(|prefix| name.starts_with(prefix))
+                [ITEM_PREFIX, THOUGHT_PREFIX, ONCE_PREFIX, SEEN_PREFIX]
+                    .iter()
+                    .any(|prefix| name.starts_with(prefix))
             })
         };
 
@@ -856,7 +848,6 @@ impl DataLayout {
                     // prefix.
                     let prefix = match function {
                         "CheckItem" => Some(ITEM_PREFIX),
-                        "IsTaskActive" => Some(TASK_PREFIX),
                         "IsTHCPresent" => Some(THOUGHT_PREFIX),
                         // FlagSet(name) and FlagNotSet(name) are Variable[name] written
                         // another way, so both spend a slot on the same name.

@@ -263,7 +263,6 @@ fn stage(
                 // `every_question_the_suites_ask_is_answered_offline` fails if a group asks one.
                 data_values: holdings.data_for(&asked.data),
                 items: holdings.items,
-                tasks: holdings.tasks,
                 thoughts: holdings.thoughts,
                 // FROM THE SAVE, and the difference between a run and no run. An ordinary
                 // option is often guarded on a dialogue variable - 451:86 is guarded on

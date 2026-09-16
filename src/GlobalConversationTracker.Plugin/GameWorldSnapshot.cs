@@ -72,7 +72,6 @@ namespace GlobalConversationTracker
             }
 
             FillMembers(questions.Items, "CheckItem", world.Items);
-            FillMembers(questions.Tasks, "IsTaskActive", world.Tasks);
             FillMembers(questions.Thoughts, "IsTHCPresent", world.Thoughts);
 
             foreach (DataRequest ask in questions.Data)

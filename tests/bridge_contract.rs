@@ -35,7 +35,7 @@ mod menu_profile;
 const CHECKABLE: [i32; 3] = [1123, 484, 1066];
 
 /// For the key agreement, which does no searching and so can afford the groups that
-/// actually ask things: 631 and 368 between them cover items, tasks, thoughts, the clock
+/// actually ask things: 631 and 368 between them cover items, thoughts, the clock
 /// and several hundred world queries. A key that did not match would be missed entirely on
 /// a group with one query in it.
 const RICH: [i32; 3] = [631, 368, 14];
@@ -52,12 +52,11 @@ fn the_engine_names_questions_the_snapshot_can_answer() {
 
         println!(
             "{conversation}: {} conversations, {} variables, {} queries, {} items, \
-             {} tasks, {} thoughts, {} checks, {} entries",
+             {} thoughts, {} checks, {} entries",
             questions.conversations.len(),
             questions.variables.len(),
             questions.queries.len(),
             questions.items.len(),
-            questions.tasks.len(),
             questions.thoughts.len(),
             questions.checks.len(),
             questions.entries.len(),
@@ -100,7 +99,7 @@ fn the_engine_names_questions_the_snapshot_can_answer() {
 /// ## What is skipped, and why it is not a list
 ///
 /// Plenty of calls are answered from somewhere other than the query map: the subject-taking
-/// three from items, tasks and thoughts, a flag from its variable, a reputation question
+/// two from items and thoughts, a flag from its variable, a reputation question
 /// from the whole range it compares, and an action called from a guard from nothing at all,
 /// because running it would write to the player's save.
 ///

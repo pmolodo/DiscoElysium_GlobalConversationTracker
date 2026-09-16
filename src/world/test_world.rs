@@ -16,7 +16,6 @@ pub struct TestWorld {
     pub red_checks_fail: bool,
     pub variables: HashMap<String, GuardValue>,
     pub items: HashMap<String, bool>,
-    pub tasks: HashMap<String, bool>,
     /// Thoughts already in the cabinet, which is what `IsTHCPresent` asks about.
     pub thoughts: HashMap<String, bool>,
     pub check_results: HashMap<DialogueNodeId, Ternary>,
@@ -30,9 +29,9 @@ pub struct TestWorld {
     ///
     /// Only the name is keyed, not the arguments. Every query worth answering this way is
     /// one the search cannot change and that takes no argument - IsKimHere, IsCunoInParty
-    /// and the rest of the party and character facts. The three that DO take an argument
-    /// and that a search's own actions move - CheckItem, IsTaskActive and IsTHCPresent -
-    /// are answered from `items`, `tasks` and `thoughts` instead.
+    /// and the rest of the party and character facts. The two that DO take an argument
+    /// and that a search's own actions move - CheckItem and IsTHCPresent - are answered
+    /// from `items` and `thoughts` instead.
     pub queries: HashMap<String, GuardValue>,
 }
 
@@ -84,11 +83,6 @@ impl TestWorld {
         self
     }
 
-    pub fn set_task(mut self, name: &str, active: bool) -> Self {
-        self.tasks.insert(name.to_string(), active);
-        self
-    }
-
     pub fn set_thought(mut self, name: &str, gained: bool) -> Self {
         self.thoughts.insert(name.to_string(), gained);
         self
@@ -134,9 +128,6 @@ impl ILookAheadWorld for TestWorld {
     }
     fn initially_has_item(&self, name: &str) -> bool {
         self.items.get(name).copied().unwrap_or(false)
-    }
-    fn initially_task_active(&self, name: &str) -> bool {
-        self.tasks.get(name).copied().unwrap_or(false)
     }
     fn initially_has_thought(&self, name: &str) -> bool {
         self.thoughts.get(name).copied().unwrap_or(false)

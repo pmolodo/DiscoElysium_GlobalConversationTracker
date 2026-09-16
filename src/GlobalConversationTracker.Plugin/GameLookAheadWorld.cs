@@ -86,12 +86,6 @@ namespace GlobalConversationTracker
         }
 
         /// <inheritdoc/>
-        public bool IsTaskActive(string name)
-        {
-            return Evaluate("IsTaskActive(\"" + name + "\")").AsCondition() == Ternary.True;
-        }
-
-        /// <inheritdoc/>
         public GuardValue Query(string name, IReadOnlyList<GuardValue> arguments)
         {
             string? call = Render(name, arguments);

@@ -451,10 +451,6 @@ impl ILookAheadWorld for SaveWorld {
         false
     }
 
-    fn initially_task_active(&self, _name: &str) -> bool {
-        false
-    }
-
     /// What the save says is in the thought cabinet.
     ///
     /// Answered here rather than in [`Self::query`] because `IsTHCPresent` is now

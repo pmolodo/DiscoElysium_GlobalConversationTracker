@@ -99,7 +99,7 @@ message WireValue {
 // names are as closed a set as this is, 259 and 53 of them in the shipped database. They are
 // DERIVED GAME DATA, versioned with the content rather than with this protocol, so putting
 // them here would mean regenerating the wire whenever the game changed. The names already
-// cross as strings in Questions.items, .tasks and .thoughts, which are the same names again.
+// cross as strings in Questions.items and .thoughts, which are the same names again.
 // A kind, by contrast, is this protocol's own vocabulary and nothing else defines it.
 //
 // A value this build does not know still decodes, as the raw number, so a newer engine
@@ -202,7 +202,7 @@ message WorldSnapshot {
   repeated WireValue query_values = 8;
 
   repeated string items = 9;
-  repeated string tasks = 10;
+  reserved 10;
   repeated string thoughts = 11;
 
   // Entries whose skill check the plugin says PASSES.
@@ -372,7 +372,7 @@ message Questions {
   // World queries, by the key their answers must come back under.
   repeated string queries = 3;
   repeated string items = 4;
-  repeated string tasks = 5;
+  reserved 5;
   repeated string thoughts = 6;
   // Entries carrying a skill check, whose outcome the world decides.
   repeated NodeRef checks = 7;

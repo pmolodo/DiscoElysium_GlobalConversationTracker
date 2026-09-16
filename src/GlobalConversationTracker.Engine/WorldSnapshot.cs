@@ -81,9 +81,6 @@ namespace GlobalConversationTracker.Engine
         /// <summary>Items held when the crawl starts.</summary>
         public ISet<string> Items { get; } = new HashSet<string>();
 
-        /// <summary>Journal tasks active when the crawl starts.</summary>
-        public ISet<string> Tasks { get; } = new HashSet<string>();
-
         /// <summary>Thoughts in the cabinet when the crawl starts.</summary>
         public ISet<string> Thoughts { get; } = new HashSet<string>();
 

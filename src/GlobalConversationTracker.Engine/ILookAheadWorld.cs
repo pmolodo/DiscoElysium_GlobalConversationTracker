@@ -50,10 +50,6 @@ namespace GlobalConversationTracker.Engine
         /// <param name="name">The item's name.</param>
         bool HasItem(string name);
 
-        /// <summary>Whether a task is currently active.</summary>
-        /// <param name="name">The task's name.</param>
-        bool IsTaskActive(string name);
-
         /// <summary>
         /// The result of a world query the crawl cannot change, such as
         /// <c>IsKimHere()</c> or <c>DayCount()</c>.

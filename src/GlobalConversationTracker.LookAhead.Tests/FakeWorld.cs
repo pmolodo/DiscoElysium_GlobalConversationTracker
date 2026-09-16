@@ -10,7 +10,6 @@ namespace GlobalConversationTracker.LookAhead.Tests
         private readonly Dictionary<string, GuardValue> _variables =
             new Dictionary<string, GuardValue>();
         private readonly HashSet<string> _items = new HashSet<string>();
-        private readonly HashSet<string> _tasks = new HashSet<string>();
         private readonly Dictionary<string, GuardValue> _queries =
             new Dictionary<string, GuardValue>();
         private readonly Dictionary<DialogueNodeId, Ternary> _checks =
@@ -71,12 +70,6 @@ namespace GlobalConversationTracker.LookAhead.Tests
             return this;
         }
 
-        public FakeWorld WithTask(string name)
-        {
-            _tasks.Add(name);
-            return this;
-        }
-
         public FakeWorld WithQuery(string name, bool value)
         {
             _queries[name] = GuardValue.FromBoolean(value);
@@ -105,11 +98,6 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public bool HasItem(string name)
         {
             return _items.Contains(name);
-        }
-
-        public bool IsTaskActive(string name)
-        {
-            return _tasks.Contains(name);
         }
 
         public GuardValue Query(string name, IReadOnlyList<GuardValue> arguments)

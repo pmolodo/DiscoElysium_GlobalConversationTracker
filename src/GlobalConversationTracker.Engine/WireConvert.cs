@@ -185,7 +185,6 @@ namespace GlobalConversationTracker.Engine
             }
 
             written.Items.AddRange(world.Items);
-            written.Tasks.AddRange(world.Tasks);
             written.Thoughts.AddRange(world.Thoughts);
             written.FailedWhiteChecks.AddRange(world.FailedWhiteChecks);
             return written;
@@ -279,7 +278,6 @@ namespace GlobalConversationTracker.Engine
                 questions.Variables.ToArray(),
                 questions.Queries.ToArray(),
                 questions.Items.ToArray(),
-                questions.Tasks.ToArray(),
                 questions.Thoughts.ToArray(),
                 questions.Checks.Select(Read).ToArray(),
                 questions.Entries.Select(Read).ToArray(),

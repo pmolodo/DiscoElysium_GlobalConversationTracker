@@ -100,7 +100,8 @@ Every guard is compiled or evaluated against a `BoundContext` (`src/world/mod.rs
 
 1. **Answered in `BoundContext::query`**, from search state where the search can move the
    answer and from the world's starting value where it cannot: the clock, flags, money, the
-   three slot-backed sets, reputation, item groups, weather and substances.
+   two slot-backed sets, reputation, item groups, weather and substances. The journal's
+   `IsTaskActive` never reaches it: the index rewrites it into variables first.
 2. **Answered in `SnapshotWorld::query`** (`src/bridge.rs`), from a `DataKind` the plugin
    read: party, equipment and clothing, cabinet states, damage, game mode, scene, inventory
    tabs.
@@ -435,8 +436,8 @@ A question is only exact from a starting value while nothing along the search pa
 it reads. Three positions, per function above:
 
 - **Tracked.** The answer is read from search state, which the search's own actions write: the
-  three slot-backed sets, `CheckItemGroup`'s members, reputation, flags, money, substance
-  counts, weather, and every `Variable[...]` read.
+  two slot-backed sets, the journal, `CheckItemGroup`'s members, reputation, flags, money,
+  substance counts, weather, and every `Variable[...]` read.
 - **Constant.** No dialogue action can write the data: game mode and the day - and the cabinet
   states while the clock is locked, since only passing time bakes a thought.
 - **Held.** Dialogue actions CAN write the data, and the engine answers from the starting value

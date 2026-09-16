@@ -18,7 +18,7 @@ namespace GlobalConversationTracker.Automation.Tests
         private const string Agreeing =
             "[Message:GlobalConversationTracker] Snapshot agreement: conversation 631: "
             + "money and clock agree, 306 variables (0 differ), 8 CheckItem (0 differ), "
-            + "2 IsTaskActive (0 differ), 3 IsTHCPresent (0 differ), 430 checks (0 differ), "
+            + "3 IsTHCPresent (0 differ), 430 checks (0 differ), "
             + "4514 entries (0 differ), 13 queries (13 answered)\n";
 
         [Fact]

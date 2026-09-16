@@ -144,8 +144,6 @@ namespace GlobalConversationTracker
             counts.Add(CompareMembership(
                 questions.Items, "CheckItem", world.Items, managed, differences));
             counts.Add(CompareMembership(
-                questions.Tasks, "IsTaskActive", world.Tasks, managed, differences));
-            counts.Add(CompareMembership(
                 questions.Thoughts, "IsTHCPresent", world.Thoughts, managed, differences));
 
             differing = 0;
@@ -204,8 +202,7 @@ namespace GlobalConversationTracker
         /// Compares one membership set, asking the managed world the same query by name.
         /// </summary>
         /// <remarks>
-        /// Through <see cref="GameLookAheadWorld.Query"/> rather than its <c>HasItem</c> and
-        /// <c>IsTaskActive</c>, so that the managed world RENDERS the call itself. That is
+        /// Through <see cref="GameLookAheadWorld.Query"/> rather than its <c>HasItem</c>, so that the managed world RENDERS the call itself. That is
         /// the comparison worth making here: both sides turn a name into a Lua call, by
         /// different code, and if the two renderings ever disagreed this is where it would
         /// show.

@@ -87,17 +87,14 @@ mod tests {
         let item = symbols.item("sword");
         assert_eq!(item, 1);
 
-        let task = symbols.task("find_kim");
-        assert_eq!(task, 2);
-
         let node = DialogueNodeId::new(1, 2);
         let once = symbols.once(node);
-        assert_eq!(once, 3);
+        assert_eq!(once, 2);
 
         let seen = symbols.seen(node);
-        assert_eq!(seen, 4);
+        assert_eq!(seen, 3);
 
-        assert_eq!(symbols.count(), 5);
+        assert_eq!(symbols.count(), 4);
     }
 
     #[test]

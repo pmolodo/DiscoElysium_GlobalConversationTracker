@@ -6,7 +6,7 @@ use crate::core::clock::ClockTime;
 use crate::core::guard::IGuardContext;
 use crate::core::guard_value::GuardValue;
 use crate::core::state::LookAheadState;
-use crate::core::state::{ITEM_PREFIX, TASK_PREFIX, THOUGHT_PREFIX};
+use crate::core::state::{ITEM_PREFIX, THOUGHT_PREFIX};
 use crate::core::state::{StateSymbols, VariableRef};
 use crate::core::types::{DialogueNodeId, Ternary};
 
@@ -86,11 +86,6 @@ pub trait ILookAheadWorld: Send + Sync {
     /// tracked item reports the starting inventory forever and the search stops seeing its
     /// own purchases.
     fn initially_has_item(&self, name: &str) -> bool;
-
-    /// Whether a journal task is active WHEN THE SEARCH STARTS.
-    ///
-    /// The same two callers and the same restriction as [`Self::initially_has_item`].
-    fn initially_task_active(&self, name: &str) -> bool;
 
     /// Whether a thought is in the cabinet WHEN THE SEARCH STARTS.
     ///
@@ -305,17 +300,14 @@ impl IGuardContext for BoundContext<'_> {
                     .map_or_else(|| self.world.money(), |state| state.money())
                     as f64,
             ),
-            // The three questions the search's own actions can change the answer to:
-            // inventory, journal, thought cabinet. Each is answered from a slot where
-            // this group moves the subject and from the world where it does not.
+            // Two questions the search's own actions can change the answer to: inventory
+            // and thought cabinet. Each is answered from a slot where this group moves the
+            // subject and from the world where it does not. The journal is not here: the
+            // index rewrites `IsTaskActive` into the variables it reads - see
+            // `index::journal`.
             "CheckItem" => {
                 self.tracked_or_world(ITEM_PREFIX, name, arguments, &|world, subject| {
                     world.initially_has_item(subject)
-                })
-            }
-            "IsTaskActive" => {
-                self.tracked_or_world(TASK_PREFIX, name, arguments, &|world, subject| {
-                    world.initially_task_active(subject)
                 })
             }
             "IsTHCPresent" => {

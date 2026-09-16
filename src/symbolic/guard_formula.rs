@@ -35,7 +35,7 @@ use oxidd::bdd::BDDFunction;
 
 use crate::core::guard::{Arguments, Guard, GuardExpression, GuardRef};
 use crate::core::guard_value::{GuardValue, GuardValueKind};
-use crate::core::state::{ITEM_PREFIX, TASK_PREFIX, THOUGHT_PREFIX};
+use crate::core::state::{ITEM_PREFIX, THOUGHT_PREFIX};
 use crate::core::types::{DialogueNodeId, Ternary};
 use crate::symbolic::data_layout::DeltaSlot;
 use crate::symbolic::vars::DataVars;
@@ -523,7 +523,6 @@ impl<'a> GuardCompiler<'a> {
                                 Some(world) => {
                                     let held = match prefix {
                                         ITEM_PREFIX => world.initially_has_item(&subject),
-                                        TASK_PREFIX => world.initially_task_active(&subject),
                                         _ => world.initially_has_thought(&subject),
                                     };
                                     let f = if held { self.top() } else { self.bottom() };
@@ -1294,11 +1293,10 @@ impl<'a> GuardCompiler<'a> {
     /// One list, read by both the compiler and `search_can_change`, because a query
     /// answered from a slot in one place and from the world in the other would give two
     /// different answers for the same state. `BoundContext::query` intercepts exactly
-    /// these three.
+    /// these two.
     fn slot_backed_query(name: &str) -> Option<&'static str> {
         match name {
             "CheckItem" => Some(ITEM_PREFIX),
-            "IsTaskActive" => Some(TASK_PREFIX),
             "IsTHCPresent" => Some(THOUGHT_PREFIX),
             _ => None,
         }

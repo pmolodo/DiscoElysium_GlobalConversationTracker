@@ -143,11 +143,10 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
     let unanswered: Vec<&String> = asked.queries.iter().collect();
 
     println!(
-        "\nthe group asks {} variables, {} queries, {} items, {} tasks and {} thoughts",
+        "\nthe group asks {} variables, {} queries, {} items and {} thoughts",
         asked.variables.len(),
         asked.queries.len(),
         asked.items.len(),
-        asked.tasks.len(),
         asked.thoughts.len(),
     );
     println!(
@@ -206,7 +205,6 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
             // WHAT THE ENGINE ASKED TO HAVE READ, positionally, as the plugin sends it.
             data_values: holdings.data_for(&asked.data),
             items: holdings.items,
-            tasks: holdings.tasks,
             thoughts: holdings.thoughts,
             variables: fixtures::variables_sent(&scenario.save, &asked),
             // WHAT THIS SAVE HAS ALREADY SHOWN, which the engine seeds its seen slots from

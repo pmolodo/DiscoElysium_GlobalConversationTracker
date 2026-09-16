@@ -186,7 +186,6 @@ namespace GlobalConversationTracker.LookAhead.Tests
             Assert.Equal("jam.asked", Assert.Single(questions.Variables));
             Assert.Equal("IsKimHere()", Assert.Single(questions.Queries));
             Assert.Equal("badge", Assert.Single(questions.Items));
-            Assert.Empty(questions.Tasks);
             Assert.Equal("jamais_vu", Assert.Single(questions.Thoughts));
             Assert.Equal(new NodeRef(631, 12), Assert.Single(questions.Checks));
             Assert.Equal(new NodeRef(631, 0), Assert.Single(questions.Entries));

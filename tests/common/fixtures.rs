@@ -1192,9 +1192,6 @@ fn document_member(save: &str, suffix: &str, member_name: &str) -> serde_json::V
 ///   they reached and then gave up - `CharacterThoughts.ForgetThought` REMOVES it from
 ///   `gainedThoughts` as it sets that state. So presence is every state but those two, and
 ///   counting `FORGOTTEN` as present answers the opposite of what the game answers.
-/// - ACTIVE, for a task, is acquired and not resolved. The journal records when each was
-///   taken and when each was closed, and a task closed at a time is no longer active; one
-///   acquired with a null resolution is.
 ///
 /// WHAT IS HELD IS ANSWERED FROM THREE RECORDS, because the game answers from three.
 /// `CharacterItems.IsItemGained` - which is all `CheckItem` does - looks the item up and
@@ -1229,8 +1226,6 @@ pub struct Holdings {
     /// answers from. PROFILE STATE, which no save records, so it is not read from the save -
     /// it starts at [`HARDCORE_PLAYTHROUGH_COMPLETED`] and a scenario may fix it otherwise.
     pub hardcore_playthrough_completed: bool,
-    /// Journal tasks taken and not yet closed.
-    pub tasks: HashSet<String>,
     /// Thoughts the cabinet has reached, whatever state they are in.
     pub thoughts: HashSet<String>,
     /// What state each of those is in, which some guards ask after by name.
@@ -1355,11 +1350,10 @@ impl Holdings {
 ///
 /// # Panics
 ///
-/// If the save's chain carries no inventory, cabinet, journal, character or clock. Every
+/// If the save's chain carries no inventory, cabinet, character or clock. Every
 /// one of them is written by the game into every save.
 pub fn holdings_in_save(save: &str) -> Holdings {
     let cabinet = world_state(save, "thoughtCabinetState");
-    let journal = world_state(save, "aquiredJournalTasks");
     let character = world_state(save, "playerCharacter");
     let clock = world_state(save, "sunshineClockTimeHolder");
 
@@ -1392,7 +1386,6 @@ pub fn holdings_in_save(save: &str) -> Holdings {
             .as_str()
             .unwrap_or_else(|| panic!("{save} records no game mode"))
             .to_string(),
-        tasks: active_tasks(&journal),
         // WHAT gainedThoughts HOLDS, which is neither of the two states that mean the
         // player does not have the thought: never reached, or reached and given up.
         thoughts: thought_states
@@ -1779,47 +1772,6 @@ fn thought_states(cabinet: &serde_json::Value) -> HashMap<String, String> {
             ))
         })
         .collect()
-}
-
-/// The tasks taken and not closed, with their subtasks.
-///
-/// SUBTASKS COUNT AS TASKS, because the journal keeps them under their parent and a guard
-/// asks after either by the same name. A subtask's own resolution is not recorded
-/// separately, so it is active while its parent is.
-fn active_tasks(journal: &serde_json::Value) -> HashSet<String> {
-    let resolved = |name: &String| {
-        !journal["TaskResolutions"]
-            .get(name)
-            .is_none_or(serde_json::Value::is_null)
-    };
-
-    let mut active: HashSet<String> = journal["TaskAquisitions"]
-        .as_object()
-        .into_iter()
-        .flatten()
-        .map(|(name, _)| name.clone())
-        .filter(|name| !resolved(name))
-        .collect();
-
-    for (parent, children) in journal["SubtaskAquisitions"]
-        .as_object()
-        .into_iter()
-        .flatten()
-    {
-        if resolved(parent) {
-            continue;
-        }
-
-        active.extend(
-            children
-                .as_object()
-                .into_iter()
-                .flatten()
-                .map(|(name, _)| name.clone()),
-        );
-    }
-
-    active
 }
 
 /// One of a save folder's top-level members, by the suffix it is named with.

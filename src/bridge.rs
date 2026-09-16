@@ -49,7 +49,7 @@ use crate::core::guard::{Guard, GuardExpression};
 use crate::core::guard_value::{GuardValue, GuardValueKind};
 use crate::core::inventory_tabs;
 use crate::core::item_group;
-use crate::core::state::{ITEM_PREFIX, TASK_PREFIX, THOUGHT_PREFIX, VariableRef};
+use crate::core::state::{ITEM_PREFIX, THOUGHT_PREFIX, VariableRef};
 use crate::core::types::StartBranch;
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, Ternary};
 use crate::formats::runs;
@@ -334,9 +334,6 @@ pub struct WorldSnapshot {
     /// Items held when the search starts.
     #[serde(default)]
     pub items: HashSet<String>,
-    /// Journal tasks active when the search starts.
-    #[serde(default)]
-    pub tasks: HashSet<String>,
     /// Thoughts in the cabinet when the search starts.
     #[serde(default)]
     pub thoughts: HashSet<String>,
@@ -516,10 +513,6 @@ impl ILookAheadWorld for Unlocked<'_> {
 
     fn initially_has_item(&self, name: &str) -> bool {
         self.inner.initially_has_item(name)
-    }
-
-    fn initially_task_active(&self, name: &str) -> bool {
-        self.inner.initially_task_active(name)
     }
 
     fn initially_has_thought(&self, name: &str) -> bool {
@@ -708,10 +701,6 @@ impl ILookAheadWorld for SnapshotWorld {
 
     fn initially_has_item(&self, name: &str) -> bool {
         self.snapshot.items.contains(name)
-    }
-
-    fn initially_task_active(&self, name: &str) -> bool {
-        self.snapshot.tasks.contains(name)
     }
 
     fn initially_has_thought(&self, name: &str) -> bool {
@@ -904,8 +893,8 @@ pub struct DataRequest {
     ///
     /// A STRING, though the possible values are as closed a set as [`DataKind`] is: item and
     /// thought names are DERIVED GAME DATA, versioned with the content rather than with this
-    /// crate, and they already cross as strings in [`Questions::items`], [`Questions::tasks`]
-    /// and [`Questions::thoughts`]. A kind is this protocol's own vocabulary, which is what
+    /// crate, and they already cross as strings in [`Questions::items`] and
+    /// [`Questions::thoughts`]. A kind is this protocol's own vocabulary, which is what
     /// makes it an enum and this not.
     #[serde(default)]
     pub subject: String,
@@ -1007,8 +996,6 @@ pub struct Questions {
     pub queries: Vec<String>,
     /// Items some guard asks about or the search is seeded from.
     pub items: Vec<String>,
-    /// Journal tasks some guard asks about or the search is seeded from.
-    pub tasks: Vec<String>,
     /// Thoughts some guard asks about or the search is seeded from.
     pub thoughts: Vec<String>,
     /// Entries carrying a skill check, whose outcome the world decides.
@@ -1369,7 +1356,6 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
     };
     let mut queries = HashSet::new();
     let mut items = HashSet::new();
-    let mut tasks = HashSet::new();
     let mut thoughts = HashSet::new();
     let mut data = HashSet::new();
 
@@ -1378,7 +1364,6 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
             &node.guard,
             &mut queries,
             &mut items,
-            &mut tasks,
             &mut thoughts,
             &mut data,
         );
@@ -1390,15 +1375,13 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
     }
 
     // EVERY SUBJECT THE SEARCH IS SEEDED FROM, and not only what a guard names. `seed_state`
-    // reads each slot from the world before the first state exists, and an item, task or
+    // reads each slot from the world before the first state exists, and an item or
     // thought an action moves has a slot whether or not a guard mentions it. One left out
     // of the questions is never answered by the plugin, and reads as not held.
     let symbols = graph.symbols();
     for name in (0..symbols.count()).filter_map(|slot| symbols.name_of(slot)) {
         if let Some(item) = name.strip_prefix(ITEM_PREFIX) {
             items.insert(item.to_string());
-        } else if let Some(task) = name.strip_prefix(TASK_PREFIX) {
-            tasks.insert(task.to_string());
         } else if let Some(thought) = name.strip_prefix(THOUGHT_PREFIX) {
             thoughts.insert(thought.to_string());
         }
@@ -1416,7 +1399,6 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
     // answer onto the wrong question.
     found.queries = sorted(queries);
     found.items = sorted(items);
-    found.tasks = sorted(tasks);
     found.thoughts = sorted(thoughts);
     // SORTED for the same reason the rest are: the answers come back positionally, so the
     // order is the agreement between the two sides.
@@ -1443,7 +1425,7 @@ fn sorted(names: HashSet<String>) -> Vec<String> {
 
 /// Walks one guard, collecting what it asks the world.
 ///
-/// The three subject-taking queries are pulled out by subject rather than left as opaque
+/// The two subject-taking queries are pulled out by subject rather than left as opaque
 /// calls, because the engine answers those from search state when the group moves them -
 /// `BoundContext::query` intercepts exactly these - and the plugin needs to supply the
 /// STARTING value for each, not an answer to the call.
@@ -1451,7 +1433,6 @@ fn collect(
     guard: &Guard,
     queries: &mut HashSet<String>,
     items: &mut HashSet<String>,
-    tasks: &mut HashSet<String>,
     thoughts: &mut HashSet<String>,
     data: &mut HashSet<DataRequest>,
 ) {
@@ -1470,9 +1451,6 @@ fn collect(
                 match (name, subject) {
                     ("CheckItem", Some(subject)) => {
                         items.insert(subject);
-                    }
-                    ("IsTaskActive", Some(subject)) => {
-                        tasks.insert(subject);
                     }
                     ("IsTHCPresent", Some(subject)) => {
                         thoughts.insert(subject);
@@ -1603,7 +1581,7 @@ fn collect(
 /// against something simpler: `tests/bridge_contract.rs` puts one world through JSON and
 /// asks the same question without it, over real groups, and requires the same answer; the
 /// in-game suites check snapshot agreement per suite and report zero differences across
-/// variables, items, tasks, checks and entries; and the wire's shape is pinned by
+/// variables, items, checks and entries; and the wire's shape is pinned by
 /// `tests/request_size.rs`.
 ///
 /// TWO THINGS ABOUT THIS ENGINE ARE STILL OPEN, and a reader chasing a failure should know
@@ -2884,15 +2862,13 @@ mod tests {
         assert_eq!(found.variables, vec!["jam.asked".to_string()]);
     }
 
-    /// The three the engine answers from search state are pulled out by SUBJECT, because
+    /// The two the engine answers from search state are pulled out by SUBJECT, because
     /// what the plugin must supply for them is a starting value rather than an answer.
     #[test]
     fn the_slot_backed_queries_are_asked_for_by_subject() {
-        let found =
-            asked(r#"CheckItem("badge") and IsTaskActive("TASK.x") and IsTHCPresent("jamais_vu")"#);
+        let found = asked(r#"CheckItem("badge") and IsTHCPresent("jamais_vu")"#);
 
         assert_eq!(found.items, vec!["badge".to_string()]);
-        assert_eq!(found.tasks, vec!["TASK.x".to_string()]);
         assert_eq!(found.thoughts, vec!["jamais_vu".to_string()]);
         assert!(
             found.queries.is_empty(),

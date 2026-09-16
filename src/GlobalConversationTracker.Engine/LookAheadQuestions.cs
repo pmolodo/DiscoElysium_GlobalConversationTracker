@@ -27,7 +27,6 @@ namespace GlobalConversationTracker.Engine
             IReadOnlyList<string> variables,
             IReadOnlyList<string> queries,
             IReadOnlyList<string> items,
-            IReadOnlyList<string> tasks,
             IReadOnlyList<string> thoughts,
             IReadOnlyList<NodeRef> checks,
             IReadOnlyList<NodeRef> entries,
@@ -37,7 +36,6 @@ namespace GlobalConversationTracker.Engine
             Variables = variables;
             Queries = queries;
             Items = items;
-            Tasks = tasks;
             Thoughts = thoughts;
             Checks = checks;
             Entries = entries;
@@ -60,9 +58,6 @@ namespace GlobalConversationTracker.Engine
 
         /// <summary>Items some guard asks about, by name.</summary>
         public IReadOnlyList<string> Items { get; }
-
-        /// <summary>Journal tasks some guard asks about, by name.</summary>
-        public IReadOnlyList<string> Tasks { get; }
 
         /// <summary>Thoughts some guard asks about, by name.</summary>
         public IReadOnlyList<string> Thoughts { get; }
@@ -91,7 +86,6 @@ namespace GlobalConversationTracker.Engine
         /// <param name="variables">Dialogue variables read by some guard.</param>
         /// <param name="queries">World queries, by the key their answers come back under.</param>
         /// <param name="items">Items some guard asks about.</param>
-        /// <param name="tasks">Journal tasks some guard asks about.</param>
         /// <param name="thoughts">Thoughts some guard asks about.</param>
         /// <param name="checks">Entries carrying a skill check.</param>
         /// <param name="entries">Every entry, because any may have been seen.</param>
@@ -101,14 +95,13 @@ namespace GlobalConversationTracker.Engine
             IReadOnlyList<string> variables,
             IReadOnlyList<string> queries,
             IReadOnlyList<string> items,
-            IReadOnlyList<string> tasks,
             IReadOnlyList<string> thoughts,
             IReadOnlyList<NodeRef> checks,
             IReadOnlyList<NodeRef> entries,
             IReadOnlyList<DataRequest> data)
         {
             return new LookAheadQuestions(
-                conversations, variables, queries, items, tasks, thoughts, checks, entries, data);
+                conversations, variables, queries, items, thoughts, checks, entries, data);
         }
     }
 }

@@ -26,9 +26,7 @@
 
 use std::collections::HashMap;
 
-use lookahead_engine::core::state::{
-    ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, TASK_PREFIX, THOUGHT_PREFIX,
-};
+use lookahead_engine::core::state::{ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, THOUGHT_PREFIX};
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
@@ -68,8 +66,6 @@ fn kind_of(name: &str) -> &'static str {
         "once:"
     } else if name.starts_with(ITEM_PREFIX) {
         "item:"
-    } else if name.starts_with(TASK_PREFIX) {
-        "task:"
     } else if name.starts_with(THOUGHT_PREFIX) {
         "thought:"
     } else if name.contains("check") || name.ends_with("_failed") {

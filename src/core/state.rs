@@ -8,7 +8,6 @@ use crate::core::types::DialogueNodeId;
 
 /// Prefix constants for different slot types
 pub const ITEM_PREFIX: &str = "item:";
-pub const TASK_PREFIX: &str = "task:";
 /// A thought the player has gained, which is what `IsTHCPresent` asks about.
 ///
 /// GAINED, not internalised. The game keeps three sets - `gainedThoughts`,
@@ -23,15 +22,9 @@ pub const ONCE_PREFIX: &str = "once:";
 pub const SEEN_PREFIX: &str = "seen:";
 
 /// The prefixes a slot's name carries when the slot is not a dialogue variable.
-const NOT_A_VARIABLE: [&str; 5] = [
-    ITEM_PREFIX,
-    TASK_PREFIX,
-    THOUGHT_PREFIX,
-    ONCE_PREFIX,
-    SEEN_PREFIX,
-];
+const NOT_A_VARIABLE: [&str; 4] = [ITEM_PREFIX, THOUGHT_PREFIX, ONCE_PREFIX, SEEN_PREFIX];
 
-/// Whether a slot of this name holds a dialogue variable, rather than an item, a task, a
+/// Whether a slot of this name holds a dialogue variable, rather than an item, a
 /// thought or the engine's own bookkeeping.
 pub fn names_a_variable(name: &str) -> bool {
     !NOT_A_VARIABLE.iter().any(|prefix| name.starts_with(prefix))
@@ -104,10 +97,6 @@ impl StateSymbols {
 
     pub fn item(&mut self, name: &str) -> usize {
         self.intern(format!("{ITEM_PREFIX}{name}"))
-    }
-
-    pub fn task(&mut self, name: &str) -> usize {
-        self.intern(format!("{TASK_PREFIX}{name}"))
     }
 
     pub fn thought(&mut self, name: &str) -> usize {
@@ -409,10 +398,6 @@ pub fn seed_state(
         if let Some(name) = symbols.name_of(slot) {
             if let Some(stripped) = name.strip_prefix("item:") {
                 if world.initially_has_item(stripped) {
-                    state = state.with(slot, 1);
-                }
-            } else if let Some(stripped) = name.strip_prefix("task:") {
-                if world.initially_task_active(stripped) {
                     state = state.with(slot, 1);
                 }
             } else if let Some(stripped) = name.strip_prefix("thought:") {
