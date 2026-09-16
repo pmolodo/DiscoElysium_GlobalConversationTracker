@@ -1499,6 +1499,21 @@ pub fn holdings_in_save(save: &str) -> Holdings {
 /// likewise for `isKimAwayUpToMorning`, eight for `isKimAbandoned`. Every one of the
 /// twenty-four matches the pre-final-cut body.
 ///
+/// WHAT THE FLAG ACTUALLY MEANS, which is narrower than its name and is worth knowing
+/// before anyone reaches for it. It is not "Kim is asleep". Two saves made at the same
+/// in-game minute, one sleeping at Second Home and one at the Whirling, read it FALSE and
+/// TRUE respectively. It means asleep IN HIS ROOM, which is at the Whirling - and that is
+/// why it travels with a `timeSinceKimWentSleepingInHisRoom` counter: the Second Home save
+/// carried the template's stale 2781, the Whirling one a live 4160.
+///
+/// AND NO REAL SAVE PAIRS IT WITH KIM IN THE PARTY. Across 23 archived saves carrying it
+/// true, over four playthroughs, not one sets `isKimInParty` and not one clears
+/// `isKimAbandoned`; the two made fresh for this question agree. So `IsKimHere` does answer
+/// false for a sleeping Kim in play - because whatever puts him to bed takes him out of the
+/// party first, and NOT because this query reads the flag. That distinction is the whole
+/// point of emulating the query rather than the convention: this reads the save's own
+/// `isKimInParty`, so it lands on the intuitive answer for the same reason the game does.
+///
 /// THE OTHER EIGHT CANNOT BE MEASURED, and that is the game's doing rather than the run's.
 /// All eight carry `isKimInParty` and `isKimAbandoned` both false, which is the one case
 /// `PartyPersister.Deserialize` has no branch for: it calls neither restore, so the party
