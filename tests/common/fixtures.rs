@@ -1304,6 +1304,16 @@ impl Holdings {
             "CheckEquipped" => Some(WireValue::Bool {
                 value: self.equipped.contains(argument?),
             }),
+            // WHETHER ANYTHING HELD IS IN THAT GROUP, which is what the game walks the bag to
+            // decide. The group of an item is database data, carried in the item table beside
+            // its stack and display names - see [`item_table`].
+            //
+            // The five the guards ask about are alcohol, smokes, speed, pyrholidon and tare.
+            // A sixth, ghb, is in the game's own group table but on no item in the shipped
+            // database, so it answers false here for the same reason it does in the game.
+            "CheckItemGroup" => Some(WireValue::Bool {
+                value: groups_held(&self.items).contains(argument?),
+            }),
             "IsTHCCookingOrFixed" => Some(WireValue::Bool {
                 value: matches!(
                     self.thought_states.get(argument?).map(String::as_str),
@@ -1475,12 +1485,17 @@ fn held(inventory: &serde_json::Value) -> HashSet<String> {
         .collect()
 }
 
-/// The item table with each item's stack name and English display name.
+/// The item table: each item's stack name, English display name and group.
 ///
 /// DERIVED FROM TWO PLACES, and read here rather than rebuilt: `DialogueExtract item-names`
-/// takes the ids and stack names from the dialogue database and the display names from the
-/// English lockit - see `tools/DialogueAsset/DialogueItem.cs`. A save records its key pocket
-/// in display names, so without this no reader could say which key is held.
+/// takes the ids, stack names and groups from the dialogue database and the display names
+/// from the English lockit - see `tools/DialogueAsset/DialogueItem.cs`. A save records its key
+/// pocket in display names, so without this no reader could say which key is held.
+///
+/// THE GROUP IS WHAT `CheckItemGroup` ASKS ABOUT, and it is a small table: of the shipped
+/// database's 259 records, 4 are alcohol, 4 tare, 2 smokes, 2 speed and 1 pyrholidon. The
+/// rest are `none`, including the 53 records in the items section that are THOUGHTS rather
+/// than items and carry no group field at all.
 ///
 /// IN THE ORDER THE TABLE DECLARES THEM, because that is what decides a name naming two items:
 /// the game resolves a pocket entry with `FirstOrDefault` over its item list, so
@@ -1494,8 +1509,8 @@ fn held(inventory: &serde_json::Value) -> HashSet<String> {
 /// # Panics
 ///
 /// If the file is there and a line will not read.
-fn item_table() -> &'static Vec<(String, String, String)> {
-    static TABLE: OnceLock<Vec<(String, String, String)>> = OnceLock::new();
+fn item_table() -> &'static Vec<ItemRow> {
+    static TABLE: OnceLock<Vec<ItemRow>> = OnceLock::new();
     TABLE.get_or_init(|| {
         let Some(path) = super::item_names() else {
             return Vec::new();
@@ -1509,10 +1524,26 @@ fn item_table() -> &'static Vec<(String, String, String)> {
                 let row: serde_json::Value = serde_json::from_str(line)
                     .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
                 let field = |name: &str| row[name].as_str().unwrap_or_default().to_string();
-                (field("name"), field("stack"), field("display"))
+                ItemRow {
+                    name: field("name"),
+                    stack: field("stack"),
+                    display: field("display"),
+                    group: field("group"),
+                }
             })
             .collect()
     })
+}
+
+/// One row of the item table.
+///
+/// A named record rather than a tuple: it gained a fourth member for the group, and at four
+/// the positions stop being obvious at the call site.
+struct ItemRow {
+    name: String,
+    stack: String,
+    display: String,
+    group: String,
 }
 
 /// The keys the pocket holds, as the ids a guard names.
@@ -1531,18 +1562,35 @@ fn keys_held(inventory: &serde_json::Value) -> HashSet<String> {
 
     let mut found = HashSet::new();
     let mut taken: HashSet<&str> = HashSet::new();
-    for (name, stack, display) in item_table() {
-        if stack != KEY_RING_STACK || !pocket.contains(display.as_str()) {
+    for row in item_table() {
+        if row.stack != KEY_RING_STACK || !pocket.contains(row.display.as_str()) {
             continue;
         }
 
         // FIRST MATCH ONLY, as FirstOrDefault gives: a second item of the same name is one the
         // game would never restore from a save.
-        if taken.insert(display.as_str()) {
-            found.insert(name.clone());
+        if taken.insert(row.display.as_str()) {
+            found.insert(row.name.clone());
         }
     }
     found
+}
+
+/// The groups the held items belong to, which is what `CheckItemGroup` asks about.
+///
+/// THE GAME WALKS THE BAG, not a table: `Inventory.CheckItemGroup` iterates the gained items
+/// and compares `ItemUtil.GetItemGroup(item.group)` to the name asked about. So a group is
+/// held when anything held is in it, and this turns the held set into the set of groups.
+///
+/// `none` is deliberately kept rather than filtered: an item in no group really is in the
+/// group called `none`, and no guard asks about it - all 25 calls in the database ask for
+/// alcohol, smokes, speed, pyrholidon or tare.
+fn groups_held(items: &HashSet<String>) -> HashSet<String> {
+    item_table()
+        .iter()
+        .filter(|row| items.contains(&row.name))
+        .map(|row| row.group.clone())
+        .collect()
 }
 
 /// The bullet item, where the save's count is above zero.
@@ -1560,8 +1608,8 @@ fn bullets_held(inventory: &serde_json::Value) -> HashSet<String> {
 
     item_table()
         .iter()
-        .filter(|(_, stack, _)| stack == BULLETS_STACK)
-        .map(|(name, _, _)| name.clone())
+        .filter(|row| row.stack == BULLETS_STACK)
+        .map(|row| row.name.clone())
         .collect()
 }
 

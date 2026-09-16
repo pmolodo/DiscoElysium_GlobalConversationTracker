@@ -56,10 +56,11 @@ namespace GlobalConversationTracker.DialogueAsset
                 writer.WriteLine(
                     string.Format(
                         CultureInfo.InvariantCulture,
-                        "{{\"name\":{0},\"stack\":{1},\"display\":{2}}}",
+                        "{{\"name\":{0},\"stack\":{1},\"display\":{2},\"group\":{3}}}",
                         JsonText.Quote(item.Name),
                         JsonText.Quote(item.StackName),
-                        JsonText.Quote(item.DisplayName)));
+                        JsonText.Quote(item.DisplayName),
+                        JsonText.Quote(item.Group)));
             }
         }
     }

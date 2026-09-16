@@ -26,6 +26,29 @@ namespace GlobalConversationTracker.DialogueAsset
         /// <summary>The field carrying what it stacks as, which decides how it is asked for.</summary>
         private const string StackTitle = "stackName";
 
+        /// <summary>The field carrying which group it belongs to, as an index.</summary>
+        private const string GroupTitle = "itemGroup";
+
+        /// <summary>
+        /// The group names, by the index the database stores, from <c>ItemUtil.itemGroup</c>.
+        /// </summary>
+        /// <remarks>
+        /// <para>Copied from the game rather than invented, and the order is the whole content
+        /// of the field - the database stores 0 to 6 and this is what those mean:</para>
+        /// <code>
+        ///     public static string[] itemGroup = new string[7]
+        ///         { "none", "alcohol", "smokes", "ghb", "speed", "pyrholidon", "tare" };
+        /// </code>
+        /// <para>Measured across the shipped database: 193 of the 206 items are <c>none</c>, and
+        /// the 13 that are not are 4 alcohol, 4 tare, 2 smokes, 2 speed and 1 pyrholidon. NO ITEM
+        /// IS <c>ghb</c>, so a guard asking for that group can never be true - which is worth
+        /// knowing rather than special-casing, since the guards do ask for the other five.</para>
+        /// </remarks>
+        private static readonly string[] GroupNames =
+        {
+            "none", "alcohol", "smokes", "ghb", "speed", "pyrholidon", "tare",
+        };
+
         private const string ItemStartPrefix = "  - id:";
         private const string FieldStartPrefix = "    - title:";
         private const string ValuePrefix = "      value:";
@@ -57,6 +80,7 @@ namespace GlobalConversationTracker.DialogueAsset
             bool inside = false;
             string? name = null;
             string? stack = null;
+            string? group = null;
             string? pendingField = null;
 
             string? line;
@@ -79,9 +103,10 @@ namespace GlobalConversationTracker.DialogueAsset
 
                 if (line.StartsWith(ItemStartPrefix, StringComparison.Ordinal))
                 {
-                    Flush(found, name, stack);
+                    Flush(found, name, stack, group);
                     name = null;
                     stack = null;
+                    group = null;
                     pendingField = null;
                     continue;
                 }
@@ -107,19 +132,42 @@ namespace GlobalConversationTracker.DialogueAsset
                 {
                     stack = value;
                 }
+                else if (pendingField == GroupTitle)
+                {
+                    group = value;
+                }
             }
 
-            Flush(found, name, stack);
+            Flush(found, name, stack, group);
             return found;
         }
 
         /// <summary>Keeps an item, where the record carried a name to keep it under.</summary>
-        private static void Flush(List<DialogueItem> found, string? name, string? stack)
+        private static void Flush(
+            List<DialogueItem> found, string? name, string? stack, string? group)
         {
             if (!string.IsNullOrEmpty(name))
             {
-                found.Add(new DialogueItem(name!, stack ?? string.Empty, string.Empty));
+                found.Add(new DialogueItem(
+                    name!, stack ?? string.Empty, string.Empty, GroupNameOf(group)));
             }
+        }
+
+        /// <summary>The group's name, from the index the database stores.</summary>
+        /// <remarks>
+        /// An index outside the table reads as <c>none</c> rather than throwing. The field is a
+        /// number in every one of the shipped database's items, so this is about a database that
+        /// has been edited rather than about the one that ships - and answering "no group" for
+        /// an item nothing can name is what the game's own out-of-range behaviour amounts to.
+        /// </remarks>
+        private static string GroupNameOf(string? stored)
+        {
+            if (!int.TryParse(stored, out int index) || index < 0 || index >= GroupNames.Length)
+            {
+                return GroupNames[0];
+            }
+
+            return GroupNames[index];
         }
     }
 }
