@@ -13,10 +13,13 @@
          before touching anything.
       3. Clears the previous build out of
          <game>\BepInEx\plugins\GlobalConversationTracker and copies the fresh
-         one in. Only GlobalConversationTracker*.dll is written, and only
-         GlobalConversationTracker*.dll is removed. The .pdb is not deployed;
-         one left by an older build is left alone. Anything else kept in that
-         folder, notably the optional articy_ids_final_cut.json, survives.
+         one in. The whole plugin payload is replaced - the plugin DLL, the
+         look-ahead engine executable, the conversation index and the other
+         files Get-PluginPayloadFile in build-support.psm1 selects - and every
+         file removed is written back from the fresh build. The .pdb is not
+         deployed; one left by an older build is left alone. A file outside
+         that payload, notably the optional articy_ids_final_cut.json,
+         survives.
       4. Prints where to look for the plugin's log line.
 
     The install target comes from, in order:
@@ -31,8 +34,8 @@
     printed before anything is written, a repo reference copy is refused outright
     (-AllowReferenceCopy overrides), a copy without BepInEx is rejected, the only
     directory ever created is <game>\BepInEx\plugins\GlobalConversationTracker,
-    and the only files ever deleted are that folder's own
-    GlobalConversationTracker*.dll.
+    and the only files ever deleted are that folder's own plugin payload, as
+    Get-PluginPayloadFile defines it.
 
 .PARAMETER GameDir
     The playable game folder to install into, taking priority over
@@ -116,7 +119,7 @@ Write-Host "== Installing ==" -ForegroundColor Cyan
 Write-Host "About to write into:" -ForegroundColor Yellow
 Write-Host "  $pluginDir" -ForegroundColor Yellow
 if (Test-Path -LiteralPath $pluginDir) {
-    Write-Host "  (existing install found; its $AssemblyName files will be replaced, anything else there left alone)"
+    Write-Host "  (existing install found; its whole plugin payload will be removed and rewritten from this build, anything else there left alone)"
 }
 if ($DryRun) {
     Write-Host "-DryRun given; nothing written." -ForegroundColor Green

@@ -1344,12 +1344,12 @@ function Copy-PluginPayload {
     # if needed. Shared by deploy.ps1 and make-release.ps1 so an installed copy and
     # a packaged copy always hold the same files.
     #
-    # That is the plugin DLL and nothing else: it is the only assembly there is,
-    # since the mod's own layers are compiled into it (see the plugin csproj), and
-    # the .pdb beside it in the build output is left there - see
-    # $PluginPayloadExtensions.
+    # That is every file Get-PluginPayloadFile selects from the build output: the
+    # plugin DLL, the look-ahead engine and the data it reads, and the few
+    # dependencies in $PluginPayloadByName. The .pdb beside the DLL is left there -
+    # see $PluginPayloadExtensions.
     #
-    # Only $AssemblyName* is copied, though the game and BepInEx reference
+    # Only the payload is copied, though the game and BepInEx reference
     # assemblies are referenced with Private="false" and are not in the build
     # output at all, so nothing here could drag the game's own DLLs along.
     param(
