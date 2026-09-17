@@ -21,7 +21,7 @@ const COUNTER_CAP: i32 = 16;
 /// The story's day these tests run on, which nothing they apply moves.
 const DAY: i32 = 1;
 
-fn caps() -> CounterCaps<'static> {
+fn caps() -> CounterCaps {
     CounterCaps::flat(COUNTER_CAP)
 }
 

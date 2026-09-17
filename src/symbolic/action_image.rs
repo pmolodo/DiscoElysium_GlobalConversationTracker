@@ -166,19 +166,18 @@ impl<'a> ActionImage<'a> {
 
     /// The value an increment on this slot stops at.
     ///
-    /// The counter cap, held down to what the slot can hold, because a value the slot is too
-    /// narrow for would silently become a different value.
+    /// For a counter that can loop, the counter cap, held down to what the slot can hold,
+    /// because a value the slot is too narrow for would silently become a different value.
     ///
-    /// A REBASED SLOT STOPS AT ITS OWN TOP INSTEAD. It holds the distance the search has
-    /// travelled rather than the value itself, so the cap is not a bound on it at all - the
-    /// cap bounds `start + distance`, which is applied where the guards read it. Its width is
-    /// the sum of the group's own increments, so the top is never actually reached; capping
-    /// at the counter cap here would clip a distance that had every right to be larger.
+    /// ANY OTHER COUNTER STOPS AT ITS OWN TOP. A distance's width is the sum of the group's
+    /// own increments, so its top is never reached; a counter held as its value that cannot
+    /// loop was squeezed to what its guards distinguish, so every value above its top reads
+    /// alike. See `DataLayout::lay_out_counters`.
     fn saturation(&self, slot: usize, ceiling: u32) -> u32 {
-        if self.vars.layout().delta_slot(slot).is_some() {
-            ceiling
-        } else {
+        if self.vars.layout().saturates_at_cap(slot) {
             self.counter_cap.min(ceiling)
+        } else {
+            ceiling
         }
     }
 

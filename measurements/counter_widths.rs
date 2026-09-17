@@ -45,7 +45,7 @@
 //!
 //! ## What this reports once the rule ships
 //!
-//! `DataLayout::narrow_to_deltas` applies the rule, and the `today` column reads the layout
+//! `DataLayout::lay_out_counters` applies the rule, and the `today` column reads the layout
 //! the engine actually builds. So the saving printed at the end is what is still LEFT on the
 //! table, and a run where that is zero is a run where the layout takes everything the three
 //! encodings offer.

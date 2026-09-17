@@ -138,6 +138,23 @@ fn raising_a_tied_reputation_makes_it_win() {
     );
 }
 
+/// The same raise from amounts a real save holds, above the counter cap: a reputation cannot
+/// loop, so nothing caps it, and 29 still beats 28.
+#[test]
+fn raising_a_reputation_above_the_counter_cap_still_counts() {
+    let Some(index) = shipped() else { return };
+    assert!(
+        reaches(
+            &index,
+            RAISES_NATIONHOOD,
+            NATIONHOOD_WINNING,
+            [28, 28, 0, 0],
+            true
+        ),
+        "802 raises nationhood from 28 to 29, past communism's 28, so 134 is open past it"
+    );
+}
+
 /// Tied with communism and never raised: nothing is winning, so only the other half is open.
 #[test]
 fn a_tie_left_alone_wins_nothing() {

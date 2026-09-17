@@ -146,7 +146,7 @@ pub fn walk_branch(
 ) -> Walk {
     let start_node = graph.get(start).expect("the start is in the graph");
     let context = CrawlContext::new(graph.symbols(), world);
-    let caps = CounterCaps::flat(counter_cap);
+    let caps = CounterCaps::for_graph(counter_cap, graph);
 
     let seed = seed_state(graph, world);
     let entered = keep(branch, enter(start_node, &seed, &context, &caps));
@@ -211,7 +211,7 @@ pub fn choice_distances(
     counter_cap: i32,
 ) -> Option<HashMap<DialogueNodeId, usize>> {
     let context = CrawlContext::new(graph.symbols(), world);
-    let caps = CounterCaps::flat(counter_cap);
+    let caps = CounterCaps::for_graph(counter_cap, graph);
     let start_node = graph.get(start)?;
     let entered = keep(
         branch,
@@ -294,7 +294,7 @@ fn enter(
     node: &LookAheadNode,
     state: &LookAheadState,
     context: &CrawlContext<'_>,
-    caps: &CounterCaps<'_>,
+    caps: &CounterCaps,
 ) -> Vec<LookAheadState> {
     let mut results = Vec::new();
 
@@ -360,7 +360,7 @@ fn enter(
 fn enter_rolled(
     node: &LookAheadNode,
     state: &LookAheadState,
-    caps: &CounterCaps<'_>,
+    caps: &CounterCaps,
     world: &dyn ILookAheadWorld,
     may_succeed: bool,
 ) -> Vec<LookAheadState> {
@@ -423,7 +423,7 @@ pub(crate) fn has_been_seen(node: &LookAheadNode, state: &LookAheadState) -> boo
 pub(crate) fn charge(
     node: &LookAheadNode,
     state: &LookAheadState,
-    caps: &CounterCaps<'_>,
+    caps: &CounterCaps,
     world: &dyn ILookAheadWorld,
 ) -> LookAheadState {
     let mut paid = state.clone();
@@ -458,7 +458,7 @@ pub(crate) fn charge(
 fn fail(
     node: &LookAheadNode,
     state: LookAheadState,
-    caps: &CounterCaps<'_>,
+    caps: &CounterCaps,
     world: &dyn ILookAheadWorld,
 ) -> LookAheadState {
     DialogueAction::apply(

@@ -2,6 +2,7 @@
 use crate::core::clock::ClockReading;
 use crate::core::state::LookAheadState;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fmt;
 
 /// What kind of change an action makes.
@@ -72,40 +73,39 @@ fn fires_by_default() -> bool {
 /// The cap is what keeps a counter inside a dialogue loop finite: without it a loop that
 /// increments something has no repeated state and the search never terminates.
 ///
-/// One knob with an override, rather than the C#'s two. There, `CounterCapForSlot`
-/// SUPPLANTS `CounterCap` instead of falling back to it - it is consulted for every slot
-/// once supplied - so a caller wanting to special-case one variable has to answer for all
-/// of them and re-state the default itself. The offline search duplicates the literal
-/// 16 to do it. Here the per-slot function answers `None` for anything it has no opinion
-/// about and the default applies, so there is one place the default lives.
-pub struct CounterCaps<'a> {
+/// ONLY A COUNTER THAT CAN LOOP IS CAPPED. One the group can raise only a bounded number of
+/// times climbs as far as the game lets it - see
+/// [`crate::graph::LookAheadGraph::counters_that_cannot_loop`], which is the same set the
+/// symbolic layout holds as distances, so the two engines agree on every value.
+pub struct CounterCaps {
     default: i32,
-    per_slot: Option<&'a (dyn Fn(usize) -> Option<i32> + Send + Sync)>,
+    uncapped: HashSet<usize>,
 }
 
-impl<'a> CounterCaps<'a> {
+impl CounterCaps {
     /// The same cap for every slot.
     pub fn flat(default: i32) -> Self {
         Self {
             default,
-            per_slot: None,
+            uncapped: HashSet::new(),
         }
     }
 
-    /// A cap that may be overridden per slot; `None` from `per_slot` means the default.
-    pub fn with_overrides(
-        default: i32,
-        per_slot: &'a (dyn Fn(usize) -> Option<i32> + Send + Sync),
-    ) -> Self {
+    /// `default` for every counter in `graph` that can loop, and no cap for the rest.
+    pub fn for_graph(default: i32, graph: &crate::graph::LookAheadGraph) -> Self {
         Self {
             default,
-            per_slot: Some(per_slot),
+            uncapped: graph.counters_that_cannot_loop().into_keys().collect(),
         }
     }
 
     /// The cap that applies to one slot.
     pub fn for_slot(&self, slot: usize) -> i32 {
-        self.per_slot.and_then(|f| f(slot)).unwrap_or(self.default)
+        if self.uncapped.contains(&slot) {
+            i32::MAX
+        } else {
+            self.default
+        }
     }
 }
 
@@ -368,7 +368,7 @@ impl DialogueAction {
         actions: &[DialogueAction],
         state: &LookAheadState,
         once_slot: i32,
-        counter_cap: &CounterCaps<'_>,
+        counter_cap: &CounterCaps,
         clock_locked: bool,
         day_counter: i32,
     ) -> LookAheadState {

@@ -235,7 +235,7 @@ pub(crate) mod tests {
     /// THE ENTRY LINKS TO ITSELF, which is what makes the counter wide rather than the
     /// increment alone: an increment that can only fire once is held as a DELTA and needs
     /// exactly the bits its own amount asks for, which for a single `+1` is one.
-    /// `DataLayout::narrow_to_deltas` is where that is decided.
+    /// `DataLayout::lay_out_counters` is where that is decided.
     pub(crate) fn fixture(names: &[&str], counter: Option<&str>) -> (LookAheadGraph, StateSymbols) {
         let mut symbols = StateSymbols::new();
         let mut actions = Vec::new();

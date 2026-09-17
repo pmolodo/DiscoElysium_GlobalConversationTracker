@@ -127,7 +127,7 @@ pub fn walk_inputs(
         graph,
         world,
         context: CrawlContext::new(graph.symbols(), world),
-        caps: CounterCaps::flat(COUNTER_CAP),
+        caps: CounterCaps::for_graph(COUNTER_CAP, graph),
     }
     .walk(conversation, inputs)
 }
@@ -164,7 +164,7 @@ struct Walker<'w> {
     graph: &'w LookAheadGraph,
     world: &'w dyn ILookAheadWorld,
     context: CrawlContext<'w>,
-    caps: CounterCaps<'static>,
+    caps: CounterCaps,
 }
 
 impl Walker<'_> {

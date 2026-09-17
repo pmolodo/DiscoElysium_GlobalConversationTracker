@@ -242,7 +242,7 @@ proptest! {
     ///
     /// A REBASED SLOT IS HELD TO A DIFFERENT LAW, and it is the same law: it holds the
     /// distance the search has moved rather than the value, so what has to fit is every one
-    /// of its increments firing and summed. `DataLayout::narrow_to_deltas` is what decides
+    /// of its increments firing and summed. `DataLayout::lay_out_counters` is what decides
     /// which slots those are, and it only ever picks slots where the sum is the true bound.
     #[test]
     fn a_slot_is_wide_enough_for_everything_written_to_it(
@@ -266,7 +266,7 @@ proptest! {
             // An assignment must be representable outright. An increment saturates at the
             // counter cap, so what has to fit is the cap rather than the step - a step
             // larger than the cap simply arrives at the cap.
-            let needed = if layout.delta_slot(slot).is_some() {
+            let needed = if layout.is_delta(slot) {
                 summed.get(write.slot.as_str()).copied().unwrap_or(0)
             } else if write.increment {
                 COUNTER_CAP.max(0) as u32

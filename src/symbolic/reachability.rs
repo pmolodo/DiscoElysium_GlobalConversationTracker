@@ -102,9 +102,9 @@ pub fn seed_of(
             continue;
         };
         // A REBASED SLOT STARTS AT NOTHING, because it holds the distance the search has
-        // travelled rather than where it started - see `DataLayout::narrow_to_deltas`. The
+        // travelled rather than where it started - see `DataLayout::lay_out_counters`. The
         // save's value is not lost; it moves into the guards, which are rebased by it.
-        let value = if vars.layout().delta_slot(slot).is_some() {
+        let value = if vars.layout().is_delta(slot) {
             0
         } else {
             state.get(slot).max(0) as u32

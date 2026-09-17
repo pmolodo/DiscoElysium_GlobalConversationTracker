@@ -38,7 +38,6 @@ use crate::core::guard_value::{GuardValue, GuardValueKind};
 use crate::core::state::{ITEM_PREFIX, THOUGHT_PREFIX};
 use crate::core::types::{DialogueNodeId, Ternary};
 use crate::graph::LookAheadGraph;
-use crate::symbolic::data_layout::DeltaSlot;
 use crate::symbolic::vars::DataVars;
 use crate::world::{ILookAheadWorld, MONEY_QUERY};
 
@@ -58,10 +57,9 @@ enum Rebase {
 
 /// The distances a rebased comparison is true at, once the arriving value is folded in.
 ///
-/// Only ever a threshold or a point, because the variable is a saturating sum: `v >= c` is
+/// Only ever a threshold or a point, because the variable is a sum: `v >= c` is
 /// `d >= c - v0` and `v == c` is `d == c - v0`, and every other operator is one of those
-/// negated. Both are over distances of at least one; the branch where the slot has not moved
-/// is arithmetic rather than a set. See [`GuardCompiler::rebased`].
+/// negated. See [`GuardCompiler::rebased`].
 enum Distances {
     All,
     None,
@@ -1202,9 +1200,9 @@ impl<'a> GuardCompiler<'a> {
             // value the search started at. This has to come first: the paths below read the
             // slot's bits as the value itself, which for such a slot they are not.
             if let Some(slot) = self.vars.slot_of(name)
-                && let Some(delta) = self.vars.layout().delta_slot(slot)
+                && self.vars.layout().is_delta(slot)
             {
-                return match self.rebased(slot, name, op, value as i64, delta) {
+                return match self.rebased(slot, name, op, value as i64) {
                     Rebase::Formula(holds) => self.decided(holds),
                     Rebase::NoRoom => self.no_room(Self::rendered(op, name, literal)),
                     Rebase::Unknown => self.undecided(
@@ -1305,50 +1303,22 @@ impl<'a> GuardCompiler<'a> {
     /// The slot holds `d`, how far the search's own actions have moved the variable. The
     /// guard asks about the variable, which is `d` added to whatever the save held. So the
     /// rewriting folds the save's value into the CONSTANT and leaves the slot alone:
-    /// `v >= c` is `d >= c - v0`. See [`DataLayout::narrow_to_deltas`] for why the slot is
+    /// `v >= c` is `d >= c - v0`. See `DataLayout::lay_out_counters` for why the slot is
     /// shaped that way and what it saves.
     ///
-    /// ## Reproducing the saturation exactly, which is the fiddly half
-    ///
-    /// The absolute encoding did two different things with two different numbers, and a
-    /// rewriting that used one number for both would answer guards the shipped encoding does
-    /// not. The seed was CLAMPED into the slot's ceiling. An increment SATURATED at the
-    /// counter cap, which is a smaller number wherever the guards left the slot wider than
-    /// the cap needs. So a variable arriving above the cap keeps its value until something
-    /// increments it, and then drops to the cap.
-    ///
-    /// That is the split on `d == 0`: at a distance of nothing the variable still reads as
-    /// what the save held, and at any other distance it reads as the sum held down to the
-    /// cap. Both branches are exact, and the `ite` between them is the whole rewriting.
+    /// NOTHING SATURATES. Such a counter cannot loop, so neither engine caps it, and the sum
+    /// is the value at every distance - no distance is a special case.
     ///
     /// ## Why the world is required here and nowhere else
     ///
     /// `v0` comes from the save. A compiler with no world cannot produce it and says so -
     /// undecided, which is the permissive answer - rather than guessing zero, which would
     /// close branches a richer save opens.
-    fn rebased(
-        &mut self,
-        slot: usize,
-        name: &str,
-        op: &str,
-        constant: i64,
-        delta: DeltaSlot,
-    ) -> Rebase {
+    fn rebased(&mut self, slot: usize, name: &str, op: &str, constant: i64) -> Rebase {
         let Some(world) = self.world else {
             return Rebase::Unknown;
         };
-
-        // WHAT `seed_state` WOULD HAVE PUT IN THE SLOT, read the same way it reads it: a
-        // boolean is its truth, a number is itself, and anything else is nothing there.
-        // `narrow_to_deltas` bars the slots that rule does not cover.
-        let held = world.get_variable(self.declared(name));
-        let base = match held.kind() {
-            GuardValueKind::Boolean => i64::from(held.boolean()),
-            GuardValueKind::Number => held.number() as i64,
-            _ => 0,
-        }
-        .clamp(0, delta.ceiling as i64);
-        let cap = delta.cap as i64;
+        let base = self.rebase_start(world, name);
 
         // Every operator is one of three, or the negation of one of three.
         let (positive, negate) = match op {
@@ -1361,59 +1331,57 @@ impl<'a> GuardCompiler<'a> {
             _ => return Rebase::Unknown,
         };
 
-        // `min(base + d, cap) >= wanted`, as a bound on `d` alone, for `d` of at least one.
+        // `base + d >= wanted`, as a bound on `d` alone.
         let at_least = |wanted: i64| -> Distances {
-            if wanted <= 0 {
+            if wanted - base <= 0 {
                 Distances::All
-            } else if wanted > cap {
-                Distances::None
             } else {
-                Distances::AtLeast((wanted - base).max(1))
+                Distances::AtLeast(wanted - base)
             }
         };
-
-        let moved = match positive {
+        let distances = match positive {
             ">=" => at_least(constant),
             ">" => at_least(constant + 1),
-            // Equality against the cap is satisfied by everything at or above it, because
-            // that is what saturation means.
-            _ if constant == cap => at_least(cap),
-            _ if constant < 0 || constant > cap || constant - base < 1 => Distances::None,
+            _ if constant - base < 0 => Distances::None,
             _ => Distances::Exactly(constant - base),
         };
 
-        // At a distance of nothing the variable reads as the save's value, and the
-        // comparison is arithmetic on two knowns.
-        let unmoved = match positive {
-            ">=" => base >= constant,
-            ">" => base > constant,
-            _ => base == constant,
-        };
-
-        let Some(holds) = self.branching(slot, moved, unmoved, negate) else {
+        let Some(holds) = self.at_distances(slot, distances, negate) else {
             return Rebase::NoRoom;
         };
         Rebase::Formula(holds)
     }
 
-    /// The two branches of a rebased comparison, joined on whether the slot has moved.
-    fn branching(
+    /// Where a rebased slot's variable starts: what `seed_state` would have put in the slot,
+    /// read the same way it reads it - a boolean is its truth, a number is itself, anything else
+    /// is nothing there - and held at zero or above, as a slot's run of bits is.
+    fn rebase_start(&self, world: &dyn ILookAheadWorld, name: &str) -> i64 {
+        let held = world.get_variable(self.declared(name));
+        match held.kind() {
+            GuardValueKind::Boolean => i64::from(held.boolean()),
+            GuardValueKind::Number => held.number() as i64,
+            _ => 0,
+        }
+        .max(0)
+    }
+
+    /// The states a rebased comparison holds in, from the distances it holds at.
+    fn at_distances(
         &mut self,
         slot: usize,
-        moved: Distances,
-        unmoved: bool,
+        distances: Distances,
         negate: bool,
     ) -> Option<BDDFunction> {
-        let far = match moved {
+        let holds = match distances {
             Distances::All => self.top(),
             Distances::None => self.bottom(),
             Distances::AtLeast(bound) => self.vars.slot_ops(slot)?.compare(">=", bound)?,
-            Distances::Exactly(bound) => self.vars.slot_equals(slot, u32::try_from(bound).ok()?)?,
+            // A distance the slot is too narrow for is one no state is at.
+            Distances::Exactly(bound) => match u32::try_from(bound) {
+                Ok(bound) => self.vars.slot_equals(slot, bound)?,
+                Err(_) => self.bottom(),
+            },
         };
-        let near = if unmoved { self.top() } else { self.bottom() };
-
-        let still = self.vars.slot_equals(slot, 0)?;
-        let holds = still.ite(&near, &far).ok()?;
         if negate {
             holds.not().ok()
         } else {
@@ -1783,9 +1751,8 @@ impl<'a> GuardCompiler<'a> {
     /// state by state:
     ///
     /// - a variable the layout carries no slot for is the world's number everywhere;
-    /// - a slot held as a delta is the world's number (clamped into the slot's ceiling) where
-    ///   the search has not moved it, and that number plus the distance, saturated at the cap,
-    ///   where it has - the same reading [`Self::rebased`] rewrites a comparison around;
+    /// - a slot held as a delta is the world's number plus the distance - the same reading
+    ///   [`Self::rebased`] rewrites a comparison around;
     /// - any other slot is its own bits.
     ///
     /// A number the world cannot give makes the whole question unknown, as it does for the
@@ -1812,26 +1779,17 @@ impl<'a> GuardCompiler<'a> {
         };
 
         let top = self.vars.slot_ceiling(slot).ok_or(Amounts::NoRoom)?;
-        let delta = self.vars.layout().delta_slot(slot);
-        let base = match delta {
-            Some(delta) => {
-                let world = self.world.ok_or(Amounts::Unknown)?;
-                let held = world.get_variable(self.declared(variable));
-                let base = match held.kind() {
-                    GuardValueKind::Boolean => i64::from(held.boolean()),
-                    GuardValueKind::Number => held.number() as i64,
-                    _ => 0,
-                };
-                Some((base.clamp(0, delta.ceiling as i64), delta.cap as i64))
-            }
-            None => None,
+        let base = if self.vars.layout().is_delta(slot) {
+            let world = self.world.ok_or(Amounts::Unknown)?;
+            Some(self.rebase_start(world, variable))
+        } else {
+            None
         };
 
         let mut by_amount: HashMap<i64, BDDFunction> = HashMap::new();
         for held in 0..=top {
             let amount = match base {
-                Some((base, _)) if held == 0 => base,
-                Some((base, cap)) => (base + held as i64).min(cap),
+                Some(base) => base + held as i64,
                 None => held as i64,
             };
             let at = self.vars.slot_equals(slot, held).ok_or(Amounts::NoRoom)?;
@@ -2168,7 +2126,7 @@ mod tests {
     ///
     /// SELF-LINKED, so the increment can fire more than once and the slot keeps the absolute
     /// encoding. An increment that fires at most once is held as a delta - see
-    /// `DataLayout::narrow_to_deltas` - and a single `+1` then needs one bit, which is not
+    /// `DataLayout::lay_out_counters` - and a single `+1` then needs one bit, which is not
     /// the wide slot these tests are about.
     fn fixture(names: &[&str], counter: Option<&str>) -> (LookAheadGraph, StateSymbols) {
         let mut symbols = StateSymbols::new();

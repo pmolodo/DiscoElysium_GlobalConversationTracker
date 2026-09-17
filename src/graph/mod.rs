@@ -289,6 +289,82 @@ impl LookAheadGraph {
         !self.skills_damage_moves_near_passive_checks().is_empty()
     }
 
+    /// Every counter the group raises and can raise only a bounded number of times, with what its
+    /// raises add up to.
+    ///
+    /// ## Why it matters
+    ///
+    /// The counter cap exists to keep a counter finite when a dialogue loop can raise it without
+    /// end. A counter that cannot be raised that way needs no cap: it can climb at most by the
+    /// sum of its raises. So neither engine saturates one of these - the explicit engine takes
+    /// its caps from here ([`crate::core::action::CounterCaps::for_graph`]), and the symbolic
+    /// layout holds each as a distance from where the search started
+    /// ([`crate::symbolic::data_layout::DataLayout`]). Saturating one clips a value the game
+    /// keeps: a reputation at 28 read as 16 once something raises it.
+    ///
+    /// ## What disqualifies a counter
+    ///
+    /// - A NEGATIVE RAISE or an ASSIGNMENT. A write that can lower the value or set it outright
+    ///   leaves the sum of the raises as no bound on it, and a distance cannot express it.
+    /// - A RAISE THAT CAN FIRE TWICE: one on an entry that lies on a dialogue loop, unless it is
+    ///   marked `once` - which it fires at most once whatever the links do.
+    /// - A SLOT THE SEED FILLS FROM SOMEWHERE ELSE - the inventory, the cabinet, damage, what is
+    ///   worn, the seen record - rather than from the variable's own value. None is a counter in
+    ///   the content, and a distance needs the start to be the variable's value.
+    pub fn counters_that_cannot_loop(&self) -> HashMap<usize, u32> {
+        #[derive(Default)]
+        struct Raises {
+            sum: u32,
+            barred: bool,
+        }
+
+        let order = crate::symbolic::order::IterationOrder::of(self);
+        let cyclic = crate::symbolic::data_layout::DataLayout::entries_on_a_cycle(self, &order);
+        let symbols = self.symbols();
+
+        let mut raises: HashMap<usize, Raises> = HashMap::new();
+        for node in self.nodes() {
+            let repeatable = cyclic.contains(&node.id);
+            for action in node.all_actions() {
+                let Ok(slot) = usize::try_from(action.slot()) else {
+                    continue;
+                };
+                if slot >= symbols.count() {
+                    continue;
+                }
+                use crate::core::action::DialogueActionKind;
+                match action.kind() {
+                    DialogueActionKind::Increment => {
+                        let found = raises.entry(slot).or_default();
+                        let amount = action.value();
+                        if amount < 0 || (repeatable && !action.once()) {
+                            found.barred = true;
+                        }
+                        found.sum = found.sum.saturating_add(amount.max(0) as u32);
+                    }
+                    DialogueActionKind::Assign
+                    | DialogueActionKind::AssignClock
+                    | DialogueActionKind::AssignUnless => {
+                        raises.entry(slot).or_default().barred = true
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        raises
+            .into_iter()
+            .filter(|(slot, found)| {
+                !found.barred
+                    && found.sum > 0
+                    && symbols
+                        .name_of(*slot)
+                        .is_some_and(crate::core::state::names_a_variable)
+            })
+            .map(|(slot, found)| (slot, found.sum))
+            .collect()
+    }
+
     /// The passive checks whose margin in `world` the group's damage or healing can cross, with
     /// the thoughts in `fixed` held fixed - see [`crate::core::skill_movers`].
     pub fn checks_damage_can_flip(
