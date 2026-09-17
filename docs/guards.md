@@ -381,20 +381,20 @@ with the states where the loop reaches that pair, and splits each pair by the am
 reputation can hold in the state. Each amount is read the way the search reads it.
 
 The compiler skips that work where no search from the request's starts can change the winner
-(`GuardCompiler::with_starts`), and answers the question from the world. The game's loop has a
-winner exactly where one amount is above zero and strictly above every other amount in the
-range, so raises cannot change the winner if no other reputation can reach the winner's amount.
-A raise is left out of the sum in two cases:
+(`GuardCompiler::settle_reputation`), and answers the question from the world. The game's loop
+has a winner exactly where one amount is above zero and strictly above every other amount in
+the range, so raises cannot change the winner if no other reputation can reach the winner's
+amount. A raise is left out of the sum when it sits behind a guard, on every link path to it,
+that requires its own reputation to be winning.
 
-- it sits behind a guard, on every link path to it, that requires its own reputation to be
-  winning;
-- it sits behind a guard that holds in no state.
+The raises counted are the ones in the menu's trimmed group (`bridge::walkable_menu`), so a
+raise behind a guard that holds in no state is already gone.
 
 Evrart's folder (785) is the case: every copotype raise is behind its own "is winning" guard.
 The at-evart save also has raises elsewhere in Evrart's group. Those either can't reach
-apocalypse_cop's lead, like 789:262's boring_cop, or sit behind a guard the save keeps shut,
-like 605:169's superstar_cop. Any other write to the range - a lowering, or a raise that
-could close the gap - leaves the question to the per-state comparison.
+apocalypse_cop's lead, like 789:262's boring_cop, or are trimmed away behind a guard the save
+keeps shut, like 605:169's superstar_cop. Any other write to the range - a lowering, or a raise
+that could close the gap - leaves the question to the per-state comparison.
 
 | function           | guards | entries | mechanism | range               |
 | ------------------ | -----: | ------: | --------- | ------------------- |

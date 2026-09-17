@@ -688,7 +688,8 @@ pub struct CompiledGuards {
 }
 
 /// Compiles `entries`' guards with the compiler `bridge::answer` builds for `request`: the
-/// group fitted to the world, the layout narrowed to the request, and the request's starts.
+/// group fitted to the world, the layout narrowed to the request, and the menu trimmed and its
+/// reputation ranges settled from the request's starts.
 pub fn compiled_guards(
     index: &lookahead_engine::index::Index,
     request: &lookahead_engine::bridge::LookAheadRequest,
@@ -722,17 +723,22 @@ pub fn compiled_guards(
         .expect("the manager fits the budget");
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(&world)
-        .with_constant_clock(DataLayout::group_passes_time(&graph))
-        .with_starts(&graph, &starts_of(request));
+        .with_constant_clock(DataLayout::group_passes_time(&graph));
+    // THE MENU AS `answer_starts` PREPARES IT, which compiles guards of its own and settles the
+    // reputation ranges; only what the entries below add is counted.
+    let (trimmed, _) =
+        lookahead_engine::bridge::walkable_menu(&graph, &mut compiler, &starts_of(request));
+    let (from_world, fallbacks) = (compiler.reputation_from_world(), compiler.fallbacks());
 
     for &entry in entries {
-        let node = graph
+        let node = trimmed
+            .graph
             .get(entry)
             .unwrap_or_else(|| panic!("{entry:?} is not in the group"));
         compiler.compile_for(entry, &node.guard);
     }
     CompiledGuards {
-        reputation_from_world: compiler.reputation_from_world(),
-        fallbacks: compiler.fallbacks(),
+        reputation_from_world: compiler.reputation_from_world() - from_world,
+        fallbacks: compiler.fallbacks() - fallbacks,
     }
 }

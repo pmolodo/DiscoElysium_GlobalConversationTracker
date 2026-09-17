@@ -188,9 +188,9 @@ pub struct GuardCompiler<'a> {
     /// [`Self::forget_guards`] is the way out for a caller that would rather have the room.
     guards: HashMap<DialogueNodeId, MayBe>,
     guard_cache_hits: usize,
-    /// The reputation ranges no search from this compiler's starts can change the winner of,
-    /// keyed by the range's first index, each with the world's winner. See
-    /// [`Self::with_starts`].
+    /// The reputation ranges no search from the menu's starts can change the winner of, keyed
+    /// by the range's first index, each with the world's winner. See
+    /// [`Self::settle_reputation`].
     settled_reputation: HashMap<usize, Option<&'static str>>,
     /// How many reputation questions were answered from [`Self::settled_reputation`].
     reputation_from_world: usize,
@@ -220,6 +220,10 @@ impl<'a> GuardCompiler<'a> {
     /// Settles the reputation ranges whose winner no search from `starts` can change, so their
     /// questions are answered from the world. Needs [`Self::with_world`] first.
     ///
+    /// `graph` is the group AS THE MENU CAN WALK IT - see `bridge::walkable_menu` - so a write
+    /// behind a door this world keeps shut is already gone from it, and is not counted here.
+    /// Asked of the whole group, such a write would count as reachable.
+    ///
     /// ## When nothing can change the winner
     ///
     /// Raising the reputation that is winning never changes the winner: it was ahead of every
@@ -246,9 +250,9 @@ impl<'a> GuardCompiler<'a> {
     /// start opens, and every route from those is the tail of a route from the start. A start's
     /// own guard is not passed by a route that begins below it, so a start does not count as a
     /// dominator here - the world's winner covers the menu the player is standing at.
-    pub fn with_starts(mut self, graph: &LookAheadGraph, starts: &[DialogueNodeId]) -> Self {
+    pub fn settle_reputation(&mut self, graph: &LookAheadGraph, starts: &[DialogueNodeId]) {
         let Some(world) = self.world else {
-            return self;
+            return;
         };
         let asked: Vec<std::ops::Range<usize>> = [
             crate::core::reputation::COPOTYPE,
@@ -262,7 +266,7 @@ impl<'a> GuardCompiler<'a> {
         })
         .collect();
         if asked.is_empty() {
-            return self;
+            return;
         }
 
         let dominators = super::dominators::Dominators::of(graph, starts);
@@ -290,11 +294,10 @@ impl<'a> GuardCompiler<'a> {
                 self.settled_reputation.insert(range.start, winner);
             }
         }
-        self
     }
 
     /// Whether every write to `range` the starts can reach leaves `winner` winning. See
-    /// [`Self::with_starts`].
+    /// [`Self::settle_reputation`].
     ///
     /// ## Which raises cannot matter
     ///
@@ -302,12 +305,8 @@ impl<'a> GuardCompiler<'a> {
     /// strictly above every other in the range: an equal amount earlier or later clears it, and
     /// a larger one takes over. So with raises only, the winner stays the winner while every
     /// other reputation stays below it. A raise is left out of that count where it cannot
-    /// happen while the winner holds:
-    ///
-    /// - behind a guard that requires its own reputation to be winning, which only the winner
-    ///   is - so it raises the winner, or never runs;
-    /// - behind a guard that holds in no state at all. The link walk ignores guards, so a write
-    ///   behind a door this world keeps shut counts as reachable until a guard says otherwise.
+    /// happen while the winner holds: behind a guard that requires its own reputation to be
+    /// winning, which only the winner is - so it raises the winner, or never runs.
     ///
     /// Every other reachable raise is summed per reputation, and the range is settled where
     /// no reputation but the winner can get to the winner's amount. With nothing winning, any
@@ -316,7 +315,7 @@ impl<'a> GuardCompiler<'a> {
     /// ONLY AN ORDINARY ENTRY'S GUARD CLOSES A ROUTE. A passive check whose condition fails is
     /// stepped over onto its links rather than refusing them.
     fn no_write_changes_winner(
-        &mut self,
+        &self,
         graph: &LookAheadGraph,
         starts: &[DialogueNodeId],
         dominators: &super::dominators::Dominators,
@@ -340,28 +339,13 @@ impl<'a> GuardCompiler<'a> {
                     continue;
                 }
 
-                let gates: Vec<&crate::graph::node::LookAheadNode> = std::iter::once(node.id)
+                let behind_its_own_lead = std::iter::once(node.id)
                     .chain(dominators.above(node.id))
                     .filter(|id| !starts.contains(id))
                     .filter_map(|id| graph.get(id))
                     .filter(|gate| gate.kind == crate::core::types::DialogueCheckKind::None)
-                    .collect();
-                if gates
-                    .iter()
-                    .any(|gate| Self::requires_winning(gate.guard.as_ref(), range, raised))
-                {
-                    continue;
-                }
-                let shut = gates.iter().any(|gate| {
-                    // NOT A GUARD THAT ASKS THIS RANGE, which would be compiled and kept before
-                    // the range is settled.
-                    !Self::asks_about_range(&gate.guard, range)
-                        && !self
-                            .compile_for(gate.id, &gate.guard)
-                            .may_be_true
-                            .satisfiable()
-                });
-                if !shut {
+                    .any(|gate| Self::requires_winning(gate.guard.as_ref(), range, raised));
+                if !behind_its_own_lead {
                     *reachable_raises.entry(raised).or_default() += i64::from(action.value());
                 }
             }
@@ -380,6 +364,19 @@ impl<'a> GuardCompiler<'a> {
     /// change their winner.
     pub fn reputation_from_world(&self) -> usize {
         self.reputation_from_world
+    }
+
+    /// Whether a guard asks a reputation question over either range.
+    ///
+    /// For a caller that compiles guards before [`Self::settle_reputation`] has run: such a
+    /// guard compiled and kept then would keep the per-state answer after its range settles.
+    pub fn asks_reputation(guard: &Guard) -> bool {
+        [
+            crate::core::reputation::COPOTYPE,
+            crate::core::reputation::POLITICAL,
+        ]
+        .iter()
+        .any(|range| Self::asks_about_range(guard, range))
     }
 
     /// Whether a guard asks a reputation question over `range`.

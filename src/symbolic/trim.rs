@@ -110,10 +110,7 @@ pub fn trimmed(
             };
             if entry.kind == DialogueCheckKind::None
                 && !starts.contains(&child)
-                && !compiler
-                    .compile_for(child, &entry.guard)
-                    .may_be_true
-                    .satisfiable()
+                && holds_nowhere(compiler, child, &entry.guard)
             {
                 closed.insert(child);
                 continue;
@@ -143,6 +140,24 @@ pub fn trimmed(
         closed: closed.len(),
         cut_off,
     }
+}
+
+/// Whether a guard holds in no state.
+///
+/// A REPUTATION QUESTION IS COMPILED WITHOUT BEING KEPT. The compiler settles reputation ranges
+/// on the trimmed graph, after this has run, and a guard kept from before would keep its
+/// per-state answer after its range settled.
+fn holds_nowhere(
+    compiler: &mut GuardCompiler<'_>,
+    id: DialogueNodeId,
+    guard: &crate::core::guard::Guard,
+) -> bool {
+    let compiled = if GuardCompiler::asks_reputation(guard) {
+        compiler.compile(guard)
+    } else {
+        compiler.compile_for(id, guard)
+    };
+    !compiled.may_be_true.satisfiable()
 }
 
 /// Every entry the links reach from `starts`.

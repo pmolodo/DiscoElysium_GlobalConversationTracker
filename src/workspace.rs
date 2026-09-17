@@ -404,8 +404,7 @@ fn own(opening: Opening, inbox: Receiver<Job>, ready: Sender<bool>) {
         // items, the tasks and the queries, and the seed holds what has been read.
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
-            .with_constant_clock(DataLayout::group_passes_time(&graph))
-            .with_starts(&graph, &crate::bridge::starts_of(&job_request));
+            .with_constant_clock(DataLayout::group_passes_time(&graph));
         // A SEED THE MANAGER HAS NO ROOM FOR is a search that cannot start, and it is
         // answerable rather than fatal: every start is nothing established, exactly as
         // `bridge::answer` answers a manager the machine would not give it. The workspace

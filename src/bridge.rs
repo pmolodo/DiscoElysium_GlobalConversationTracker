@@ -1842,8 +1842,7 @@ where
     let vars = DataVars::try_new(&layout, &symbols, request.diagram_budget())?;
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
-        .with_constant_clock(DataLayout::group_passes_time(graph))
-        .with_starts(graph, &starts_of(request));
+        .with_constant_clock(DataLayout::group_passes_time(graph));
     let seed = seed_of(graph, world, &vars)?;
 
     Some(answer_starts(
@@ -1872,6 +1871,9 @@ pub fn walkable_menu(
     starts: &[DialogueNodeId],
 ) -> (crate::symbolic::trim::Trimmed, GroupShape) {
     let trimmed = crate::symbolic::trim::trimmed(graph, compiler, starts);
+    // ON THE TRIMMED GRAPH, so a reputation write behind a shut door is not counted - see
+    // `GuardCompiler::settle_reputation`.
+    compiler.settle_reputation(&trimmed.graph, starts);
     let shape = GroupShape::of(&trimmed.graph);
     (trimmed, shape)
 }
@@ -1911,12 +1913,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
     let began = std::time::Instant::now();
     // THE GROUP AS THIS MENU CAN WALK IT, and what there is to find in it - see
     // [`walkable_menu`]. Every search below sees the trimmed links and the trimmed novelty.
-    let starts: Vec<DialogueNodeId> = request
-        .starts
-        .iter()
-        .map(|start| DialogueNodeId::from(*start))
-        .collect();
-    let (trimmed, shape) = walkable_menu(group, compiler, &starts);
+    let (trimmed, shape) = walkable_menu(group, compiler, &starts_of(request));
     let graph = &trimmed.graph;
     let shape = &shape;
     let reachable_novelty = trimmed.novelty(novelty);
