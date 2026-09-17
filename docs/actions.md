@@ -3,7 +3,8 @@
 An action is a call in a dialogue entry's userScript, run when the entry is reached. The
 look-ahead never runs one against the game: every action a crawl passes through is applied, or
 deliberately not applied, to search state in Rust. This is the list of what the scripts call,
-what each call writes in the game, and whether the engine applies it.
+what each call writes in the game, and whether the engine applies it. Every action, guard and
+check the engine does not model exactly is collected in [modelling-gaps.md](modelling-gaps.md).
 
 This document is SELECTIVE, unlike [guards.md](guards.md). An action matters to the look-ahead
 only if what it writes can change which branch a later guard takes, so each function is checked

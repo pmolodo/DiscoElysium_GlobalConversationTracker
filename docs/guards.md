@@ -3,7 +3,8 @@
 A guard is the Lua condition on a dialogue entry that decides whether the entry can be taken.
 The look-ahead evaluates guards speculatively, thousands of times per menu, for entries the
 player may never reach. This is the list of what those guards ask, how each question is
-answered, and what checks the answer.
+answered, and what checks the answer. Every guard, action and check the engine does not model
+exactly is collected in [modelling-gaps.md](modelling-gaps.md).
 
 The rule every row below follows: **no guard is answered by running Lua against the game.**
 Each is computed in Rust, from dialogue variables or from data the plugin READS, and the
