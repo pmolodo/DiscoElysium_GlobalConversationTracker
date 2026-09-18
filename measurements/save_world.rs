@@ -91,3 +91,16 @@ pub fn of_save(
         .expect("the answers were built from these very questions");
     snapshot
 }
+
+/// What the database declares its variables to be, for the world to fall back on.
+///
+/// WHY A WORLD BUILT FROM A SAVE STILL WANTS IT. The save answers the variables it holds,
+/// and it holds nearly all of them - 10,653 against the 10,645 the database declares - so
+/// this changes almost no answer. What it changes is the handful it cannot answer, where
+/// the difference is between a value and a shrug. It is also the only way to tell a name
+/// the save merely lacks from a name NOTHING declares: without the table every unanswered
+/// variable looks alike, and `SnapshotWorld::get_variable` will not call one undeclared on
+/// that evidence.
+pub fn declared() -> Option<std::sync::Arc<lookahead_engine::index::VariableTable>> {
+    common::variable_table()
+}

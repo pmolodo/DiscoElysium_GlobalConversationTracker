@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 using System;
+using System.Collections.Generic;
 using PixelCrushers.DialogueSystem;
 using Voidforge;
 using GlobalConversationTracker.Session;
@@ -182,6 +183,69 @@ namespace GlobalConversationTracker
                 $"Look-ahead: {what}, so every crawl this session runs at midnight on day "
                 + "one with time locked. Markers will be drawn for a world the player is "
                 + "not in.");
+        }
+
+        /// <summary>Which undefined variables have already been named in the log.</summary>
+        private static readonly HashSet<string> _undefinedNamed = new HashSet<string>();
+
+        /// <summary>
+        /// What a check's failure slot is called: its flag's name with this after it.
+        /// </summary>
+        /// <remarks>
+        /// The engine's <c>index::FAILED_FLAG_SUFFIX</c> written again on this side, because
+        /// the names arrive over the wire already built and nothing sends the suffix itself.
+        /// The two must agree; if they drift, the only symptom is this log filling with
+        /// failure slots reported as content bugs.
+        /// </remarks>
+        private const string FailedFlagSuffix = "_failed";
+
+        /// <summary>
+        /// A dialogue variable's value, or null for one the database never declared.
+        /// </summary>
+        /// <remarks>
+        /// <para>AN UNDEFINED VARIABLE IS FALSE, because that is what the game makes of
+        /// one. <c>FlagSet</c> is a call to <c>LuaHelper.GetVariable</c>, which returns
+        /// <c>bool</c> - there is no third answer for it to give - and a name Lua has never
+        /// heard of reads nil, which is false in the condition the guard puts it in. So a
+        /// guard on an undeclared variable hides its entry, every time.</para>
+        ///
+        /// <para>Null rather than a value, so the caller supplies the false in its own
+        /// type. Returning it from here would make this method know about both engines'
+        /// value types in order to say one thing.</para>
+        ///
+        /// <para>WORTH A WARNING EVEN THOUGH IT IS HANDLED. A guard reading a name nothing
+        /// declares is a content bug - an entry that can never appear, and whose author
+        /// meant it to - so the log names it once per variable. The shipped database has
+        /// exactly one, <c>undefined.pinball_asked_about_the_goats</c> on 1467:104, which
+        /// gates "And Gurdi?" on a flag that no script anywhere sets; the flag it was
+        /// plainly meant to read, <c>whirling.pinball_asked_about_the_goats</c>, differs
+        /// only in its namespace. A second one appearing is worth knowing about.</para>
+        /// </remarks>
+        /// <param name="name">The variable to read.</param>
+        internal static Lua.Result? ReadVariable(string name)
+        {
+            Lua.Result result = DialogueLua.GetVariable(name);
+            if (result.isBool || result.isNumber || result.isString)
+            {
+                return result;
+            }
+
+            // A CHECK'S FAILURE SLOT IS OURS AND IS MEANT TO BE MISSING. The engine gives
+            // every check flag a `_failed` companion whether or not the database declares
+            // one, so Lua has never heard of most of them. False is right for such a slot -
+            // it means "already failed", and a check nothing has failed yet is open - but it
+            // is not a content bug, and naming one here would fill the log with the engine
+            // reporting its own modelling as the game's mistake.
+            if (!name.EndsWith(FailedFlagSuffix, StringComparison.Ordinal)
+                && _undefinedNamed.Add(name))
+            {
+                Log?.Warning(
+                    $"Look-ahead: no variable named '{name}' exists, though a guard reads "
+                    + "it. Reading it as false, which is what the game does with it. The "
+                    + "entry behind that guard can never be shown.");
+            }
+
+            return null;
         }
 
         /// <summary>

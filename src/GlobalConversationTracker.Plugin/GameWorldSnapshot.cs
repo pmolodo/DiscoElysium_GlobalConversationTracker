@@ -63,7 +63,12 @@ namespace GlobalConversationTracker
 
             foreach (string name in questions.Variables)
             {
-                world.VariableValues.Add(Convert(DialogueLua.GetVariable(name)));
+                // THROUGH THE SAME READ THE MANAGED WORLD USES, so the two cannot disagree
+                // about a variable nothing declares: both send false, which is what the
+                // game makes of one. See `GameFacts.ReadVariable`.
+                Lua.Result? read = GameFacts.ReadVariable(name);
+                world.VariableValues.Add(
+                    read == null ? WireValue.FromBoolean(false) : Convert(read));
             }
 
             foreach (string key in questions.Queries)

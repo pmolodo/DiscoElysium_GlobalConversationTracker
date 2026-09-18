@@ -74,7 +74,12 @@ namespace GlobalConversationTracker
                 return cached;
             }
 
-            GuardValue value = Convert(DialogueLua.GetVariable(name));
+            // NULL IS AN UNDECLARED NAME, and the game reads one as false rather than as a
+            // question - see `GameFacts.ReadVariable`, which says so once in the log.
+            Lua.Result? read = GameFacts.ReadVariable(name);
+            GuardValue value = read == null
+                ? GuardValue.FromBoolean(false)
+                : Convert(read);
             _variables[name] = value;
             return value;
         }

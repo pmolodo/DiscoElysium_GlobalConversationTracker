@@ -305,7 +305,7 @@ fn main() {
         }
         let world = SnapshotWorld::declaring(
             save_world::of_save(&graph, conversation, &index, save_world::TEMPLATE),
-            None,
+            save_world::declared(),
         );
 
         let began = Instant::now();

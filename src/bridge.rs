@@ -690,6 +690,53 @@ fn thought_state_kinds(name: &str) -> Option<&'static [DataKind]> {
     }
 }
 
+/// Says, once per name, that a guard reads a variable the database never declared.
+///
+/// ONCE, because the search asks the same variable thousands of times as it fans out, and a
+/// line per ask would bury the run it was meant to explain.
+///
+/// WORTH SAYING AT ALL, even though the answer is now definite: a guard on an undeclared
+/// name is a content bug rather than a state of the world. The entry behind it can never be
+/// shown, so someone wrote a line the game cannot reach. The shipped database has exactly
+/// one - `undefined.pinball_asked_about_the_goats` on 1467:104, which differs from the flag
+/// it was plainly meant to read only in its namespace - and a second appearing is a thing to
+/// know rather than to absorb silently.
+///
+/// EXCEPT A CHECK'S FAILURE SLOT, which is ours and is undeclared on purpose.
+/// `index::parse_flags` gives every rolled check's flag a `FAILED_FLAG_SUFFIX` companion
+/// whether or not the database declares one, so an undeclared `_failed` name is a slot this
+/// engine invented rather than a line an author stranded. False is right for it on its own -
+/// the slot means "already failed", and a check nothing has failed yet is open - and calling
+/// it a content bug would report our own modelling as the game's mistake. The database
+/// declares 39 such names itself; those never reach here, because they are declared.
+///
+/// ON STDERR, which is this process's only channel that is not the wire. See the panic
+/// report in `run_look_ahead` for the same reasoning.
+fn undeclared_variable_warning(name: &str) {
+    use std::sync::Mutex;
+    static NAMED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+
+    if name.ends_with(crate::index::FAILED_FLAG_SUFFIX) {
+        return;
+    }
+
+    let Ok(mut named) = NAMED.lock() else {
+        return;
+    };
+    if !named
+        .get_or_insert_with(HashSet::new)
+        .insert(name.to_string())
+    {
+        return;
+    }
+
+    eprintln!(
+        "look-ahead: no variable named '{name}' is declared, though a guard reads it. \
+         Reading it as false, which is what the game does with it. The entry behind that \
+         guard can never be shown."
+    );
+}
+
 impl ILookAheadWorld for SnapshotWorld {
     fn money(&self) -> i32 {
         self.snapshot.money
@@ -718,11 +765,26 @@ impl ILookAheadWorld for SnapshotWorld {
 
         // The plugin could not read it. What the database says it starts as is a better
         // answer than "no idea", and is the only one that gets a counter's KIND right.
-        self.declared
-            .as_ref()
-            .and_then(|table| table.initial(name))
-            .cloned()
-            .unwrap_or_else(GuardValue::unknown)
+        let Some(table) = self.declared.as_ref() else {
+            // NO TABLE, so there is nothing to be undeclared AGAINST. Without it every
+            // variable looks undeclared, and answering them all false would be a guess
+            // about the whole group rather than a fact about one name.
+            return GuardValue::unknown();
+        };
+
+        match table.initial(name) {
+            Some(value) => value.clone(),
+            // DECLARED BY NOBODY, so the game reads it as false: `FlagSet` is a call to
+            // `LuaHelper.GetVariable`, which returns `bool`, and a name Lua never heard of
+            // is nil, which is false in the condition the guard puts it in. Unknown here
+            // would be the engine being careful about a question the game answers plainly,
+            // and it costs a marker that no play can ever clear - the entry behind such a
+            // guard cannot be shown, so an option leading only there leads nowhere.
+            None => {
+                undeclared_variable_warning(name);
+                GuardValue::from_boolean(false)
+            }
+        }
     }
 
     fn initially_has_item(&self, name: &str) -> bool {
@@ -3427,11 +3489,61 @@ mod tests {
             Some(4.0)
         );
         assert_eq!(read(&world, "church.done").kind(), GuardValueKind::Boolean);
-        // Never named at all, and the table does not declare it either.
+        // Never named at all, and the table does not declare it either - so it is false,
+        // which is what the game makes of a name Lua has never heard of. See
+        // `a_variable_nothing_declares_reads_false_as_the_game_reads_it`.
+        let undeclared = read(&world, "nothing.declares.this");
+        assert_eq!(undeclared.kind(), GuardValueKind::Boolean);
+        assert!(!undeclared.boolean());
+    }
+
+    /// A name nothing declares is FALSE, because that is the answer the game gives.
+    ///
+    /// `FlagSet` is a call to `LuaHelper.GetVariable`, whose return type is `bool`; a name
+    /// Lua has never heard of reads nil, and nil is false in the condition a guard puts it
+    /// in. So the entry behind such a guard is hidden, every time, and Unknown here would be
+    /// the engine hedging a question the game answers plainly - at the cost of a marker no
+    /// play can ever clear, since that entry can never be shown.
+    ///
+    /// The shipped database has exactly one: `undefined.pinball_asked_about_the_goats` on
+    /// 1467:104.
+    #[test]
+    fn a_variable_nothing_declares_reads_false_as_the_game_reads_it() {
+        let mut table = VariableTable::default();
+        table.add(&crate::index::VariableRecord {
+            name: "whirling.pinball_asked_about_the_goats".to_string(),
+            declared: "Boolean".to_string(),
+            initial: "False".to_string(),
+        });
+        let table = Arc::new(table);
+
+        let world = SnapshotWorld::declaring(WorldSnapshot::default(), Some(table.clone()));
+        let undefined = read(&world, "undefined.pinball_asked_about_the_goats");
         assert_eq!(
-            read(&world, "nothing.declares.this").kind(),
-            GuardValueKind::Unknown
+            undefined.kind(),
+            GuardValueKind::Boolean,
+            "a name the table does not carry is the game's false, not our Unknown",
         );
+        assert!(!undefined.boolean());
+
+        // WITHOUT THE TABLE IT STAYS UNKNOWN, and that is the point of the distinction:
+        // nothing can be called undeclared when there is nothing to be undeclared against.
+        // Answering false here would turn a missing table into a claim about every variable
+        // in the group rather than a fact about one name.
+        let bare = SnapshotWorld::new(WorldSnapshot::default());
+        assert_eq!(
+            read(&bare, "undefined.pinball_asked_about_the_goats").kind(),
+            GuardValueKind::Unknown,
+        );
+
+        // AND A CHECK'S FAILURE SLOT IS UNDECLARED ON PURPOSE - ours, not the database's -
+        // so it reads false by the same rule and says nothing about it. See
+        // `undeclared_variable_warning`.
+        let failed = format!("church.soona_pale_wc{}", crate::index::FAILED_FLAG_SUFFIX);
+        let world = SnapshotWorld::declaring(WorldSnapshot::default(), Some(table));
+        let slot = read(&world, &failed);
+        assert_eq!(slot.kind(), GuardValueKind::Boolean);
+        assert!(!slot.boolean());
     }
 
     /// A declared counter nobody wrote answers as a NUMBER, so an ordering guard decides.

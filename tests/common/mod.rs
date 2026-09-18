@@ -252,7 +252,7 @@ pub fn actors() -> Option<PathBuf> {
 /// them per fixture would be the measurement measuring its own setup. `None` where the
 /// game data cannot be had, in which case a world falls back to the old guess - which is
 /// what it had always done, so nothing gets worse where the table is missing.
-fn variable_table() -> Option<std::sync::Arc<lookahead_engine::index::VariableTable>> {
+pub fn variable_table() -> Option<std::sync::Arc<lookahead_engine::index::VariableTable>> {
     use std::sync::OnceLock;
     static TABLE: OnceLock<Option<std::sync::Arc<lookahead_engine::index::VariableTable>>> =
         OnceLock::new();
