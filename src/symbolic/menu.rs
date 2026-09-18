@@ -74,6 +74,22 @@ pub struct Budget {
     pub each: Duration,
 }
 
+/// What a menu falls back to where the onward question stars nothing.
+///
+/// AN ARM, NOT A SETTING. The default is what the product ships and every default measurement
+/// measures; the other is an opt-in comparison, named by `DEGCT_MARKING` in the menu matrix.
+/// See CLAUDE.md on keeping one algorithm everywhere by default.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+pub enum Fallback {
+    /// The shipped rule: ask the onward question again with the siblings alone, and only then
+    /// the exact marking.
+    #[default]
+    SiblingsThenExact,
+    /// Straight to the exact marking, so a route that goes back is shown only where the walk's
+    /// own cut found nothing going on. See de-l88t.
+    Exact,
+}
+
 /// Marks a menu by the cheap question, falling back to the exact one only where it answers
 /// nothing.
 ///
@@ -89,7 +105,8 @@ pub struct Budget {
 ///    skipped for it.
 /// 2. SIBLINGS CUT ONLY, asked where step 1 starred nothing. The walk can leave nothing onward
 ///    at all - every route to unread content going back through the hub the menu hangs off -
-///    and the menu is then answered as though nothing had been walked.
+///    and the menu is then answered as though nothing had been walked. [`Fallback::Exact`]
+///    leaves this step out.
 /// 3. EXACT MARKING, NOTHING CUT, where neither question starred anything and something is
 ///    reachable. It keeps the routes the cuts cannot see, such as one that sets a variable and
 ///    comes back through the hub to what the variable opens.
@@ -98,6 +115,25 @@ pub struct Budget {
 /// question sends the menu straight to the exact marking, which knows nothing of the walk and
 /// is the costliest arrangement there is: measured on the whole-game matrix, 761's menu then
 /// fails to settle at 256 MB, and 640's takes three times as long to star what it did anyway.
+///
+/// ## What dropping step 2 costs, measured 2026-09-17 (de-l88t)
+///
+/// [`Fallback::Exact`] is the arm that leaves it out. It is worth having because step 2 hands
+/// back exactly the routes step 1's cut exists to refuse - an option whose only way to unread
+/// content runs back out through the hub the player just came in by - so a menu answered at
+/// step 2 contradicts what step 1 taught the player.
+///
+/// Over the whole game, three runs each, it moved four menus of 395 and THREE OF THEM GOT
+/// TIGHTER at no cost: 517 went from five stars to one and 554 from five to one, both at
+/// unchanged milliseconds, and 16 lost a star it should lose.
+///
+/// The fourth is why it is an arm and not the default. 761 stopped settling at all - 0 of 8
+/// options, 2,628 ms against 981 - and the whole game rose 15.8 per cent. The nolimit arm says
+/// that is structural rather than a budget to raise: the exact marking answers 761 with the
+/// same four stars step 2 gave, in 140,103 ms and 93,353,567 diagram nodes, about 3.7 GB.
+///
+/// NEITHER READING IS SETTLED, because both were taken on a profile that asks every menu in a
+/// state no save holds - see `menu_matrix`'s `seen_world` and de-aqxa.
 ///
 /// ## Why, from the whole game
 ///
@@ -108,7 +144,7 @@ pub struct Budget {
 ///
 /// Its one cost is 25 menus of 395 where content is reachable and every route to it returns
 /// through the menu, so the cheap question marks nothing. Those are all small - 24 of the 25
-/// answer exactly in between 18 and 80 ms - so step 3 is affordable exactly where it fires,
+/// answer exactly in between 18 and 80 ms - so step 2 is affordable exactly where it fires,
 /// and never fires on 761, 631 or 640.
 ///
 /// IT IS NOT A SUPERSET OF THE EXACT MARKING, and it is worth being exact about why, since
@@ -131,6 +167,7 @@ pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> Novelty>(
     budget: &Budget,
     shape: &GroupShape,
     returned: &HashSet<DialogueNodeId>,
+    fallback: Fallback,
 ) -> MenuAnswer {
     // STEP 1 ONLY WHERE THE WALK CUTS SOMETHING. An option of this menu is never cut on the
     // walk's account, so a walk holding nothing else asks step 2's question, and would ask it
@@ -139,10 +176,13 @@ pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> Novelty>(
     let walk_cuts = returned
         .iter()
         .any(|id| !contestants.iter().any(|c| c.position.option == *id));
-    let cuts: Vec<&HashSet<DialogueNodeId>> = if walk_cuts {
-        vec![returned, &siblings_alone]
-    } else {
-        vec![&siblings_alone]
+    let cuts: Vec<&HashSet<DialogueNodeId>> = match (fallback, walk_cuts) {
+        (Fallback::SiblingsThenExact, true) => vec![returned, &siblings_alone],
+        (Fallback::SiblingsThenExact, false) => vec![&siblings_alone],
+        (Fallback::Exact, true) => vec![returned],
+        // With nothing walked the two questions are the same one, so the arm asks it once and
+        // differs from the shipped rule in nothing.
+        (Fallback::Exact, false) => vec![&siblings_alone],
     };
 
     let mut passes = 0;
@@ -720,7 +760,10 @@ mod tests {
     enum Which {
         Exact,
         Onward,
+        /// The shipped rule, siblings alone before the exact marking.
         Hybrid,
+        /// The arm that drops the siblings-alone step - see [`Fallback::Exact`].
+        HybridOnwardOnly,
     }
 
     fn mark(graph: &LookAheadGraph, options: &[i32], unread: &[i32]) -> MenuAnswer {
@@ -845,12 +888,40 @@ mod tests {
         );
     }
 
-    /// A walk holding nothing but this menu's own options cuts nothing, so step 1 is skipped
-    /// for step 2's question rather than asking it twice. Where every route loops back, that
-    /// question stars nothing and the menu goes on to the exact marking - which is where a
-    /// repeated question would show, as a pass more than the menu asked without a walk.
+    /// The same menu under [`Fallback::Exact`], which has no siblings-alone level: it goes on
+    /// to the exact marking instead, and a star that gives names the entry it claims.
+    ///
+    /// THE WITNESS IS WHAT TELLS THE TWO APART. Both levels star the same kitchen options for
+    /// the same bird, so the stars cannot; only the exact marking computes a witness.
     #[test]
-    fn a_walk_of_only_the_menus_own_options_skips_step_one() {
+    fn the_onward_only_arm_goes_to_the_exact_marking_instead() {
+        let graph = kitchen();
+        let returned = returned_after(&graph, &KITCHEN_WALK);
+        let bird_only = [3];
+
+        let arm = marking_returning(
+            &graph,
+            &KITCHEN_MENU,
+            &bird_only,
+            Which::HybridOnwardOnly,
+            &returned,
+        );
+        let exact = marking(&graph, &KITCHEN_MENU, &bird_only, Which::Exact);
+
+        assert!(arm.rounds > 0, "the exact marking stars something");
+        assert_eq!(starred(&arm), starred(&exact));
+        assert!(
+            arm.marks
+                .iter()
+                .all(|mark| mark.round.is_none() == mark.witness.is_none()),
+            "every star names the entry it claims, which only the exact marking does"
+        );
+    }
+
+    /// A walk holding nothing but this menu's own options cuts nothing - an option is never cut
+    /// on the walk's account - so the menu is answered exactly as one with no walk at all.
+    #[test]
+    fn a_walk_of_only_the_menus_own_options_cuts_nothing() {
         let graph = every_route_loops_back();
         let options_only: HashSet<DialogueNodeId> = [1, 2, 3].iter().map(|id| node(*id)).collect();
 
@@ -858,10 +929,7 @@ mod tests {
         let unwalked = marking(&graph, &[1, 2, 3], &[4], Which::Hybrid);
 
         assert_eq!(starred(&walked), starred(&unwalked));
-        assert_eq!(
-            walked.passes, unwalked.passes,
-            "the siblings' question is asked once, not twice"
-        );
+        assert_eq!(walked.passes, unwalked.passes);
     }
     use crate::symbolic::order::IterationOrder;
 
@@ -941,9 +1009,24 @@ mod tests {
                 Which::Onward => {
                     mark_onward(search, &novelty, contestants, &budget, &shape, returned)
                 }
-                Which::Hybrid => {
-                    mark_menu_hybrid(search, &novelty, contestants, &budget, &shape, returned)
-                }
+                Which::Hybrid => mark_menu_hybrid(
+                    search,
+                    &novelty,
+                    contestants,
+                    &budget,
+                    &shape,
+                    returned,
+                    Fallback::SiblingsThenExact,
+                ),
+                Which::HybridOnwardOnly => mark_menu_hybrid(
+                    search,
+                    &novelty,
+                    contestants,
+                    &budget,
+                    &shape,
+                    returned,
+                    Fallback::Exact,
+                ),
             }
         })
     }

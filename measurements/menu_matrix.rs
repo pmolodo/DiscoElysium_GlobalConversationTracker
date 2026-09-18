@@ -21,8 +21,11 @@
 //! `menu_residue` and `menu_wall` - takes its starts as the menu, and marks the whole menu
 //! against one manager through `bridge::mark_menu_as_shipped`, so each group gets the marking
 //! the product gives it: the onward question first, and the exact marking by branch and bound
-//! only where that marks nothing. `DEGCT_MARKING=hybrid-bnb` names that default, and
-//! `DEGCT_MARKING=bnb` puts the exact marking on every group instead, as an opt-in comparison.
+//! only where that marks nothing. `DEGCT_MARKING=hybrid-bnb` names that default;
+//! `DEGCT_MARKING=bnb` puts the exact marking on every group instead, and
+//! `DEGCT_MARKING=hybrid-onward` drops the hybrid's siblings-alone level so that a menu whose
+//! walk cut leaves nothing onward goes straight to the exact marking. Both are opt-in
+//! comparisons.
 //!
 //! WITH THE WALK, because the product asks with one. A profile's menu has nobody behind it, so
 //! the walk a player would have been shown is built from the conversation's start before the
@@ -131,11 +134,16 @@
 //!
 //! `DEGCT_NOLIMIT=1` takes the limits off: a 6144 MB manager and a five-minute wall, which is
 //! also each pass's ration.
+//!
+//! `DEGCT_SEEN_WORLD=all` makes the world agree with the novelty function about what the
+//! player has been shown, and `=body` does the same but leaves the menu's own options unseen.
+//! A default row's world has been shown NOTHING whatever its novelty function says, which is
+//! the state in which the most one-time effects are still pending. See [`seen_world`].
 
 use std::collections::{BTreeSet, HashMap};
 use std::time::{Duration, Instant};
 
-use lookahead_engine::bridge::{SnapshotWorld, WorldSnapshot};
+use lookahead_engine::bridge::{NodeRef, SnapshotWorld, WorldSnapshot};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, discover_group, read_index};
@@ -203,11 +211,15 @@ enum Marking {
     /// The exact marking by branch and bound on every group, with no onward question first -
     /// see `menu::mark_menu`. An opt-in comparison: it takes no cut and no walk.
     BranchAndBound,
+    /// The hybrid WITHOUT its siblings-alone level, so a menu whose walk cut leaves nothing
+    /// onward goes straight to the exact marking - see `menu::Fallback::Exact` and de-l88t.
+    HybridOnwardOnly,
 }
 
 /// What `DEGCT_MARKING` says for each marking.
 const HYBRID_BRANCH_AND_BOUND: &str = "hybrid-bnb";
 const BRANCH_AND_BOUND: &str = "bnb";
+const HYBRID_ONWARD_ONLY: &str = "hybrid-onward";
 
 /// The marking `DEGCT_MARKING` names: `hybrid-bnb`, the default and what the product marks
 /// with, walk and all; or `bnb` for the exact marking on every group. Row files can be taken
@@ -227,10 +239,120 @@ fn marking() -> Marking {
     {
         "" | HYBRID_BRANCH_AND_BOUND => Marking::HybridBranchAndBound,
         BRANCH_AND_BOUND => Marking::BranchAndBound,
+        HYBRID_ONWARD_ONLY => Marking::HybridOnwardOnly,
         other => panic!(
-            "DEGCT_MARKING={other:?}: expected {HYBRID_BRANCH_AND_BOUND} or {BRANCH_AND_BOUND}"
+            "DEGCT_MARKING={other:?}: expected {HYBRID_BRANCH_AND_BOUND}, {BRANCH_AND_BOUND}              or {HYBRID_ONWARD_ONLY}"
         ),
     }
+}
+
+/// Whether the world agrees with the novelty function about what the player has been shown.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SeenWorld {
+    /// The world says the player has been shown NOTHING, whatever the novelty function says.
+    Nothing,
+    /// Every entry the novelty function calls seen is seen in the world too.
+    Everything,
+    /// The same, less the menu's own options, which a player standing at the menu has not
+    /// chosen yet.
+    Body,
+}
+
+/// What `DEGCT_SEEN_WORLD` says for each.
+const SEEN_WORLD_EVERYTHING: &str = "all";
+const SEEN_WORLD_BODY: &str = "body";
+
+/// What `DEGCT_SEEN_WORLD` names, default [`SeenWorld::Nothing`].
+///
+/// ## What this arm is for, and why the default is the incoherent one
+///
+/// The profile says "exactly the deepest entries are unseen and everything else is seen", and
+/// the novelty function says so, but the WORLD is built from a default snapshot whose `seen`
+/// set is empty. Those two disagree, and one of the things the world's `seen` set drives is
+/// which one-time effects have already fired: `state::seed_state` seeds a node's `once_slot`
+/// and `seen_slot` from `world.is_seen`, because `GenericLuaFunctions.Once` is a test on
+/// whether the entry has been shown. So a default row asks a menu in a state no save can be
+/// in - almost every line read, yet every one-time increment in the group still pending - and
+/// that is the state in which the most once-slots are still live variables rather than
+/// constants.
+///
+/// It is an opt-in arm rather than the default for the reason every arm here is: a row taken
+/// this way cannot be compared with the rows already measured, and the shipped algorithm is
+/// what a default row must describe. See de-l88t.
+///
+/// ## WHAT IT SAID ON 761, AND WHY THE NUMBER MUST NOT BE QUOTED AS A SPEED-UP
+///
+/// ```text
+///   arm                  menu_ms  asked  rounds  settled  partly      nodes
+///   bnb/seen-nothing        2513      2       0        0       8  4,437,846
+///   bnb/seen-body            511      1       0        8       0    937,766
+///   bnb/seen-all             507      1       0        8       0    937,766
+/// ```
+///
+/// IT SETTLES BECAUSE THERE IS NOTHING LEFT TO FIND. One gate pass runs, the unread targets
+/// come back symbolically unreachable, and every option settles with no marker - `rounds` is
+/// zero and `starred` is empty. The targets are still LINK-reachable, or no pass would have
+/// run; what closed the routes is `seen_slot`, which shuts an entry that shuts once seen. Mark
+/// most of a conversation as seen and enough of it closes that its deepest entries cannot be
+/// reached at all.
+///
+/// So this arm does not isolate the once-slots: it changes them and destroys the profile in the
+/// same move, and 511 ms is the cost of proving an empty menu. A seen set that was never walked
+/// to is not merely unwitnessed, it contradicts itself - it claims the player saw content that
+/// the flags it sets make unreachable.
+///
+/// WHAT THE QUESTION ACTUALLY NEEDS is a profile whose seen set came from a walk: step to the
+/// nearest unseen entry, mark the route seen and apply its actions so the one-time effects fire
+/// and the counters advance, and repeat until nothing unseen is reachable. What is left unseen
+/// is then "deepest" in a sense that has a witness, and the state around it is one some play
+/// demonstrably reaches. That is de-l88t's follow-up; until it exists, whether a realistic world
+/// makes 761 affordable is UNANSWERED.
+///
+/// # Panics
+///
+/// On any other value, so a misspelt run does not quietly measure the default.
+fn seen_world() -> SeenWorld {
+    match lookahead_engine::core::env::var("SEEN_WORLD")
+        .unwrap_or_default()
+        .as_str()
+    {
+        "" => SeenWorld::Nothing,
+        SEEN_WORLD_EVERYTHING => SeenWorld::Everything,
+        SEEN_WORLD_BODY => SeenWorld::Body,
+        other => panic!(
+            "DEGCT_SEEN_WORLD={other:?}: expected {SEEN_WORLD_EVERYTHING} or {SEEN_WORLD_BODY}"
+        ),
+    }
+}
+
+/// The entries the world says the player has been shown, from the novelty function itself so
+/// that the two cannot drift apart.
+///
+/// GROUP ENTRIES ARE NEVER MARKED. The game does not display one, so it cannot have shown it,
+/// and `seed_state` would read that as its one-time effects having fired.
+fn seen_by_world<F>(
+    graph: &LookAheadGraph,
+    novelty: &F,
+    starts: &[DialogueNodeId],
+    which: SeenWorld,
+) -> lookahead_engine::bridge::NodeSet
+where
+    F: Fn(DialogueNodeId) -> Novelty,
+{
+    let mut seen = lookahead_engine::bridge::NodeSet::default();
+    if which == SeenWorld::Nothing {
+        return seen;
+    }
+    for node in graph.nodes() {
+        if node.is_group || novelty(node.id) == Novelty::UnseenAnyGame {
+            continue;
+        }
+        if which == SeenWorld::Body && starts.contains(&node.id) {
+            continue;
+        }
+        seen.insert(NodeRef::from(node.id));
+    }
+    seen
 }
 
 /// How many options the menu asks about.
@@ -441,6 +563,9 @@ where
             WorldSnapshot {
                 day_minutes: 720,
                 day_counter: 1,
+                // EMPTY BY DEFAULT, and `DEGCT_SEEN_WORLD` is what makes it agree with the
+                // novelty function - see [`seen_world`] for what that changes.
+                seen: seen_by_world(graph, novelty, starts, seen_world()),
                 ..Default::default()
             },
             None,
@@ -528,6 +653,17 @@ where
                 &contestants,
                 &marking_budget,
                 &shape,
+            ),
+            // THE SAME WALK AND THE SAME CUT as the shipped arm, differing only in what it does
+            // where the onward question stars nothing, so the two are a controlled comparison.
+            Marking::HybridOnwardOnly => menu::mark_menu_hybrid(
+                marking_search,
+                novelty,
+                &contestants,
+                &marking_budget,
+                &shape,
+                &lookahead_engine::bridge::passed_since_hub(graph, &shape, &walk),
+                menu::Fallback::Exact,
             ),
         };
         counted.options = contestants.len();

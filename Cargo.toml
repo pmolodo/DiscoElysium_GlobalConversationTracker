@@ -177,5 +177,9 @@ name = "bidirectional_headroom"
 path = "measurements/bidirectional_headroom.rs"
 
 [[example]]
+name = "greedy_playthrough"
+path = "measurements/greedy_playthrough.rs"
+
+[[example]]
 name = "onward_or_back"
 path = "measurements/onward_or_back.rs"

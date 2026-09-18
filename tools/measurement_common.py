@@ -429,6 +429,7 @@ COMPARED_VARIABLES = frozenset(
     for name in (
         "BUDGET_MB",
         "NOLIMIT",
+        "SEEN_WORLD",
         "STARTS",
         "UNSEEN",
         "SETTLE_GROUPS",

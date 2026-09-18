@@ -40,7 +40,7 @@
 //! cannot pay for; and any input that does not fit what is on screen. Each is an error naming
 //! the step, because a walk that guessed would reach a menu the game does not.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::str::FromStr;
 
@@ -49,7 +49,7 @@ use crate::core::state::{LookAheadState, seed_state};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, Ternary};
 use crate::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
-use crate::oracle::{COUNTER_CAP, can_afford, charge, has_been_seen};
+use crate::oracle::{COUNTER_CAP, can_afford, charge, enter, has_been_seen};
 use crate::world::{CrawlContext, ILookAheadWorld};
 
 /// How an [`Input::Enter`] is spelled in a scenario.
@@ -130,6 +130,368 @@ pub fn walk_inputs(
         caps: CounterCaps::for_graph(COUNTER_CAP, graph),
     }
     .walk(conversation, inputs)
+}
+
+/// One step of a leg: what was pressed, and what the game did in answer.
+///
+/// A step with no `input` is one the game took on its own - a line with a menu behind it does
+/// not wait, so nothing is pressed and it still walks entries and displays one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Step {
+    /// What was pressed, if anything.
+    pub input: Option<Input>,
+    /// What was on screen when it was pressed.
+    pub at: DialogueNodeId,
+    /// The menu on screen, in the order the game draws it, where there was one. An
+    /// [`Input::Choose`] indexes this from 1, so a step carries what its number meant.
+    pub menu: Vec<DialogueNodeId>,
+    /// Where this step entered a red or white check, which way the die was taken to go.
+    ///
+    /// WHAT A REPLAY HAS TO ARRANGE. The keypresses alone do not reproduce a step through a
+    /// rolled check, because the game rolls; a replayer needs to know this leg assumed a 12
+    /// here, or a 2. `None` is a step that entered no rolled check.
+    pub rolled: Option<bool>,
+    /// Every entry the game stepped through in answer, in order.
+    pub encountered: Vec<DialogueNodeId>,
+    /// The ones it put on screen.
+    pub displayed: Vec<DialogueNodeId>,
+}
+
+/// One leg of a [`greedy_playthrough`]: the conversation walked from its start to the nearest
+/// entry the player had not been shown.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Leg {
+    /// What this leg was walked for: the nearest unshown entry, counted in presses.
+    pub target: DialogueNodeId,
+    /// Whether this leg began at the conversation's start rather than where the last one
+    /// ended - the game having ended the conversation, or nothing unshown being reachable from
+    /// where the player stood.
+    ///
+    /// WHAT DELIMITS A SESSION. Consecutive legs up to the next restart are one sitting at the
+    /// NPC, and their inputs run together into one keypress sequence from the start entry.
+    pub restarted: bool,
+    /// The steps, in order. [`Self::inputs`] is the keypress sequence they spell.
+    pub steps: Vec<Step>,
+}
+
+impl Leg {
+    /// The keypress sequence, which is what both executors replay: the in-game harness
+    /// through the probe and the offline runner through [`walk_inputs`].
+    pub fn inputs(&self) -> Vec<Input> {
+        self.steps.iter().filter_map(|step| step.input).collect()
+    }
+
+    /// Every entry stepped through, the conversation's start first - what a request carries
+    /// as `encountered`.
+    pub fn encountered(&self) -> Vec<DialogueNodeId> {
+        self.steps
+            .iter()
+            .flat_map(|step| step.encountered.iter().copied())
+            .collect()
+    }
+
+    /// The ones the game put on screen.
+    pub fn displayed(&self) -> Vec<DialogueNodeId> {
+        self.steps
+            .iter()
+            .flat_map(|step| step.displayed.iter().copied())
+            .collect()
+    }
+}
+
+/// Why a [`greedy_playthrough`] stopped.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Stop {
+    /// Nothing unshown can be reached any more, whatever the playthrough does next. This is
+    /// the answer that makes the entries left over meaningful.
+    Exhausted,
+    /// A leg's search passed its ceiling, so what is still unshown is not known to be out of
+    /// reach - only that this did not find it.
+    OutOfRoom,
+    /// The conversation has no start entry.
+    NoStart,
+}
+
+/// A playthrough that always walks to the nearest thing it has not been shown.
+#[derive(Debug, Clone)]
+pub struct Playthrough {
+    pub legs: Vec<Leg>,
+    /// Entries put on screen, in the order they were first shown.
+    pub shown: Vec<DialogueNodeId>,
+    /// Positions the walk would not step past, because it refuses rather than guesses - see
+    /// the module doc. A branch is pruned rather than the leg abandoned, so this is a count of
+    /// how much of the conversation this world cannot decide.
+    pub refused: usize,
+    /// Why, for the first few: the entry the walk stood at and what it would not decide.
+    ///
+    /// A COUNT ALONE CANNOT BE ACTED ON. A playthrough that stops early stops for a reason, and
+    /// the reason is the difference between a world that is missing an answer and a
+    /// conversation that genuinely goes no further.
+    pub blocked: Vec<(DialogueNodeId, String)>,
+    /// Every red or white check the walk was offered, with the fewest presses it stood at one
+    /// from a sitting's start.
+    ///
+    /// WHAT THE NEXT STAGE OF AN ESCALATION PICKS FROM: the closest check not yet being passed
+    /// is the one to try a 12 on.
+    pub rolled: Vec<(DialogueNodeId, usize)>,
+    pub stopped: Stop,
+}
+
+/// How many refusals a playthrough keeps the reason for. Enough to see the shape of what a
+/// world could not answer, without a row carrying one per position.
+const BLOCKED_KEPT: usize = 8;
+
+/// Plays `conversation` by always walking to the nearest entry it has not been shown, until
+/// nothing unshown is reachable.
+///
+/// ## What it is for
+///
+/// A state some play demonstrably reaches. The alternative is to ASSERT one - to declare a set
+/// of entries seen and hand it to the engine - and an asserted set can contradict itself: a
+/// `seen:` slot shuts an entry that shuts once seen, so declaring most of a conversation seen
+/// can close the routes to the rest of it and leave content that is link-reachable and
+/// symbolically unreachable. What this returns cannot, because the walk that produced it is
+/// the witness. See de-l88t.
+///
+/// ## The rule
+///
+/// A leg stops at its target rather than playing on, so it walks the shortest route to one new
+/// thing and no further. The next leg CONTINUES FROM THERE, which is what a player does: at a
+/// hub you take the next topic rather than leaving and walking back to the NPC.
+///
+/// IT RESTARTS ONLY WHERE THE GAME FORCES IT - the conversation has ended, or nothing unshown
+/// can be reached from where the player stands while something still can from the start. Both
+/// fall out of the same test: a leg from here finds nothing, so one is tried from the start
+/// before the playthrough gives up. [`Leg::restarted`] says which legs began that way, and
+/// consecutive legs between restarts are one sitting.
+///
+/// The state carries across legs and restarts alike - a `once` that has fired stays fired and a
+/// counter keeps its value, which is what a save holds.
+///
+/// Within a leg the nearest unshown entry is the one fewest PRESSES away, since that is the
+/// distance a player pays; a line that plays without waiting costs nothing.
+///
+/// `ceiling` bounds one leg's search in walk positions. [`Stop::OutOfRoom`] says a leg hit it,
+/// and only [`Stop::Exhausted`] licenses reading the entries left unshown as unreachable.
+pub fn greedy_playthrough(
+    graph: &LookAheadGraph,
+    world: &dyn ILookAheadWorld,
+    conversation: i32,
+    ceiling: usize,
+    passing: &HashSet<DialogueNodeId>,
+) -> Playthrough {
+    let start = DialogueNodeId::new(conversation, 0);
+    let mut done = Playthrough {
+        legs: Vec::new(),
+        shown: Vec::new(),
+        refused: 0,
+        blocked: Vec::new(),
+        rolled: Vec::new(),
+        stopped: Stop::Exhausted,
+    };
+    if graph.get(start).is_none() {
+        done.stopped = Stop::NoStart;
+        return done;
+    }
+
+    let walker = Walker {
+        graph,
+        world,
+        context: CrawlContext::new(graph.symbols(), world),
+        caps: CounterCaps::for_graph(COUNTER_CAP, graph),
+    };
+    // WHAT THE WORLD HAS ALREADY SHOWN counts as shown, so a playthrough can be continued from
+    // a save rather than only from nothing.
+    let mut shown: HashSet<DialogueNodeId> = graph
+        .nodes()
+        .filter(|node| world.is_seen(node.id))
+        .map(|node| node.id)
+        .collect();
+    let mut state = seed_state(graph, world);
+    let mut at = start;
+    let mut line_up = false;
+    // THE FIRST LEG IS A RESTART, because the player has not sat down yet.
+    let mut restarting = true;
+    // OPENING THE CONVERSATION SHOWS ITS START, whatever happens next: the game's line hook
+    // fires for entry 0 as it opens, which is why `walk` records it. A conversation whose start
+    // goes nowhere - one entered only from elsewhere - then reports one entry shown and no
+    // legs, rather than nothing shown and an exhausted walk.
+    if shown.insert(start) {
+        done.shown.push(start);
+    }
+
+    loop {
+        let found = walker.nearest_unshown(
+            Standing {
+                at: if restarting { start } else { at },
+                state: &state,
+                line_up: !restarting && line_up,
+                opening: restarting,
+            },
+            &shown,
+            ceiling,
+            passing,
+        );
+        done.refused += found.refused;
+        for blocked in found.blocked {
+            if done.blocked.len() < BLOCKED_KEPT && !done.blocked.contains(&blocked) {
+                done.blocked.push(blocked);
+            }
+        }
+        // THE NEAREST SIGHTING OF EACH, since a check offered again later from further away is
+        // the same check and the closest approach is what an escalation orders them by.
+        for (check, presses) in found.rolled {
+            match done.rolled.iter_mut().find(|(id, _)| *id == check) {
+                Some((_, best)) => *best = (*best).min(presses),
+                None => done.rolled.push((check, presses)),
+            }
+        }
+        let Some(reached) = found.leg else {
+            if found.out_of_room {
+                done.stopped = Stop::OutOfRoom;
+                return done;
+            }
+            // NOTHING FROM HERE. A player backs out and comes in again before concluding
+            // there is nothing left, so the search is tried once from the start - and only a
+            // restart that also finds nothing ends the playthrough.
+            if restarting {
+                return done;
+            }
+            restarting = true;
+            continue;
+        };
+        for id in reached.leg.displayed() {
+            if shown.insert(id) {
+                done.shown.push(id);
+            }
+        }
+        done.legs.push(Leg {
+            restarted: restarting,
+            ..reached.leg
+        });
+        state = reached.state;
+        at = reached.at;
+        line_up = reached.line_up;
+        restarting = false;
+    }
+}
+
+/// One stage of a [`roll_escalation`]: the dice it declared, and the playthrough they gave.
+pub struct Stage {
+    /// The red and white checks this stage rolls a 12 on. Every other rolled check takes a 2.
+    ///
+    /// It GROWS BY ONE a stage, so a stage's number is how many checks the player had to win.
+    pub passing: Vec<DialogueNodeId>,
+    /// The check this stage added, and `None` for the first, which passes none.
+    pub added: Option<DialogueNodeId>,
+    pub walk: Playthrough,
+}
+
+/// Every playthrough of one conversation as the dice are conceded one at a time.
+///
+/// ## The rule
+///
+/// The first stage rolls a 2 everywhere, so every red and white check fails, and walks to
+/// exhaustion. Each stage after it concedes ONE more check - the closest still being failed,
+/// by the fewest presses the last stage ever stood at one - and walks to exhaustion again from
+/// a fresh start.
+///
+/// RED CHECKS TOO, although the game never lets a player retry one: conceding a red stands for
+/// reloading a save from before the conversation, which is a thing players do and the only way
+/// the content behind a failed red is ever seen.
+///
+/// PASSIVE CHECKS ARE NOT IN THIS. They are not rolled - the character sheet decides them, and
+/// the world already answers them from the save. Only a check with a die has two ways to go.
+///
+/// ## Why it terminates, and why each stage is worth keeping
+///
+/// The conceded set only grows and it is bounded by the checks the conversation holds, so the
+/// schedule is finite. Every stage is a playthrough somebody could have had, and the stages
+/// differ in exactly the way that matters: stage n is what a player sees having won n rolls.
+///
+/// A FAILED CHECK IS NOT A CLOSED DOOR, which is why stage one is not empty. A check that fails
+/// is still entered and still says its failure line, and the graph gives some of them failure
+/// actions; what a failure closes is the check itself - permanently, for a red or for a white
+/// carrying a flag - and `oracle::enter_rolled` holds that rule.
+pub fn roll_escalation(
+    graph: &LookAheadGraph,
+    world: &dyn ILookAheadWorld,
+    conversation: i32,
+    ceiling: usize,
+) -> Vec<Stage> {
+    let mut passing: HashSet<DialogueNodeId> = HashSet::new();
+    let mut added = None;
+    let mut stages = Vec::new();
+
+    loop {
+        let walk = greedy_playthrough(graph, world, conversation, ceiling, &passing);
+        // THE CLOSEST STILL FAILING, and ties go to the smaller entry so two runs of this
+        // concede the same check in the same order.
+        let next = walk
+            .rolled
+            .iter()
+            .filter(|(check, _)| !passing.contains(check))
+            .min_by_key(|(check, presses)| (*presses, check.conversation_id, check.entry_id))
+            .map(|(check, _)| *check);
+
+        stages.push(Stage {
+            passing: sorted(&passing),
+            added,
+            walk,
+        });
+
+        let Some(check) = next else {
+            return stages;
+        };
+        passing.insert(check);
+        added = Some(check);
+    }
+}
+
+/// A set of entries in a deterministic order, since `HashSet` has none.
+fn sorted(ids: &HashSet<DialogueNodeId>) -> Vec<DialogueNodeId> {
+    let mut all: Vec<DialogueNodeId> = ids.iter().copied().collect();
+    all.sort_unstable_by_key(|id| (id.conversation_id, id.entry_id));
+    all
+}
+
+/// Where the player is standing when a leg's search begins.
+struct Standing<'s> {
+    at: DialogueNodeId,
+    state: &'s LookAheadState,
+    /// Whether `at` is a line waiting for a continue.
+    line_up: bool,
+    /// Whether this is a fresh sitting, whose first step records the conversation's start the
+    /// way [`walk_inputs`] does. A leg that continues has already recorded where it stands.
+    opening: bool,
+}
+
+/// One walk position a leg's search reached, and how it got there.
+struct Reached {
+    at: DialogueNodeId,
+    state: LookAheadState,
+    /// Whether `at` is a line waiting for a continue.
+    line_up: bool,
+    parent: Option<usize>,
+    step: Option<Step>,
+    presses: usize,
+}
+
+/// A leg, and where it left the player.
+struct Reaching {
+    leg: Leg,
+    state: LookAheadState,
+    at: DialogueNodeId,
+    line_up: bool,
+}
+
+/// What a leg's search found.
+struct Found {
+    leg: Option<Reaching>,
+    refused: usize,
+    blocked: Vec<(DialogueNodeId, String)>,
+    rolled: Vec<(DialogueNodeId, usize)>,
+    out_of_room: bool,
 }
 
 /// An entry on offer, with the groups the evaluation went through to reach it.
@@ -307,10 +669,233 @@ impl Walker<'_> {
         ))
     }
 
+    /// The fewest presses from the conversation's start to something not in `shown`.
+    ///
+    /// A NOUGHT-ONE SEARCH, because a line that plays without waiting costs no press and a
+    /// continue or a choice costs one, so the queue takes a free step at the front and a paid
+    /// one at the back. `oracle::choice_distances` counts choices over links the same way.
+    ///
+    /// A position the walk will not step past is DROPPED RATHER THAN FATAL - it refuses where
+    /// it cannot decide what the game would show, and one undecided line does not say the rest
+    /// of the conversation is unreachable. The count comes back so a reader can see how much
+    /// of it this world could not answer.
+    fn nearest_unshown(
+        &self,
+        standing: Standing<'_>,
+        shown: &HashSet<DialogueNodeId>,
+        ceiling: usize,
+        passing: &HashSet<DialogueNodeId>,
+    ) -> Found {
+        let Standing {
+            at: start,
+            state: from,
+            line_up: from_line_up,
+            opening,
+        } = standing;
+        // THE START FIRST ON A FRESH SITTING, for the reason `walk` gives: the game reports
+        // entry 0 as the conversation opens, and a walk without it loses every hub passed
+        // before the first line shown. A leg that continues is already standing there, and
+        // recording it again would double it in the walk.
+        let opening = opening.then(|| Step {
+            input: None,
+            at: start,
+            menu: Vec::new(),
+            rolled: None,
+            encountered: vec![start],
+            displayed: vec![start],
+        });
+        let mut reached = vec![Reached {
+            at: start,
+            state: from.clone(),
+            line_up: from_line_up,
+            parent: None,
+            step: opening,
+            presses: 0,
+        }];
+        let mut best: HashMap<(DialogueNodeId, LookAheadState, bool), usize> =
+            HashMap::from([((start, from.clone(), from_line_up), 0)]);
+        let mut pending: VecDeque<usize> = VecDeque::from([0]);
+        let mut found = Found {
+            leg: None,
+            refused: 0,
+            blocked: Vec::new(),
+            rolled: Vec::new(),
+            out_of_room: false,
+        };
+        // THE BEST SO FAR, and the search runs on past it only while the queue can still
+        // produce a position of the same cost - which is what makes the winner the nearest
+        // rather than the first one the queue happened to hand over.
+        let mut winner: Option<(usize, DialogueNodeId, usize)> = None;
+
+        while let Some(here) = pending.pop_front() {
+            let (at, state, line_up, presses) = {
+                let step = &reached[here];
+                (step.at, step.state.clone(), step.line_up, step.presses)
+            };
+            if best.get(&(at, state.clone(), line_up)) != Some(&presses) {
+                continue;
+            }
+            if winner.as_ref().is_some_and(|(cost, _, _)| presses > *cost) {
+                break;
+            }
+            if reached.len() >= ceiling {
+                found.out_of_room = true;
+                break;
+            }
+
+            let moves = match self.next(at, &state) {
+                Ok(next) => next,
+                // UNDECIDED, so this position is dropped. See the doc above.
+                Err(why) => {
+                    found.refused += 1;
+                    if found.blocked.len() < BLOCKED_KEPT {
+                        found.blocked.push((at, why));
+                    }
+                    continue;
+                }
+            };
+            let taken: Vec<(Option<Input>, Vec<DialogueNodeId>, &Offered, bool)> = match &moves {
+                Next::End => Vec::new(),
+                Next::Line(line) => {
+                    vec![(line_up.then_some(Input::Enter), Vec::new(), line, true)]
+                }
+                Next::Menu(options) => {
+                    let drawn: Vec<DialogueNodeId> = options.iter().map(|o| o.id).collect();
+                    options
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, option)| can_afford(self.node(option.id), &state))
+                        .map(|(index, option)| {
+                            let input = if options.len() == 1 {
+                                Input::Enter
+                            } else {
+                                Input::Choose(index + 1)
+                            };
+                            (Some(input), drawn.clone(), option, false)
+                        })
+                        .collect()
+                }
+            };
+
+            for (input, menu, offered, is_line) in taken {
+                let cost = presses + usize::from(input.is_some());
+                let node = self.node(offered.id);
+                // THE DIE, WHERE THERE IS ONE. A red or white check is entered either way; which
+                // way is not the walk's to decide, so it is declared - `passing` names the checks
+                // this playthrough rolls a 12 on and every other rolled check takes a 2.
+                let rolled = node.is_rolled().then(|| passing.contains(&offered.id));
+                if rolled.is_some() {
+                    found.rolled.push((offered.id, cost));
+                }
+                let Some(next_state) = self.take_rolled(offered, &state, rolled) else {
+                    continue;
+                };
+                let mut encountered = offered.via.clone();
+                encountered.push(offered.id);
+                let step = Step {
+                    input,
+                    at,
+                    menu,
+                    rolled,
+                    encountered,
+                    displayed: vec![offered.id],
+                };
+                let key = (offered.id, next_state.clone(), is_line);
+                if best.get(&key).is_some_and(|already| *already <= cost) {
+                    continue;
+                }
+                best.insert(key, cost);
+                let fresh = !shown.contains(&offered.id);
+                reached.push(Reached {
+                    at: offered.id,
+                    state: next_state,
+                    line_up: is_line,
+                    parent: Some(here),
+                    step: Some(step),
+                    presses: cost,
+                });
+                let index = reached.len() - 1;
+                // DETERMINISTIC AMONG TIES, so two runs of this rank the same entries the
+                // same way. `DialogueNodeId` is not `Ord`, so the tie-break is spelled out.
+                if fresh
+                    && winner.as_ref().is_none_or(|(best_cost, best_id, _)| {
+                        (cost, offered.id.conversation_id, offered.id.entry_id)
+                            < (*best_cost, best_id.conversation_id, best_id.entry_id)
+                    })
+                {
+                    winner = Some((cost, offered.id, index));
+                }
+                if cost == presses {
+                    pending.push_front(index);
+                } else {
+                    pending.push_back(index);
+                }
+            }
+        }
+
+        if let Some((_, target, index)) = winner {
+            let mut steps = Vec::new();
+            let mut walk = Some(index);
+            while let Some(current) = walk {
+                if let Some(step) = reached[current].step.clone() {
+                    steps.push(step);
+                }
+                walk = reached[current].parent;
+            }
+            steps.reverse();
+            found.leg = Some(Reaching {
+                leg: Leg {
+                    target,
+                    // Set by the caller, which is what knows whether the player sat down.
+                    restarted: false,
+                    steps,
+                },
+                state: reached[index].state.clone(),
+                at: reached[index].at,
+                line_up: reached[index].line_up,
+            });
+        }
+        found
+    }
+
     fn node(&self, id: DialogueNodeId) -> &LookAheadNode {
         self.graph
             .get(id)
             .expect("an offered entry is in the graph")
+    }
+
+    /// Enters an offered entry, taking a declared branch where it rolls.
+    ///
+    /// `rolled` is `None` for an entry that does not roll, and otherwise says which way the die
+    /// went. `None` COMES BACK where the branch does not exist: a red check the world says can
+    /// never pass has no success branch, and a check already resolved has neither, since
+    /// `oracle::enter_rolled` shuts one for the rest of the walk.
+    ///
+    /// THE ORDER IS THE ONE `enter_rolled` BUILDS, not a re-derivation of the roll: success
+    /// first where `world::roll_may_succeed` allows one, then failure. Reading it any other way
+    /// would take the failing branch for a passing one on a red check a thought has closed.
+    fn take_rolled(
+        &self,
+        offered: &Offered,
+        state: &LookAheadState,
+        rolled: Option<bool>,
+    ) -> Option<LookAheadState> {
+        let Some(pass) = rolled else {
+            return Some(self.take(offered, state));
+        };
+        let mut entered = state.clone();
+        for &id in &offered.via {
+            entered = charge(self.node(id), &entered, &self.caps, self.world);
+        }
+        let node = self.node(offered.id);
+        let ways = enter(node, &entered, &self.context, &self.caps);
+        let may_succeed = crate::world::roll_may_succeed(node, self.world);
+        match (pass, may_succeed) {
+            (true, true) => ways.into_iter().next(),
+            (true, false) => None,
+            (false, true) => ways.into_iter().nth(1),
+            (false, false) => ways.into_iter().next(),
+        }
     }
 
     /// Enters an offered entry: the groups on the way to it, then the entry itself.

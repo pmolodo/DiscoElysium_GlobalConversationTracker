@@ -290,7 +290,7 @@ fn keep(branch: StartBranch, entered: Vec<LookAheadState>) -> Vec<LookAheadState
 
 /// The states entering this node can leave the walk in: none if it is closed, one for an
 /// ordinary entry, two where a rolled check can go either way.
-fn enter(
+pub(crate) fn enter(
     node: &LookAheadNode,
     state: &LookAheadState,
     context: &CrawlContext<'_>,

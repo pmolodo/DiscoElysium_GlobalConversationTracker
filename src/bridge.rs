@@ -2241,7 +2241,15 @@ pub fn mark_menu_as_shipped<F: Fn(DialogueNodeId) -> Novelty>(
     shape: &GroupShape,
     returned: &HashSet<DialogueNodeId>,
 ) -> crate::symbolic::menu::MenuAnswer {
-    crate::symbolic::menu::mark_menu_hybrid(search, novelty, contestants, budget, shape, returned)
+    crate::symbolic::menu::mark_menu_hybrid(
+        search,
+        novelty,
+        contestants,
+        budget,
+        shape,
+        returned,
+        crate::symbolic::menu::Fallback::default(),
+    )
 }
 
 /// Writes what a marking settled about one start onto its answer.
