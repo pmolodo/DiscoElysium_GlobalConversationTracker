@@ -2204,6 +2204,45 @@ pub(crate) fn all_unanswered(request: &LookAheadRequest, stopped_by: &str) -> Ve
         .collect()
 }
 
+/// What the player has used up, beside what they have just passed: the branches off the hubs
+/// they are inside whose one-time effects have all fired and which show nothing unread.
+///
+/// AN ARM, NOT THE SHIPPED CUT. It is an approximation of its own - see
+/// [`crate::symbolic::hub::spent_branches`] for the three conditions and why the third is what
+/// keeps it sound - and it is measured before it is anybody's default. See de-wi02.
+///
+/// `encountered` is the walk, as [`passed_since_hub`] takes it; the hubs it names are the ones
+/// whose branches are examined, because a branch is only spent relative to the hub it hangs off.
+pub fn spent_since_hub<F>(
+    graph: &LookAheadGraph,
+    shape: &GroupShape,
+    world: &dyn crate::world::ILookAheadWorld,
+    novelty: &F,
+    encountered: &[DialogueNodeId],
+) -> HashSet<DialogueNodeId>
+where
+    F: Fn(DialogueNodeId) -> Novelty,
+{
+    if encountered.is_empty() {
+        return HashSet::new();
+    }
+    let order = shape.order();
+    let stack = crate::symbolic::hub::follow(order, shape.hubs(graph), encountered);
+    let seen = |id: DialogueNodeId| world.is_seen(id);
+    let mut spent = HashSet::new();
+    for hub in stack.hubs() {
+        spent.extend(crate::symbolic::hub::spent_branches(
+            graph,
+            order,
+            hub,
+            &seen,
+            novelty,
+            Novelty::UnseenThisGame,
+        ));
+    }
+    spent
+}
+
 /// What the player has passed since the hubs they are inside, which a menu's onward question cuts.
 ///
 /// THE ONE PLACE A WALK BECOMES A CUT, for [`answer_starts`] and the menu measurement alike, so a

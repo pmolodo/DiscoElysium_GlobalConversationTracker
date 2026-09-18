@@ -217,12 +217,17 @@ enum Marking {
     /// The hybrid WITHOUT its siblings-alone level, so a menu whose walk cut leaves nothing
     /// onward goes straight to the exact marking - see `menu::Fallback::Exact` and de-l88t.
     HybridOnwardOnly,
+    /// The shipped hybrid with the SPENT BRANCHES cut beside the walk: a branch off a hub the
+    /// player is inside whose one-time effects have all fired and which shows nothing unread
+    /// cannot be the way on, so it is refused like the walk itself. See de-wi02.
+    HybridSpent,
 }
 
 /// What `DEGCT_MARKING` says for each marking.
 const HYBRID_BRANCH_AND_BOUND: &str = "hybrid-bnb";
 const BRANCH_AND_BOUND: &str = "bnb";
 const HYBRID_ONWARD_ONLY: &str = "hybrid-onward";
+const HYBRID_SPENT: &str = "hybrid-spent";
 
 /// The marking `DEGCT_MARKING` names: `hybrid-bnb`, the default and what the product marks
 /// with, walk and all; or `bnb` for the exact marking on every group. Row files can be taken
@@ -243,8 +248,9 @@ fn marking() -> Marking {
         "" | HYBRID_BRANCH_AND_BOUND => Marking::HybridBranchAndBound,
         BRANCH_AND_BOUND => Marking::BranchAndBound,
         HYBRID_ONWARD_ONLY => Marking::HybridOnwardOnly,
+        HYBRID_SPENT => Marking::HybridSpent,
         other => panic!(
-            "DEGCT_MARKING={other:?}: expected {HYBRID_BRANCH_AND_BOUND}, {BRANCH_AND_BOUND}              or {HYBRID_ONWARD_ONLY}"
+            "DEGCT_MARKING={other:?}: expected {HYBRID_BRANCH_AND_BOUND}, {BRANCH_AND_BOUND},              {HYBRID_ONWARD_ONLY} or {HYBRID_SPENT}"
         ),
     }
 }
@@ -740,6 +746,31 @@ where
                 &lookahead_engine::bridge::passed_since_hub(graph, &shape, &walk),
                 menu::Fallback::Exact,
             ),
+            // BOTH CUTS, and INSIDE THE TIMING as the walk's own cut is, since a player's
+            // request would have to work this out too.
+            Marking::HybridSpent => {
+                let mut cut = lookahead_engine::bridge::passed_since_hub(graph, &shape, &walk);
+                let spent = lookahead_engine::bridge::spent_since_hub(
+                    graph, &shape, &world, novelty, &walk,
+                );
+                // ON STDERR, because a cut that finds nothing and a cut that is not running
+                // produce the same row, and only one of those is a finding.
+                eprintln!(
+                    "conversation {conversation}: spent cut adds {} entries to a walk cut of {}",
+                    spent.difference(&cut).count(),
+                    cut.len(),
+                );
+                cut.extend(spent);
+                menu::mark_menu_hybrid(
+                    marking_search,
+                    novelty,
+                    &contestants,
+                    &marking_budget,
+                    &shape,
+                    &cut,
+                    menu::Fallback::default(),
+                )
+            }
         };
         counted.options = contestants.len();
         counted.asked = found.passes;

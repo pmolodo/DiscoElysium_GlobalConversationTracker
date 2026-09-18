@@ -287,6 +287,128 @@ pub fn walk_to_menu(
     route
 }
 
+/// The entries a branch off a hub is spent in: it shows nothing new and changes nothing, so
+/// walking it puts the player back where they started.
+///
+/// ## What "spent" means, and why it is worth cutting
+///
+/// The walk cut says WHERE THE PLAYER HAS JUST BEEN. This says WHAT THEY HAVE USED UP, which is
+/// the durable version of the same idea: the hub stack gives a branch back the moment the
+/// player returns to the hub above it, where a branch whose one-time effects have fired stays
+/// spent for the rest of the game.
+///
+/// Three conditions, and all three are needed:
+///
+/// 1. NOTHING IN IT IS UNREAD, so the branch is not itself the destination.
+/// 2. EVERY ENTRY IN IT IS A NO-OP ON RE-ENTRY: the world has shown it, and every action it
+///    carries is a `once` action. `DialogueAction::apply` short-circuits a fired once, so such
+///    an entry does nothing the second time. An entry carrying an ordinary action does
+///    something every time and is never spent.
+/// 3. EVERY LINK LEAVING IT STAYS IN THE HUB'S COMPONENT, so it loops back rather than leading
+///    on. THIS IS THE ONE THAT KEEPS IT SOUND: a branch that fires a once and then leaves the
+///    component is a one-way door, and cutting it would refuse the only route onward.
+///
+/// With all three, any route through the branch can be replaced by standing at the hub - same
+/// state, nothing new shown - so cutting it removes no route to anything.
+///
+/// ## Where the answer comes from
+///
+/// NOTHING NEW IS TRACKED FOR THIS. `state::seed_state` seeds a node's `once_slot` from
+/// `world.is_seen`, because `GenericLuaFunctions.Once` is a test on whether the entry has been
+/// shown - so "this branch's incrementor has fired" is exactly "the player has seen this entry",
+/// the same per-entry data the novelty markers are drawn from.
+///
+/// See de-wi02, and `docs/modelling-gaps.md` for it as an approximation.
+pub fn spent_branches<F>(
+    graph: &LookAheadGraph,
+    order: &IterationOrder,
+    hub: DialogueNodeId,
+    seen: &dyn Fn(DialogueNodeId) -> bool,
+    novelty: &F,
+    unread: crate::core::types::Novelty,
+) -> HashSet<DialogueNodeId>
+where
+    F: Fn(DialogueNodeId) -> crate::core::types::Novelty,
+{
+    let Some(component) = order.component_of(hub) else {
+        return HashSet::new();
+    };
+    let Some(node) = graph.get(hub) else {
+        return HashSet::new();
+    };
+
+    let mut spent = HashSet::new();
+    for &option in &node.links {
+        if let Some(branch) =
+            branch_if_spent(graph, order, hub, component, option, seen, novelty, unread)
+        {
+            spent.extend(branch);
+        }
+    }
+    spent
+}
+
+/// One branch's entries where it is spent, and `None` where anything about it says otherwise.
+///
+/// The branch is everything reachable from `option` WITHOUT PASSING THE HUB, since arriving back
+/// at the hub is where the branch ends.
+#[allow(clippy::too_many_arguments)]
+fn branch_if_spent<F>(
+    graph: &LookAheadGraph,
+    order: &IterationOrder,
+    hub: DialogueNodeId,
+    component: u32,
+    option: DialogueNodeId,
+    seen: &dyn Fn(DialogueNodeId) -> bool,
+    novelty: &F,
+    unread: crate::core::types::Novelty,
+) -> Option<HashSet<DialogueNodeId>>
+where
+    F: Fn(DialogueNodeId) -> crate::core::types::Novelty,
+{
+    let mut branch = HashSet::new();
+    let mut pending = VecDeque::from([option]);
+    while let Some(id) = pending.pop_front() {
+        if id == hub || !branch.insert(id) {
+            continue;
+        }
+        let node = graph.get(id)?;
+        if novelty(id) >= unread {
+            return None;
+        }
+        if !is_no_op_on_re_entry(node, seen) {
+            return None;
+        }
+        for &next in &node.links {
+            if next == hub {
+                continue;
+            }
+            // LEAVING THE HUB'S COMPONENT is a one-way door rather than a loop back, and a
+            // branch holding one cannot be cut whatever else is true of it.
+            if order.component_of(next) != Some(component) {
+                return None;
+            }
+            pending.push_back(next);
+        }
+    }
+    (!branch.is_empty()).then_some(branch)
+}
+
+/// Whether walking this entry again would do nothing at all.
+///
+/// A GROUP ENTRY IS ALWAYS ONE: the game never displays it and it carries no actions of its own.
+fn is_no_op_on_re_entry(
+    node: &crate::graph::node::LookAheadNode,
+    seen: &dyn Fn(DialogueNodeId) -> bool,
+) -> bool {
+    if node.actions.is_empty() {
+        return true;
+    }
+    // AN ORDINARY ACTION FIRES EVERY TIME, so one of those is enough to make the entry matter
+    // however often it has been walked.
+    node.actions.iter().all(|action| action.is_once()) && seen(node.id)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
