@@ -52,12 +52,16 @@ original run would have. Without MENUS_OUT each run gets its own folder and resu
 
 SEVERAL RUNS. `--runs N` takes N runs of the same groups back to back, each in run-1 ... run-N
 under the one folder, because a single run's milliseconds are a reading of the machine as much
-as of the search. When N is more than one it then writes combined.tsv - each group's median,
-min and max menu_ms, its median nodes, and its rounds, settled and starred with a flag for
-whether every run agreed - and summary.txt, the per-run totals and the costliest groups, and
-prints the summary:
+as of the search. It then writes combined.tsv - each group's median, min and max menu_ms, its
+median nodes, and its rounds, settled and starred with a flag for whether every run agreed -
+and summary.txt, the per-run totals and the costliest groups, and prints the summary:
 
     DEGCT_WORKERS=1 tools/measure-menus.py --runs 3 all
+
+A THROW-AWAY RUN COMES FIRST, ALWAYS, so --runs 3 takes four and --runs 1 takes two. It goes
+in run-cold, is reported beside the combination and left out of it, and is kept on disk so the
+question of whether discarding it is worth a run can be settled by counting rather than
+argued. See COLD_FOLDER for what is and is not known about that, and de-7ob7 for the counting.
 
 WHAT COUNTS AS DONE:
 
@@ -308,6 +312,44 @@ def measure(out, conversations, workers, record=None):
 # Where each of several runs is written, under the folder the runs share.
 RUN_FOLDER = "run-{}"
 
+# Where the throw-away first run is written.
+#
+# EVERY MEASUREMENT TAKES ONE MORE RUN THAN IT WAS ASKED FOR, and throws the first away, so
+# --runs 3 takes four and --runs 1 takes two.
+#
+# THE EFFECT IS RARE AND LARGE, which is exactly the shape that justifies a fixed discard.
+# Measured over the 54 multi-run passes already on disk, treating each one's run-1 as the cold
+# run it would have been:
+#
+#   run-1 slowest of its pass    22 of 54 (40%), against 33% by chance for a three-run pass
+#   run-1 over the fastest later run by more than 10%     4 of 54 (7%)
+#
+# THE DIRECTION IS NOT THE FINDING. 40% against an expected 33% is a z of +1.15 - nothing. Two
+# deliberate attempts to provoke a ramp found none either: ten runs in one invocation had run 1
+# fourth fastest of ten, and forcing a real recompile first left it second fastest of four. On
+# a machine already looping this same work, a first run is like any other.
+#
+# THE TAIL IS THE FINDING. Three whole-game passes show run-1 exceeding the fastest later run
+# by 10.4, 12.3 and 13.1 per cent, against spreads AMONG their own later runs of 0.9, 6.8 and
+# 2.6. Those first runs sit several times outside the scatter of their own siblings, so they
+# are not noise. The distribution is bimodal: absent in fifty passes and large in three or
+# four. A pass in that minority is SILENTLY WRONG rather than visibly noisy, which is what one
+# extra run per pass is cheap insurance against.
+#
+# AND THE MECHANISM IS NOT IN DOUBT, only its frequency. A first run is the one that finds the
+# page cache without the index in it, the CPU at its idle clock, and the disk cold. Those are
+# properties of the machine rather than a hypothesis about it, so the question was never
+# whether a cold run can be slower - it was how often the conditions arise. That makes the 7
+# per cent a FLOOR rather than an estimate: nearly every pass in the sample was taken back to
+# back with others on a machine already doing this work, which is the condition least likely
+# to produce a cold start. Over a long enough series of measurements it bites eventually, and
+# the cost of being wrong about one is far more than the run it takes to be sure.
+#
+# KEPT RATHER THAN DELETED, because it is the honest number for a question the combination
+# cannot answer: what a player pays on the FIRST menu of a session, which is the one they
+# notice. `tools/cold-run-effect.py` recomputes the figures above over whatever is on disk.
+COLD_FOLDER = "run-cold"
+
 # How many of the costliest groups the summary lists.
 HARDEST = 10
 
@@ -361,8 +403,26 @@ def agreed(rows, column):
     return "|".join(sorted({row.get(column, "-") for row in rows}))
 
 
-def combine(folders, out):
+def cold_line(cold, totals):
+    """What the discarded run cost, and how much warmer the kept ones were.
+
+    REPORTED SO THE DISCARD IS VISIBLE. A number thrown away silently is one nobody can
+    argue with, and the size of the gap is the evidence for throwing it away at all.
+    """
+    if cold is None:
+        return "cold run: not taken"
+    rows = read_rows(cold / "menus.tsv")
+    total = sum(int(row[MENU_MS]) for row in rows.values() if row.get(MENU_MS, "").isdigit())
+    if not totals or not total:
+        return f"cold run (discarded): {total:,} ms"
+    warmest = min(totals)
+    return f"cold run (discarded): {total:,} ms, {total / warmest:.2f}x the fastest kept run at {warmest:,} ms"
+
+
+def combine(folders, out, cold=None):
     """Folds several runs of the same groups into one table and a summary, and prints it.
+
+    `cold` is the throw-away first run: reported, never folded in. See COLD_FOLDER.
 
     A GROUP IS COMBINED ON ITS MEDIAN, with the min and max beside it, because a single run's
     milliseconds are a reading of the machine as much as of the search. Its outcome - rounds,
@@ -418,6 +478,7 @@ def combine(folders, out):
         "total menu_ms by run: " + " / ".join(f"{total:,}" for total in totals),
         f"sum of medians: {number_text(sum(m[0] for m in measured), grouped=True)} ms",
         f"groups whose rounds, settled or starred differ between runs: {unsteady or 'none'}",
+        cold_line(cold, totals),
         "",
         f"the {HARDEST} costliest groups by median menu_ms:",
         f"  {'conv':>6}  {'median':>8}  {'min-max':>13}  {'nodes':>10}  rounds  settled  starred",
@@ -492,18 +553,22 @@ def main(argv=None):
     workers = env_int("WORKERS", default_workers())
     record_run(out, workers, args.runs, named)
     try:
-        if args.runs == 1:
-            return measure(out, named, workers)
         # ONE RUN AFTER ANOTHER, never side by side: two runs at once would each be measuring
         # how busy the other made the machine. Each keeps its own folder, so a resume picks up
         # the run that was interrupted and leaves the finished ones alone.
+        #
+        # THE COLD RUN IS FIRST AND IS NOT COMBINED. See COLD_FOLDER.
+        cold = out / COLD_FOLDER
+        print(f"\n=== cold run (discarded from the combination) -> {cold} ===")
+        measure(cold, named, workers, record=out)
+
         folders = []
         for number in range(1, args.runs + 1):
             folder = out / RUN_FOLDER.format(number)
             print(f"\n=== run {number} of {args.runs} -> {folder} ===")
             measure(folder, named, workers, record=out)
             folders.append(folder)
-        combine(folders, out)
+        combine(folders, out, cold=cold)
         return 0
     except KeyboardInterrupt:
         print("\ninterrupted; what finished is on disk and a re-run resumes it")
