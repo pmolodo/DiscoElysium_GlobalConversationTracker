@@ -34,7 +34,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use super::backward::{Backward, Budget as PassBudget, ForwardFront, Nearest, Position, Round};
+use super::backward::{Backward, Budget as PassBudget, Nearest, Position, Round};
 
 /// Whether a round of the exact marking is searched by one pool rather than by branch and bound.
 ///
@@ -48,16 +48,6 @@ fn pooled_rounds() -> bool {
     crate::core::env::var("POOLED_ROUNDS").as_deref() == Ok("1")
 }
 
-/// Whether each target's pass meets a forward front rather than walking backward the whole way.
-///
-/// OFF UNLESS `DEGCT_MEETING_ROUNDS` ASKS. It separates the two things the pool changed at once:
-/// SHARING one forward walk across a round's targets and MEETING in the middle are its speed,
-/// and deciding the winner by whose crawl met first is its marking. This takes the first two and
-/// leaves branch and bound's bound order and attribution alone, so a comparison against the
-/// default says what meeting is worth on its own. See de-y04p.
-fn meeting_rounds() -> bool {
-    crate::core::env::var("MEETING_ROUNDS").as_deref() == Ok("1")
-}
 use super::known::GroupShape;
 use super::novelty_search::{StoppedBy, choice_bounds};
 use super::search::Search;
@@ -800,23 +790,6 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> Novelty>(
             // the first meeting is the least distance over every option and every target still
             // in play. It proves nothing per target, so the bound and the unreachable set stay
             // empty and the next round starts from nothing. See `Backward::nearest_choices`.
-            // ONE FORWARD FRONT FOR THE ROUND, where the passes are meeting ones. It is the same
-            // walk for every target in the round, so it is built here and grown by whichever
-            // target needs it deeper. Rebuilt each round because the cut has changed: a round
-            // cuts the winning option, and a front walked under the old cut would keep routes
-            // the new one refuses.
-            let mut shared_front = if meeting_rounds() {
-                match ForwardFront::of(search.reborrow(), &positions, &cut) {
-                    Some(front) => Some(front),
-                    None => {
-                        failure = Some((StoppedBy::Incomplete, true));
-                        break 'classes;
-                    }
-                }
-            } else {
-                None
-            };
-
             let mut best: Option<(usize, usize, DialogueNodeId)> = None;
             if pooled_rounds() {
                 let left = budget.wall.saturating_sub(began.elapsed());
@@ -862,32 +835,14 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> Novelty>(
                     break 'classes;
                 }
                 answer.passes += 1;
-                // MEETING, WHERE ASKED FOR, AND NOTHING ELSE CHANGED. The bound order, the
-                // attribution and what a round claims are branch and bound's; only the
-                // direction each pass walks differs. The forward front is built once for the
-                // round and grown as each target asks, since it is the same walk for all of
-                // them - which is the sharing a pool does, without a pool deciding the winner.
-                let found = if let Some(front) = shared_front.as_mut() {
-                    Backward::nearest_meeting(
-                        search.reborrow(),
-                        target,
-                        &cut,
-                        &pass_budget(left),
-                        &known,
-                        &positions,
-                        front,
-                    )
-                } else {
-                    Backward::nearest(
-                        search.reborrow(),
-                        target,
-                        &cut,
-                        &pass_budget(left),
-                        &known,
-                        &positions,
-                    )
-                };
-                match found {
+                match Backward::nearest(
+                    search.reborrow(),
+                    target,
+                    &cut,
+                    &pass_budget(left),
+                    &known,
+                    &positions,
+                ) {
                     Nearest::Found { distance, winner } => {
                         proven.insert(target, distance);
                         if best.is_none_or(|(nearest, _, _)| distance < nearest) {

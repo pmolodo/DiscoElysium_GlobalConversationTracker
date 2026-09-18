@@ -2011,45 +2011,21 @@ mod tests {
 #[derive(Debug)]
 struct NoRoom;
 
-/// What a meeting search weighs a side by when it chooses which to grow next.
+/// How heavy one side of a meeting search is, for deciding which to grow next.
 ///
 /// THE CHOICE IS THE WHOLE SCHEDULER. Neither side knows where the meeting is, so the rule is to
 /// expand whichever is currently smaller and let the fronts find each other - which
 /// `performance/bidirectional_headroom.rs` measured as landing within ten per cent of the best
 /// split without being told where it is.
 ///
-/// WHAT "SMALLER" MEANS IS THE QUESTION. Counting the entries a side carries is nearly free and
-/// is what the measurement above was taken with. It is also nearly flat where the cost is not:
-/// on 761 the forward side's carried entries go from 8 to 251 over fifteen layers while its
-/// diagram goes from 35,906 nodes to 17.4 million. A count that barely moves cannot be tracking
-/// what the next layer will cost.
-///
-/// Counting the DIAGRAM instead asks the manager how big each side's sets actually are, which is
-/// what the next layer is grown from - and pays a sweep of the carried sets to find out.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Weigh {
-    /// How many entries the side is carrying state at.
-    Entries,
-    /// How many diagram nodes those states occupy.
-    DiagramNodes,
-}
-
-impl Weigh {
-    /// What the environment asks for, entries unless told otherwise.
-    fn asked() -> Self {
-        match crate::core::env::var("WEIGH_FRONTS").as_deref() {
-            Ok("nodes") => Self::DiagramNodes,
-            _ => Self::Entries,
-        }
-    }
-
-    /// How heavy one side's carried states are, by this measure.
-    fn of(self, carry: &HashMap<DialogueNodeId, BDDFunction>) -> usize {
-        match self {
-            Self::Entries => carry.len(),
-            Self::DiagramNodes => carry.values().map(|states| states.node_count()).sum(),
-        }
-    }
+/// THE DIAGRAM, NOT THE ENTRY COUNT, because the entry count is nearly flat where the cost is
+/// not: on 761 the forward side carries 8 entries at its first layer and 251 at its fifteenth
+/// while the diagram those entries hold runs from 35,906 nodes to 17.4 million. Asking the
+/// manager how big the sets actually are costs a sweep of them per decision and is worth it -
+/// measured on 761, weighing by nodes took the pooled search from 17,808,343 diagram nodes to
+/// 14,666,558 and from 21,894 ms to about 20,320, with the same markers.
+fn weight_of(carry: &HashMap<DialogueNodeId, BDDFunction>) -> usize {
+    carry.values().map(|states| states.node_count()).sum()
 }
 
 /// The nearest of MANY targets, and which option gets there first.
@@ -2084,7 +2060,6 @@ impl<'a> Backward<'a> {
         let world = search.world;
         let vars = search.compiler.vars();
         let began = std::time::Instant::now();
-        let weigh = Weigh::asked();
         let mut image = ActionImage::new(vars, search.counter_cap);
 
         let Some((mut forward, mut reached)) = union_front(positions, cut, vars) else {
@@ -2150,7 +2125,7 @@ impl<'a> Backward<'a> {
                     (false, false) => break,
                     (true, false) => true,
                     (false, true) => false,
-                    (true, true) => weigh.of(&forward.carry) <= weigh.of(&theirs.carry),
+                    (true, true) => weight_of(&forward.carry) <= weight_of(&theirs.carry),
                 };
                 let stop = if grow_forward_now {
                     grow_forward(search.reborrow(), cut, &mut reached, &mut forward).is_err()
@@ -2536,179 +2511,5 @@ fn merge(
         None => {
             waiting.insert(id, states.clone());
         }
-    }
-}
-
-/// The forward half of a meeting search, built once for a round and grown as its targets ask.
-///
-/// WHY IT OUTLIVES ONE TARGET. The forward walk is the same for every target in a round - the
-/// same options, the same cut - so rebuilding it per target would pay the expensive half over
-/// again for an answer it already has. Growing it further for a later target costs only the
-/// layers that target actually needs, and the layers already walked are reused as they are.
-///
-/// WHAT IT IS NOT: the pool. A pool also decides the round's winner by which target's crawl
-/// meets first, which credits the option earliest in the menu. This is only the shared walk;
-/// who wins a round is still the caller's business.
-pub struct ForwardFront {
-    front: Front,
-    reached: HashMap<DialogueNodeId, BDDFunction>,
-}
-
-impl ForwardFront {
-    /// The front every option still hunting starts from, or `None` if there was no room.
-    ///
-    /// GROWN ONCE HERE, WHICH IS NOT OPTIONAL. `union_front` seeds `pending` and `carry` and
-    /// closes no layer, so until something grows it `layers` is empty and `layers.get(0)` is
-    /// `None` - and every meeting at distance zero is missed, which is a target the option lands
-    /// on directly. `nearest_choices` does the same growth for the same reason.
-    pub fn of(
-        mut search: Search<'_, '_>,
-        positions: &[Position],
-        cut: &HashSet<DialogueNodeId>,
-    ) -> Option<Self> {
-        let vars = search.compiler.vars();
-        let (mut front, mut reached) = union_front(positions, cut, vars)?;
-        grow_forward(search.reborrow(), cut, &mut reached, &mut front).ok()?;
-        Some(Self { front, reached })
-    }
-
-    /// How many layers have been closed.
-    pub fn depth(&self) -> usize {
-        self.front.depth()
-    }
-}
-
-impl<'a> Backward<'a> {
-    /// The nearest option to ONE target, found by meeting a backward crawl with the shared
-    /// forward front.
-    ///
-    /// The same question [`Self::nearest`] answers and the same answer, reached from both ends
-    /// instead of one. A backward-only walk pays the whole depth on the side that grows fastest;
-    /// meeting splits it, and the distance still comes out exactly - the forward layer plus the
-    /// backward layer, plus the meeting entry's own charge, which neither side has paid because
-    /// each charges an entry only when it LEAVES it.
-    ///
-    /// `forward` is grown as far as this target needs and no further, and is left grown for the
-    /// next target in the round.
-    pub fn nearest_meeting(
-        mut search: Search<'_, 'a>,
-        target: DialogueNodeId,
-        cut: &HashSet<DialogueNodeId>,
-        budget: &Budget,
-        known: &Known,
-        positions: &[Position],
-        forward: &mut ForwardFront,
-    ) -> Nearest {
-        let graph = search.graph;
-        let world = search.world;
-        let vars = search.compiler.vars();
-        let began = std::time::Instant::now();
-        let weigh = Weigh::asked();
-        let mut image = ActionImage::for_world(vars, search.counter_cap, world);
-
-        let Some(node) = graph.get(target).filter(|n| !never_displays(n, world)) else {
-            return Nearest::Unreachable;
-        };
-        if cut.contains(&target) {
-            return Nearest::Unreachable;
-        }
-        let mut back = Self {
-            vars,
-            sets: HashMap::new(),
-            stats: BackwardStats::default(),
-        };
-        let mut theirs = Front::new(HashSet::from([target]));
-        let seed = back.pre_enter(node, &vars.top(), search.compiler, world, &mut image);
-        if let Some(delta) = back.widen(target, &seed) {
-            merge(&mut theirs.pending, target, &delta);
-            merge(&mut theirs.carry, target, &delta);
-        }
-        if back
-            .grow_back(search.reborrow(), known, cut, &mut image, &mut theirs)
-            .is_err()
-        {
-            return Nearest::Unfinished {
-                out_of_memory: true,
-            };
-        }
-
-        for sum in 0usize.. {
-            // GROW WHICHEVER SIDE IS CARRYING LESS, which lands within ten per cent of the best
-            // split without being told where it is - see performance/bidirectional_headroom.rs.
-            loop {
-                if began.elapsed() >= budget.time {
-                    return Nearest::Unfinished {
-                        out_of_memory: false,
-                    };
-                }
-                if forward.front.depth() + theirs.depth() >= sum {
-                    break;
-                }
-                let grow_forward_now = match (forward.front.alive(), theirs.alive()) {
-                    (false, false) => break,
-                    (true, false) => true,
-                    (false, true) => false,
-                    (true, true) => weigh.of(&forward.front.carry) <= weigh.of(&theirs.carry),
-                };
-                let stop = if grow_forward_now {
-                    grow_forward(
-                        search.reborrow(),
-                        cut,
-                        &mut forward.reached,
-                        &mut forward.front,
-                    )
-                    .is_err()
-                } else {
-                    back.grow_back(search.reborrow(), known, cut, &mut image, &mut theirs)
-                        .is_err()
-                };
-                if stop {
-                    return Nearest::Unfinished {
-                        out_of_memory: true,
-                    };
-                }
-            }
-
-            let mut best: Option<(usize, usize, DialogueNodeId)> = None;
-            for behind in 0..=sum.min(theirs.depth()) {
-                let Some(mine) = theirs.layers.get(behind) else {
-                    continue;
-                };
-                let ahead = sum - behind;
-                let Some(ours) = forward.front.layers.get(ahead) else {
-                    continue;
-                };
-                let Ok(met) = meeting_of(graph, ours, mine, &forward.front.origin, target) else {
-                    return Nearest::Unfinished {
-                        out_of_memory: true,
-                    };
-                };
-                let Some((charge, at)) = met else { continue };
-                if best.is_none_or(|(had, _, _)| sum + charge < had) {
-                    best = Some((sum + charge, ahead, at));
-                }
-            }
-
-            if let Some((distance, ahead, at)) = best {
-                let behind = sum - ahead;
-                let Some(layer) = theirs.layers.get(behind) else {
-                    return Nearest::Unreachable;
-                };
-                return match claim(search.reborrow(), positions, cut, ahead, at, layer) {
-                    Ok(Some(winner)) => Nearest::Found { distance, winner },
-                    Ok(None) | Err(()) => Nearest::Unfinished {
-                        out_of_memory: true,
-                    },
-                };
-            }
-
-            if !forward.front.alive()
-                && !theirs.alive()
-                && sum >= forward.front.depth() + theirs.depth()
-            {
-                return Nearest::Unreachable;
-            }
-        }
-        unreachable!("choice distance exhausted usize")
     }
 }
