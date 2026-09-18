@@ -190,9 +190,20 @@ impl DiagramBudget {
     /// the edge of it.
     ///
     /// THE SHIPPED MARKING DOES NOT NEED IT, which is what makes the bump cheap rather than a
-    /// concession. `menu::mark_menu_hybrid` answers every menu in the game at 256, 761
-    /// included, in 1.3 seconds. The headroom is for the exact search behind it - the thing a
-    /// fallback reaches for - and for the groups nobody has profiled.
+    /// concession. Measured 2026-09-17 at 256 MB, `menu::mark_menu_hybrid` answers every one of
+    /// the 389 menus a walked profile puts up - see `menu_profile::walked_profile` - with no
+    /// option anywhere left unsettled, on about fifty thousand diagram nodes for the worst of
+    /// them. The headroom is for the exact search behind it - the thing a fallback reaches for -
+    /// and for the groups nobody has profiled.
+    ///
+    /// ONE MENU IN THE GAME DOES NOT SETTLE, AND MORE MEMORY IS NOT WHAT IT WANTS. Asked on the
+    /// adversarial profile `MenuProfile::of` builds, 761 fails to settle at 256 and fails in the
+    /// same way at 300 - 2,534 ms against 2,561, four and a half million nodes either way - so
+    /// the extra 44 MB buys it nothing. What that profile asks for is a state no save holds:
+    /// almost every line called read while the world it hands the engine has been shown nothing,
+    /// so every one-time effect in the group is still pending and the search cannot fold any of
+    /// them away. The same menu in a state a playthrough walked to costs 118 ms at 256 MB and
+    /// settles every option. See de-zbsb.
     ///
     /// It is 44 MB of a preallocation made in-process with a Unity game, against a worst case
     /// that already leaves most of the store idle.

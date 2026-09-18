@@ -15,9 +15,9 @@ for examples in `examples/` and these live beside their logs. Being examples als
 them out of `cargo test`, which would otherwise compile and link every one of them on the way
 to running none of them.
 
-**Not everything here produces a number**, and the directory's name undersells it. Two of
+**Not everything here produces a number**, and the directory's name undersells it. Three of
 its contents are a different kind of thing, and they are here because the split that
-matters is "runs in the suite" against "run by hand" - a second directory for two files
+matters is "runs in the suite" against "run by hand" - a second directory for three files
 would be a distinction nobody remembers:
 
 - `static_analysis.rs` is a GENERATOR. Two of its three passes write a group partition and
@@ -32,6 +32,15 @@ would be a distinction nobody remembers:
   over 26,210 guards is the equivalence claim; a diff is the list that changed meaning.
   NOTHING RUNS IT ON A SCHEDULE - it is reached for when the parser is about to move, and
   it is the person making that change who has to remember it.
+- `greedy_playthrough.rs` is a GENERATOR. It walks each group the way a player would - always
+  to the nearest entry not yet shown, counted in presses - and writes the walk under
+  `analysis/playthroughs/`: the keypresses, the menu on screen at each decision, and the flat
+  node walk, so a leg replays in game through the probe and offline through
+  `walkthrough::walk_inputs`. NOT COMMITTED, for the reason the group partition is not - it is
+  derived from the index and goes stale silently the first time a group grows an entry.
+  `menu_profile::walked_profile` builds the same walk for itself rather than reading the file,
+  so nothing breaks when it is missing; the file is for reading, and for anything that wants a
+  playthrough without computing one.
 
 What they have in common with the measurements is the thing that got them moved: none of
 them passes or fails on its own, so none of them belongs in `tests/`.
