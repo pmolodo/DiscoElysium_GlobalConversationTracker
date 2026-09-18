@@ -241,6 +241,11 @@ pub struct Playthrough {
     /// were displayed; this says what they DID, and the two together are the world the walk
     /// stopped in rather than a world somebody declared.
     pub ended: LookAheadState,
+    /// The entry the player is looking at when the playthrough stops.
+    pub ended_at: DialogueNodeId,
+    /// Whether that entry is a line waiting for a continue, which decides whether playing on
+    /// from here costs a press.
+    pub ended_waiting: bool,
     pub stopped: Stop,
 }
 
@@ -307,6 +312,10 @@ pub fn greedy_playthrough(
         blocked: Vec::new(),
         rolled: Vec::new(),
         ended: seed_state(graph, world),
+        // THE START, until a leg moves it: a playthrough that walks nowhere leaves the player
+        // looking at the entry the conversation opened on, waiting for nothing.
+        ended_at: start,
+        ended_waiting: false,
         stopped: Stop::Exhausted,
     };
     if graph.get(start).is_none() {
@@ -390,12 +399,17 @@ pub fn greedy_playthrough(
             ..reached.leg
         });
         state = reached.state;
+        at = reached.at;
+        line_up = reached.line_up;
+        // ALL THREE TOGETHER, and before the early return: a caller that plays on from here
+        // needs the position as well as the state, and recording the state alone would leave
+        // the position a leg behind whenever the walk was stopped short.
         done.ended = state.clone();
+        done.ended_at = at;
+        done.ended_waiting = line_up;
         if until.shown.is_some_and(|wanted| done.shown.len() >= wanted) {
             return done;
         }
-        at = reached.at;
-        line_up = reached.line_up;
         restarting = false;
     }
 }
@@ -495,6 +509,121 @@ struct Standing<'s> {
     /// Whether this is a fresh sitting, whose first step records the conversation's start the
     /// way [`walk_inputs`] does. A leg that continues has already recorded where it stands.
     opening: bool,
+}
+
+/// A menu the player is standing at, and what it took to get there from where a playthrough
+/// stopped.
+#[derive(Debug, Clone)]
+pub struct AtAMenu {
+    /// The options, in the order the game draws them: what a request would ask about.
+    pub menu: Vec<DialogueNodeId>,
+    /// The steps played to reach it, which extend the playthrough's own walk.
+    pub steps: Vec<Step>,
+    /// The state on arrival - lines said on the way have fired their actions.
+    pub state: LookAheadState,
+}
+
+impl AtAMenu {
+    /// Every entry stepped through on the way, for appending to a walk.
+    pub fn encountered(&self) -> Vec<DialogueNodeId> {
+        self.steps
+            .iter()
+            .flat_map(|step| step.encountered.iter().copied())
+            .collect()
+    }
+
+    /// The ones put on screen on the way.
+    pub fn displayed(&self) -> Vec<DialogueNodeId> {
+        self.steps
+            .iter()
+            .flat_map(|step| step.displayed.iter().copied())
+            .collect()
+    }
+}
+
+/// Plays on from where a playthrough stopped until a menu is on screen.
+///
+/// ## Why a playthrough does not already end at one
+///
+/// A leg stops at the entry it was walked for, which is a line far more often than a menu. That
+/// is right for the walk - it went there to see one new thing - and wrong for anything that
+/// wants to ask what the player is being OFFERED, because a menu is what a request is about.
+/// This is the few presses between the two.
+///
+/// ## What it does and does not decide
+///
+/// Lines are taken as they come and a waiting one costs an [`Input::Enter`], exactly as
+/// [`walk_inputs`] presses them. NOTHING IS CHOSEN: the first menu ends it, so no option is
+/// taken and no roll is needed. `None` where the conversation ends first, or where the walk
+/// refuses a position it cannot decide, or where `most` presses pass without a menu - in each
+/// case there is no menu to be standing at, which is an answer rather than a failure.
+pub fn on_to_a_menu(
+    graph: &LookAheadGraph,
+    world: &dyn ILookAheadWorld,
+    from: &Playthrough,
+    most: usize,
+) -> Option<AtAMenu> {
+    let walker = Walker {
+        graph,
+        world,
+        context: CrawlContext::new(graph.symbols(), world),
+        caps: CounterCaps::for_graph(COUNTER_CAP, graph),
+    };
+    let mut at = from.ended_at;
+    let mut line_up = from.ended_waiting;
+    let mut state = from.ended.clone();
+    let mut steps = Vec::new();
+
+    for _ in 0..most {
+        match walker.next(at, &state).ok()? {
+            Next::Menu(options) => {
+                // THE MENU'S OWN WAY IN IS ON THE WALK, as `walk` records it: composing the menu
+                // expands the groups between here and the options, so the hub it hangs off is
+                // passed whether or not anything is chosen from it.
+                let drawn: Vec<DialogueNodeId> = options.iter().map(|o| o.id).collect();
+                let mut entered = Vec::new();
+                for option in &options {
+                    for &id in &option.via {
+                        if entered.last() != Some(&id) {
+                            entered.push(id);
+                        }
+                    }
+                }
+                if !entered.is_empty() {
+                    steps.push(Step {
+                        input: None,
+                        at,
+                        menu: drawn.clone(),
+                        rolled: None,
+                        encountered: entered,
+                        displayed: Vec::new(),
+                    });
+                }
+                return Some(AtAMenu {
+                    menu: drawn,
+                    steps,
+                    state,
+                });
+            }
+            Next::Line(line) => {
+                let mut encountered = line.via.clone();
+                encountered.push(line.id);
+                steps.push(Step {
+                    input: line_up.then_some(Input::Enter),
+                    at,
+                    menu: Vec::new(),
+                    rolled: None,
+                    encountered,
+                    displayed: vec![line.id],
+                });
+                state = walker.take(&line, &state);
+                at = line.id;
+                line_up = true;
+            }
+            Next::End => return None,
+        }
+    }
+    None
 }
 
 /// One walk position a leg's search reached, and how it got there.

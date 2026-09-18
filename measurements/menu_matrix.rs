@@ -135,6 +135,12 @@
 //! `DEGCT_NOLIMIT=1` takes the limits off: a 6144 MB manager and a five-minute wall, which is
 //! also each pass's ration.
 //!
+//! `DEGCT_WALKED_PROFILE=1` asks each menu in a state a greedy playthrough walked to, with the
+//! deepest `DEGCT_UNSEEN` entries still to come - see `menu_profile::walked_profile`. `=menu`
+//! asks about the menu the player is standing at instead of entries chosen for reaching the
+//! unseen; it is the more honest profile and the weaker measurement, and `menu_profile::Starts`
+//! carries the numbers.
+//!
 //! `DEGCT_SEEN_WORLD=all` makes the world agree with the novelty function about what the
 //! player has been shown, and `=body` does the same but leaves the menu's own options unseen.
 //! A default row's world has been shown NOTHING whatever its novelty function says, which is
@@ -406,8 +412,28 @@ struct Standing {
 ///
 /// ROWS ARE NOT COMPARABLE ACROSS IT, which is why it is in `COMPARED_VARIABLES`: it is a
 /// different question about a different world, not the same question measured better.
-fn walked_profile() -> bool {
-    lookahead_engine::core::env::is_set("WALKED_PROFILE")
+/// What `DEGCT_WALKED_PROFILE` names for the menu a walked row asks about.
+const WALKED_REACHING: &str = "reaching";
+const WALKED_ON_SCREEN: &str = "menu";
+/// What a bare flag means, kept so the rows already taken as `=1` stay reproducible.
+const WALKED_FLAG: &str = "1";
+///
+/// # Panics
+///
+/// On any other value, so a misspelt run does not quietly measure something else.
+fn walked_profile() -> Option<menu_profile::Starts> {
+    match lookahead_engine::core::env::var("WALKED_PROFILE") {
+        Err(_) => None,
+        Ok(value) => match value.as_str() {
+            "" => None,
+            WALKED_FLAG | WALKED_REACHING => Some(menu_profile::Starts::Reaching),
+            WALKED_ON_SCREEN => Some(menu_profile::Starts::OnScreen),
+            other => panic!(
+                "DEGCT_WALKED_PROFILE={other:?}: expected {WALKED_FLAG}, {WALKED_REACHING} \
+                 or {WALKED_ON_SCREEN}"
+            ),
+        },
+    }
 }
 
 const COUNTER_CAP: i32 = 16;
@@ -493,7 +519,7 @@ fn main() {
         // THROUGH `MenuProfile`, for the reason it exists: a menu whose starts have nothing
         // better beyond them is refused before a diagram is touched, and the whole row reads
         // as a fast engine while measuring nothing.
-        let (profile, walked) = if walked_profile() {
+        let (profile, walked) = if let Some(which) = walked_profile() {
             let base = SnapshotWorld::declaring(
                 save_world::of_save(&graph, conversation, &index, save_world::TEMPLATE),
                 None,
@@ -505,6 +531,7 @@ fn main() {
                 WALK_CEILING,
                 unseen_wanted,
                 starts_wanted,
+                which,
             ) {
                 // THE WALK'S OWN WORLD, less what it has now shown and what its variables now
                 // hold. Everything else - the character sheet, the checks, the inventory - is

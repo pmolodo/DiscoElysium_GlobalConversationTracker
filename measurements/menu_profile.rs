@@ -89,6 +89,12 @@ impl MenuProfile {
     }
 }
 
+/// How many presses a walked profile may play on for before giving up on finding a menu.
+///
+/// Generous, because the cost is paid once per group outside any timing, and a walk that needs
+/// twenty continues to reach a menu has still reached one.
+const TO_A_MENU: usize = 64;
+
 /// A profile and the world the walk that produced it stopped in.
 pub struct Walked {
     pub profile: MenuProfile,
@@ -138,6 +144,41 @@ pub struct Walked {
 /// entry it went for, which is not generally a menu, so standing it at one would mean walking
 /// further on a different rule. Keeping the same start rule also keeps a row the same width as
 /// the rows already measured, so only the world differs. See de-aqxa.2.
+/// Which menu a walked profile asks about.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Starts {
+    /// Entries that can reach something unseen, shallowest first - what `MenuProfile::of`
+    /// picks. ADVERSARIAL BY CONSTRUCTION: every start has something better beyond it, so none
+    /// is refused before a diagram is touched and every one pays for a real search.
+    Reaching,
+    /// The menu the player is actually standing at, played on to from where the walk stopped.
+    /// COHERENT BY CONSTRUCTION: the world, the walk and the menu are one reading of one
+    /// moment, where [`Starts::Reaching`] asks about a menu the player is not standing at.
+    ///
+    /// ## Why it is not the default, measured 2026-09-17 over the whole game
+    ///
+    /// ```text
+    ///                measured  NO-MENU   sum_ms   options, median   markers
+    ///   Reaching          389      132    8,709                 8       975
+    ///   OnScreen          307      214    6,109                 3       197
+    /// ```
+    ///
+    /// IT IS THE MORE HONEST PROFILE AND THE WEAKER MEASUREMENT, and the trade is not close.
+    /// Eighty-two groups stop being measured at all, 761 among them, because the menu in front
+    /// of the player reaches none of what is left unseen. The menus that remain are the width
+    /// a menu really is - three options against a forced eight - and they mark almost nothing:
+    /// 197 markers over 307 menus, where the same run with reachable starts gives 975 over 389.
+    ///
+    /// That is the failure this module's doc warns about, arrived at from a new direction. A
+    /// profile exists to make every start pay for a real search; one where most starts are
+    /// refused before a diagram is touched reads in a closing line exactly like a fast engine.
+    ///
+    /// SO IT IS KEPT FOR THE OTHER QUESTION. "What does a player standing here actually get
+    /// told" is worth asking, and this is the only profile that answers it - but it is not the
+    /// one to measure the engine with. See de-einb.
+    OnScreen,
+}
+
 pub fn walked_profile(
     graph: &LookAheadGraph,
     world: &dyn lookahead_engine::world::ILookAheadWorld,
@@ -145,6 +186,7 @@ pub fn walked_profile(
     ceiling: usize,
     unseen_wanted: usize,
     starts_wanted: usize,
+    which: Starts,
 ) -> Option<Walked> {
     use lookahead_engine::walkthrough::{Until, greedy_playthrough};
 
@@ -174,26 +216,55 @@ pub fn walked_profile(
         return None;
     }
 
-    let reaching = can_reach(graph, &unseen);
-    let ranked = deepest_first(graph, DialogueNodeId::new(conversation, 0));
-    let starts: Vec<DialogueNodeId> = ranked
-        .iter()
-        .rev()
-        .filter(|id| reaching.contains(*id) && !unseen.contains(*id))
-        .copied()
-        .take(starts_wanted)
-        .collect();
+    // PLAYED ON TO A MENU, where that is what was asked for: a leg stops at the entry it went
+    // for, which is a line far more often than a menu, and a request is about a menu.
+    let standing = match which {
+        Starts::OnScreen => Some(lookahead_engine::walkthrough::on_to_a_menu(
+            graph, world, &stopped, TO_A_MENU,
+        )?),
+        Starts::Reaching => None,
+    };
+
+    let starts: Vec<DialogueNodeId> = match &standing {
+        Some(found) => found.menu.iter().copied().take(starts_wanted).collect(),
+        None => {
+            let reaching = can_reach(graph, &unseen);
+            let ranked = deepest_first(graph, DialogueNodeId::new(conversation, 0));
+            ranked
+                .iter()
+                .rev()
+                .filter(|id| reaching.contains(*id) && !unseen.contains(*id))
+                .copied()
+                .take(starts_wanted)
+                .collect()
+        }
+    };
     if starts.is_empty() {
         return None;
     }
 
+    // THE WAY TO THE MENU IS PART OF THE WALK, so the hub stack the cut is taken from is the
+    // one the player is standing in rather than the one they were in a few presses ago.
+    let mut walk = last_sitting(&stopped);
+    let mut state = stopped.ended.clone();
+    let mut seen = seen;
+    if let Some(found) = &standing {
+        walk.extend(found.encountered());
+        for id in found.displayed() {
+            if !seen.contains(&id) {
+                seen.push(id);
+            }
+        }
+        state = found.state.clone();
+    }
+
     Some(Walked {
-        walk: last_sitting(&stopped),
+        walk,
         // EMPTY UNTIL THE CALLER FILLS IT, since building one needs the save this walk was
         // taken against and that is the caller's to name.
         world: Default::default(),
         profile: MenuProfile { unseen, starts },
-        variables: variables_of(graph, world, &stopped.ended),
+        variables: variables_of(graph, world, &state),
         seen,
         shown: stop_at,
         reachable,
