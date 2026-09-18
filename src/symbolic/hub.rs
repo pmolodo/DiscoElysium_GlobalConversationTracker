@@ -327,42 +327,26 @@ pub fn walk_to_menu(
 /// is wrong, and would be a bug rather than a trade-off. The only number that can speak for it
 /// is what the search spends.
 ///
-/// ## What was measured, and why it settles nothing
+/// ## Where it may and may not be applied
 ///
-/// Whole game, three runs, walked profile, against the same arm without it:
+/// STEP 1 GAINS NOTHING FROM IT. The walk cut there already refuses every loop back through the
+/// hub, and a spent branch is one by conditions 1 and 3, so the same set handed to step 1 is
+/// subsumed before it is asked.
 ///
-/// ```text
-///   entries cut          2,029 over 95 groups of 389
-///   menus whose stars changed        0
-///   sum of medians       8,698 -> 8,608 ms
-/// ```
+/// STEP 2 CUTS NOTHING BY DESIGN, and an exception for this has to clear a high bar: the exact
+/// marking exists to keep the routes step 1's cut cannot see, such as one that sets a variable
+/// and returns through the hub to what the variable opens. Two things it does NOT license, both
+/// of which a marking will notice:
 ///
-/// THE 90 MS IS NOT A SPEEDUP. A whole-game arm moves by more than that between one ordering of
-/// the arms and another - de-u5ab measured 112 ms against the same arm - so a difference this
-/// size is the machine. And the zero beside it is the correctness test passing, which was never
-/// in doubt. Neither line says whether the cut is worth having.
+///   - REMOVING ENTRIES A ROUTE PASSES THROUGH. Only the head is returned, and that is enough -
+///     see the remarks on the loop below.
+///   - BLOCKING WHERE THE MENU IS ASKING FROM. `mark_menu_blocking` takes blocked entries as
+///     neither walkable NOR CLAIMABLE, and a menu hangs off a hub whose branches are its own
+///     options, so a head can be the very option being asked about. Only the caller knows what
+///     a menu is asking about, so subtracting those belongs there - see
+///     [`crate::bridge::mark_menu_as_shipped`].
 ///
-/// THE ARM ALSO ASKED IN THE WRONG PLACE, which is why even its cost reading is uninformative. It
-/// unions the spent entries into the cut that `mark_menu_hybrid` hands STEP 1, where the walk
-/// cut is already refusing every loop back through the hub - and a spent branch is a loop back
-/// through the hub, by conditions 1 and 3. So the second cut was added where the first already
-/// subsumed it, and came back empty for that reason alone.
-///
-/// STEP 2 IS WHERE IT BELONGS AND HAS NEVER RUN. The exact marking cuts NOTHING, deliberately:
-/// it exists to keep the routes step 1's cut cannot see, such as one that sets a variable and
-/// returns through the hub to what the variable opens. Cutting every loop there would refuse
-/// the answer it is for. But a loop that CANNOT MUTATE ANYTHING is a different case - it can
-/// never open what it returns to - and that is what this computes. It is an optimisation for
-/// the search that pays for the whole hybrid, not a second opinion for the cheap question.
-///
-/// A SPENT BRANCH IS ONE MEMBER OF THAT CLASS. Others are worth having and are not written yet:
-/// a loop carrying no actions at all, one that only sets a variable already set, one that only
-/// increments a counter already past every threshold a guard compares it to. Each is inert for
-/// the same reason - the state the search would carry out of it equals the state it carried in.
-///
-/// So this is an opt-in arm no default path calls, and its worth is UNMEASURED rather than
-/// disproven. It has no row in `docs/modelling-gaps.md`, because a row there is for an answer
-/// that can differ, and a cut that removes only inert loops cannot change one. See de-wi02.
+/// See de-wi02, de-qy5t and de-bihb, which carry the readings.
 pub fn spent_branches<F>(
     graph: &LookAheadGraph,
     order: &IterationOrder,
@@ -381,12 +365,19 @@ where
         return HashSet::new();
     };
 
+    // THE HEAD ALONE, NOT THE BRANCH BEHIND IT. Blocking the entry is enough to keep a search
+    // out of the branch, because `branch_if_spent` has already proved there is no way in except
+    // through this link: it refuses the branch outright if anything in it leaves the hub's
+    // component, and it stops at the hub.
+    //
+    // AND THE REST IS NOT THIS BRANCH'S TO GIVE UP. Two branches off one hub can share entries -
+    // what is reachable from one option without passing the hub can be reachable from another
+    // the same way - so an entry deep in a spent branch may be the route out of a branch that is
+    // NOT spent, which this one knows nothing about.
     let mut spent = HashSet::new();
     for &option in &node.links {
-        if let Some(branch) =
-            branch_if_spent(graph, order, hub, component, option, seen, novelty, unread)
-        {
-            spent.extend(branch);
+        if branch_if_spent(graph, order, hub, component, option, seen, novelty, unread).is_some() {
+            spent.insert(option);
         }
     }
     spent
@@ -751,6 +742,55 @@ pub(crate) mod tests {
             .build()
     }
 
+    /// Two topics off one hub that MEET: both reach 3, which returns to the hub.
+    ///
+    /// ```text
+    ///    0  start            -> 1
+    ///    1  HUB              -> 2, 4
+    ///    2    topic one      -> 3 -> 1     (+once)
+    ///    4    topic two      -> 3          (no actions, so nothing to have fired)
+    /// ```
+    ///
+    /// Topic one is spent once its once has fired; topic two is not, because its own entry has
+    /// never been walked. 3 lies inside both.
+    fn two_topics_sharing_an_entry() -> LookAheadGraph {
+        GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).group().links(&[2, 4]))
+            .add(
+                Entry::new(2)
+                    .player()
+                    .script("SetVariableValue(\"count\", Variable[\"count\"] +once(1))")
+                    .links(&[3]),
+            )
+            .add(Entry::new(3).links(&[1]))
+            .add(
+                Entry::new(4)
+                    .player()
+                    .script("SetVariableValue(\"count\", Variable[\"count\"] +once(1))")
+                    .links(&[3]),
+            )
+            .build()
+    }
+
+    /// An entry shared by a spent branch and an unspent one is not the spent branch's to give up:
+    /// it is the unspent branch's way out. Only heads come back, so it survives.
+    #[test]
+    fn an_entry_shared_with_an_unspent_branch_is_not_cut() {
+        let graph = two_topics_sharing_an_entry();
+        let spent = spent_with(&graph, &[2, 3], &all_read);
+
+        assert!(spent.contains(&node(2)), "the spent topic's head");
+        assert!(
+            !spent.contains(&node(3)),
+            "shared with topic two, which is not spent and needs it to get anywhere"
+        );
+        assert!(
+            !spent.contains(&node(4)),
+            "topic two's own once has not fired"
+        );
+    }
+
     /// Nothing unread anywhere, which is condition one out of the way.
     fn all_read(_: DialogueNodeId) -> Novelty {
         Novelty::SeenThisGame
@@ -775,13 +815,20 @@ pub(crate) mod tests {
 
     /// A branch whose one-time effects have fired and which shows nothing unread is spent: going
     /// round it again returns the same state having shown nothing.
+    ///
+    /// ITS HEAD IS WHAT COMES BACK, AND NOTHING BEHIND IT. Blocking the entry keeps a search out
+    /// of the branch on its own, and an entry deeper in may belong to another branch as well.
+    /// See `spent_branches`.
     #[test]
-    fn a_branch_whose_once_has_fired_is_spent() {
+    fn a_spent_branch_gives_its_head_and_nothing_behind_it() {
         let graph = two_spendable_topics();
         let spent = spent_with(&graph, &[2, 3], &all_read);
 
         assert!(spent.contains(&node(2)), "the topic the world has shown");
-        assert!(spent.contains(&node(3)), "and what it leads to");
+        assert!(
+            !spent.contains(&node(3)),
+            "what it leads to is reachable behind the head, and may be reachable elsewhere too"
+        );
         assert!(
             !spent.contains(&node(4)),
             "the other topic has not been walked, so its once is still to fire"

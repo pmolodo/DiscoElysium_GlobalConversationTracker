@@ -1812,7 +1812,7 @@ pub fn answer(
     // SECOND MANAGER built on a thread that has already built one - not a second search -
     // so a request that builds exactly one manager inside its thread and runs every start
     // against it never reaches the fault, however many starts there are. See the table in
-    // `symbolic::isolated`; `measurements/menu_residue.rs` puts this call itself to it,
+    // `symbolic::isolated`; `performance/menu_residue.rs` puts this call itself to it,
     // forty-five runs at budgets to six gigabytes, and once at three hundred and
     // eighty-four starts. A thread per start would have cost about twelve milliseconds an
     // option at the player's default budget, rebuilding the diagram side each time, to buy
@@ -1874,7 +1874,7 @@ pub fn answer(
 /// How high a counter is modelled before it saturates.
 ///
 /// SIXTEEN, AND EVERY MEASUREMENT IN THE REPOSITORY WAS MADE AT IT -
-/// `measurements/menu_matrix.rs` and the symbolic tests all use this number. Changing it
+/// `performance/menu_matrix.rs` and the symbolic tests all use this number. Changing it
 /// changes which states a search can tell apart, so a run measured under one cap says
 /// nothing about a search under another.
 pub const COUNTER_CAP: i32 = 16;
@@ -1925,7 +1925,7 @@ where
 /// THE SHAPE IS BUILT HERE, ONCE FOR THE MENU. The parent map and the SCC decomposition are
 /// facts about the links, which trimming is what changes; every option below wants the same
 /// ones. Each option used to build its own: twenty-four Tarjan passes over conversation 631's
-/// 4,514 entries for one answer, which `measurements/per_start_setup.rs` priced at 246 ms a
+/// 4,514 entries for one answer, which `performance/per_start_setup.rs` priced at 246 ms a
 /// menu. See `GroupShape`.
 pub fn walkable_menu(
     graph: &LookAheadGraph,
@@ -2123,7 +2123,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
             each: ration.each,
         },
         shape,
-        &returned,
+        &encountered,
     );
     for (index, mark) in indices.into_iter().zip(&found.marks) {
         record(&mut answers[index], mark);
@@ -2269,9 +2269,10 @@ pub(crate) fn all_unanswered(request: &LookAheadRequest, stopped_by: &str) -> Ve
 /// What the player has used up, beside what they have just passed: the branches off the hubs
 /// they are inside whose one-time effects have all fired and which show nothing unread.
 ///
-/// AN ARM, NOT THE SHIPPED CUT. It is an approximation of its own - see
-/// [`crate::symbolic::hub::spent_branches`] for the three conditions and why the third is what
-/// keeps it sound - and it is measured before it is anybody's default. See de-wi02.
+/// THE HEADS OF THOSE BRANCHES, not their contents - see [`crate::symbolic::hub::spent_branches`]
+/// for the three conditions, why the head alone is enough, and where this may be applied.
+/// [`mark_menu_as_shipped`] derives it from the walk and subtracts what the menu is asking about.
+/// See de-wi02, de-qy5t.
 ///
 /// `encountered` is the walk, as [`passed_since_hub`] takes it; the hubs it names are the ones
 /// whose branches are examined, because a branch is only spent relative to the hub it hangs off.
@@ -2332,23 +2333,32 @@ pub fn passed_since_hub(
 /// and the exact marking runs only where that marks nothing, each of its rounds a branch and
 /// bound over single targets. See [`crate::symbolic::menu::mark_menu_hybrid`].
 ///
-/// `returned` is what the player has passed since the hubs they are inside, cut beside the
-/// siblings by the cheap question; empty for a caller that does not know where the player is.
+/// `encountered` is the WALK - where the player has been - and the cut is read off it here: what
+/// they have passed since the hubs they are inside, which step 1 cuts beside the siblings. Empty
+/// for a caller that does not know where the player is, which cuts nothing and marks the same.
 pub fn mark_menu_as_shipped<F: Fn(DialogueNodeId) -> Novelty>(
     search: crate::symbolic::search::Search<'_, '_>,
     novelty: &F,
     contestants: &[crate::symbolic::menu::Contestant],
     budget: &crate::symbolic::menu::Budget,
     shape: &GroupShape,
-    returned: &HashSet<DialogueNodeId>,
+    encountered: &[DialogueNodeId],
 ) -> crate::symbolic::menu::MenuAnswer {
+    // THE CUT IS DERIVED HERE, FROM THE WALK, rather than by each caller, so a caller cannot
+    // drift from the rule this function is supposed to BE. The menu measurement reaches this
+    // same function for the same reason.
+    let returned = passed_since_hub(search.graph, shape, encountered);
+
     crate::symbolic::menu::mark_menu_hybrid(
         search,
         novelty,
         contestants,
         budget,
         shape,
-        returned,
+        &returned,
+        // NO INERT CUT HERE. `DEGCT_MARKING=hybrid-spent` passes one - see
+        // `crate::symbolic::hub::spent_branches` for what it holds and where it may be applied.
+        &HashSet::new(),
         crate::symbolic::menu::Fallback::default(),
     )
 }

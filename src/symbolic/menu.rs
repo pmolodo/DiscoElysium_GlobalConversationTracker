@@ -67,6 +67,18 @@ pub struct MenuAnswer {
     pub passes: usize,
     pub rounds: usize,
     pub elapsed: Duration,
+    /// Whether the EXACT marking answered this menu, rather than the onward question.
+    ///
+    /// WHAT A MEASUREMENT OF THE EXPENSIVE HALF HAS TO SELECT ON. Most menus are settled by
+    /// step 1 and never reach step 2 at all, so a whole-game total is mostly made of menus an
+    /// optimisation to step 2 cannot touch, and a real difference there arrives diluted across
+    /// hundreds of rows that could not have moved. Both readings are worth having - the whole
+    /// game says what a player's session costs, this subset says whether the thing being
+    /// changed changed anything - and only one of them can be had without this flag.
+    ///
+    /// False from [`mark_menu`] asked directly: it IS the exact marking, so there was no
+    /// question to fall through from.
+    pub fell_through: bool,
 }
 
 pub struct Budget {
@@ -110,7 +122,14 @@ pub enum Fallback {
 /// a player has to learn: a marker means "onward from here", and the one time it means anything
 /// looser is a menu where onward leads nowhere at all.
 ///
-/// ## The step that is not here, and why it was taken out
+/// A NUMBER ALWAYS MEANS ONE OF THOSE TWO. "Step 2" is the exact marking above and nothing
+/// else. The section below describes a third question this marking USED to ask, between the
+/// two, and calls it the SIBLINGS STEP rather than giving it a number - because for as long as
+/// it was numbered, "step 2" meant it here and the exact marking everywhere else. That
+/// ambiguity is not hypothetical: it is why de-wi02's cut was handed to the onward question
+/// when it was meant for the exact marking, and why its measurement found nothing.
+///
+/// ## The siblings step, which is not here, and why it was taken out
 ///
 /// [`Fallback::SiblingsThenExact`] puts it back, as a comparison. It asks the onward question a
 /// SECOND time with the siblings alone, forgetting the walk, before reaching the exact marking -
@@ -128,9 +147,9 @@ pub enum Fallback {
 /// running second, because a whole-game arm is sensitive to how warm the machine already is:
 ///
 /// ```text
-///                    sum of medians, first / second      markers
-///   with the step          8,353 / 8,241 ms               1,042
-///   without it             8,384 / 8,352 ms                 975
+///                          sum of medians, first / second      markers
+///   with the siblings step       8,353 / 8,241 ms               1,042
+///   without it                   8,384 / 8,352 ms                 975
 ///
 ///   menus whose markers moved     40 of 389
 ///     strictly fewer                39
@@ -139,8 +158,8 @@ pub enum Fallback {
 ///
 /// THE TWO ARMS ARE INDISTINGUISHABLE IN TIME, and the table is laid out to show why rather
 /// than to be averaged: an arm moves further between its own two orderings - 112 ms for the
-/// step - than the arms' means differ from each other, which is 71 ms. So the timing says
-/// only that taking the step out costs nothing measurable. A gap of a few tens of
+/// siblings arm - than the arms' means differ from each other, which is 71 ms. So the timing
+/// says only that taking it out costs nothing measurable. A gap of a few tens of
 /// milliseconds spread over 389 menus is below what this measurement resolves, and reading
 /// one as a result is how a warm cache gets mistaken for an algorithm.
 ///
@@ -182,7 +201,79 @@ pub enum Fallback {
 ///
 /// An onward mark carries no distance, because none was computed. See de-0jsf.18 for the
 /// free structural bound that orders them when an ordering is wanted.
+/// `inert` is for the exact marking alone - entries a route can be denied WITHOUT denying any
+/// answer, because passing through them leaves the state exactly as it arrived. See
+/// [`crate::symbolic::hub::spent_branches`], which computes the one kind of them written so
+/// far, and de-qy5t for the others.
+///
+/// IT IS NOT A SECOND OPINION, it is an optimisation, and the two differ in what a difference
+/// would mean. Step 1's cut CHANGES THE ANSWER on purpose: it refuses routes that go back, so
+/// an option can lose a star it would otherwise have. This one must change nothing. An inert
+/// loop cannot open what it returns to, so every route it carried is replaced by standing
+/// still, and a marking that moved would mean the inertness test is wrong rather than that a
+/// trade-off was taken.
+///
+/// It is given to step 2 and not to step 1 because step 1 already refuses every loop back
+/// through a hub, inert or not, so it has nothing to add there - which is the whole of what
+/// de-wi02's measurement discovered, having put it in step 1 by mistake.
+///
+/// Step 1 lives in [`mark_step_one`] so that a measurement can ask it WITHOUT paying for step
+/// 2. See that function on why it is not written twice.
 pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> Novelty>(
+    mut search: Search<'_, '_>,
+    novelty: &F,
+    contestants: &[Contestant],
+    budget: &Budget,
+    shape: &GroupShape,
+    returned: &HashSet<DialogueNodeId>,
+    inert: &HashSet<DialogueNodeId>,
+    fallback: Fallback,
+) -> MenuAnswer {
+    let onward = mark_step_one(
+        search.reborrow(),
+        novelty,
+        contestants,
+        budget,
+        shape,
+        returned,
+        fallback,
+    );
+    if onward.rounds > 0 {
+        return onward;
+    }
+    let passes = onward.passes;
+
+    // NOTHING LED ONWARD. Either there is nothing to find - in which case the exact marking
+    // settles on its own first pass and agrees - or every route loops back, which is the one
+    // case the cheap question cannot answer and the expensive one can.
+    //
+    // THE INERT ENTRIES ARE BLOCKED HERE AND ONLY HERE. `mark_menu_blocking` takes them as
+    // entries neither walkable nor claimable, which is what an inert loop wants: it holds
+    // nothing unread to claim, and a route through it arrives where it started.
+    let mut exact = mark_menu_blocking(search, novelty, contestants, budget, shape, inert);
+    exact.passes += passes;
+    exact.fell_through = true;
+    exact
+}
+
+/// Step 1 alone: the onward question, asked with the cut the hybrid would ask it with.
+///
+/// `rounds` of zero is a menu that FALLS THROUGH to the exact marking. Nothing else in a
+/// menu's row says so - a menu answered by step 1 and one answered by step 2 both end with
+/// rounds above zero and some pass count - so a measurement that wants the expensive half's
+/// menus has to ask this and read the answer.
+///
+/// ## Why this is a function rather than four lines in the caller
+///
+/// The cut is NOT simply the walk's. Where the walk cut nothing this menu's options are all it
+/// holds, the onward question with it is the siblings-alone question, and the rule asks that
+/// one instead. A measurement that reimplemented "step 1" as the walk cut alone would select a
+/// different set of menus than actually fall through, and would do it silently.
+///
+/// That is not hypothetical here. de-wi02's arm reimplemented where a cut belonged, put it one
+/// step out, and its measurement found nothing for that reason alone - so the one thing this
+/// module should not have is a second copy of which question gets asked with what.
+pub fn mark_step_one<F: Fn(DialogueNodeId) -> Novelty>(
     mut search: Search<'_, '_>,
     novelty: &F,
     contestants: &[Contestant],
@@ -208,20 +299,16 @@ pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> Novelty>(
     };
 
     let mut passes = 0;
+    let mut last = blank(contestants);
     for cut in cuts {
         let onward = mark_onward(search.reborrow(), novelty, contestants, budget, shape, cut);
         passes += onward.passes;
         if onward.rounds > 0 {
             return MenuAnswer { passes, ..onward };
         }
+        last = onward;
     }
-
-    // NOTHING LED ONWARD. Either there is nothing to find - in which case the exact marking
-    // settles on its own first pass and agrees - or every route loops back, which is the one
-    // case the cheap question cannot answer and the expensive one can.
-    let mut exact = mark_menu(search, novelty, contestants, budget, shape);
-    exact.passes += passes;
-    exact
+    MenuAnswer { passes, ..last }
 }
 
 /// Marks every option that reaches unread content without returning through the menu.
@@ -529,6 +616,7 @@ fn blank(contestants: &[Contestant]) -> MenuAnswer {
         passes: 0,
         rounds: 0,
         elapsed: Duration::ZERO,
+        fell_through: false,
     }
 }
 
@@ -1040,6 +1128,7 @@ mod tests {
                     &budget,
                     &shape,
                     returned,
+                    &HashSet::new(),
                     Fallback::SiblingsThenExact,
                 ),
                 Which::Hybrid => mark_menu_hybrid(
@@ -1049,6 +1138,7 @@ mod tests {
                     &budget,
                     &shape,
                     returned,
+                    &HashSet::new(),
                     Fallback::Exact,
                 ),
             }

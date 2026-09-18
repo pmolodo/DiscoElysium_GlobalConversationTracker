@@ -96,7 +96,7 @@
 //! nothing here is the wall failing to hold. Eight options that each behave are still eight
 //! options, and on 761 they add to three seconds.
 //!
-//! That is the question `measurements/menu_wall.rs` asks, and this is the first whole-game
+//! That is the question `performance/menu_wall.rs` asks, and this is the first whole-game
 //! answer to it: TWO GROUPS, NAMED, out of 395. A per-option reading cannot produce that
 //! list - 761's worst option is well inside its budget - which is the whole reason this
 //! measurement exists beside the option matrix rather than instead of it.
@@ -149,7 +149,7 @@
 //! about what the player has been shown, and `=body` does the same but leaves the menu's own
 //! options unseen. It does not repair the contradiction; see [`walked_profile`].
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use lookahead_engine::bridge::{NodeRef, SnapshotWorld, WorldSnapshot};
@@ -182,9 +182,9 @@ use seen_profile::candidates;
 ///
 /// A DRIVER ASKS FOR THESE rather than parsing them off a row, so that a file assembled from
 /// many processes cannot get a header that disagrees with its rows.
-const COLUMNS: [&str; 12] = [
+const COLUMNS: [&str; 13] = [
     "conv", "entries", "options", "offered", "menu_ms", "setup_ms", "asked", "rounds", "settled",
-    "partly", "nodes", "starred",
+    "partly", "nodes", "starred", "exact",
 ];
 
 /// The groups to measure when nothing is named: the heavy list the matrix has always meant.
@@ -230,6 +230,15 @@ enum Marking {
     /// player is inside whose one-time effects have all fired and which shows nothing unread
     /// cannot be the way on, so it is refused like the walk itself. See de-wi02.
     HybridSpent,
+    /// STEP 1 AND NOTHING AFTER IT - the onward question with the cut the default rule would
+    /// ask it with, stopping whether or not it starred anything.
+    ///
+    /// NOT A MARKING ANYONE WOULD SHIP, and it is not offered as one: a menu it leaves bare is
+    /// a menu the product would have gone on to answer exactly. It exists to name the menus
+    /// that FALL THROUGH, cheaply - a `rounds` of zero here is a menu the expensive half runs
+    /// for - so a before-and-after of step 2 can be taken on the menus step 2 actually
+    /// touches, without paying for step 2 to find out which those are. See de-qy5t.
+    Onward,
 }
 
 /// What `DEGCT_MARKING` says for each marking.
@@ -237,6 +246,7 @@ const HYBRID_BRANCH_AND_BOUND: &str = "hybrid-bnb";
 const BRANCH_AND_BOUND: &str = "bnb";
 const HYBRID_SIBLINGS: &str = "hybrid-siblings";
 const HYBRID_SPENT: &str = "hybrid-spent";
+const ONWARD: &str = "onward";
 
 /// The marking `DEGCT_MARKING` names: `hybrid-bnb`, the default and what the product marks
 /// with, walk and all; or `bnb` for the exact marking on every group. Row files can be taken
@@ -258,8 +268,10 @@ fn marking() -> Marking {
         BRANCH_AND_BOUND => Marking::BranchAndBound,
         HYBRID_SIBLINGS => Marking::HybridSiblings,
         HYBRID_SPENT => Marking::HybridSpent,
+        ONWARD => Marking::Onward,
         other => panic!(
-            "DEGCT_MARKING={other:?}: expected {HYBRID_BRANCH_AND_BOUND}, {BRANCH_AND_BOUND},              {HYBRID_SIBLINGS} or {HYBRID_SPENT}"
+            "DEGCT_MARKING={other:?}: expected {HYBRID_BRANCH_AND_BOUND}, {BRANCH_AND_BOUND}, \
+             {HYBRID_SIBLINGS}, {HYBRID_SPENT} or {ONWARD}"
         ),
     }
 }
@@ -402,6 +414,12 @@ struct Standing {
 /// The default. The X unseen entries are the deepest ones A WALK REACHES: `DEGCT_UNSEEN` is the
 /// X in walk-deepest-X, and a run of keypresses is the witness that a player can stand there.
 const WALK_DEEPEST: &str = "walk-deepest";
+/// A start set nobody can stand at, asked on a save that has shown nothing: the structural menu
+/// of `MenuProfile::of` with link-deepest-X globally unseen and no walk-up. See `Scenario`.
+const SYNTHETIC_MENU: &str = "synthetic-menu";
+/// The FIRST menu a walk-up from the conversation's start reaches, with walk-deepest-X globally
+/// unseen. See `Scenario`.
+const FIRST_MENU: &str = "first-menu";
 /// The X unseen entries are the deepest ones BY LINK DISTANCE, picked off the dialogue graph
 /// with no regard for whether any play can be standing where they are still unread -
 /// link-deepest-X. No walk vouches for it.
@@ -449,19 +467,58 @@ const WALKED_FLAG: &str = "1";
 /// # Panics
 ///
 /// On any other value, so a misspelt run does not quietly measure something else.
-fn walked_profile() -> Option<menu_profile::Starts> {
+fn walked_profile() -> Scenario {
     match lookahead_engine::core::env::var("WALKED_PROFILE") {
-        Err(_) => Some(menu_profile::Starts::Reaching),
+        Err(_) => Scenario::Walked(menu_profile::Starts::Reaching),
         Ok(value) => match value.as_str() {
-            "" | WALKED_FLAG | WALK_DEEPEST => Some(menu_profile::Starts::Reaching),
-            WALKED_ON_SCREEN => Some(menu_profile::Starts::OnScreen),
-            LINK_DEEPEST => None,
+            "" | WALKED_FLAG | WALK_DEEPEST => Scenario::Walked(menu_profile::Starts::Reaching),
+            WALKED_ON_SCREEN => Scenario::Walked(menu_profile::Starts::OnScreen),
+            LINK_DEEPEST => Scenario::LinkDeepest,
+            SYNTHETIC_MENU => Scenario::SyntheticMenu,
+            FIRST_MENU => Scenario::FirstMenu,
             other => panic!(
                 "DEGCT_WALKED_PROFILE={other:?}: expected {WALK_DEEPEST} (or {WALKED_FLAG}), \
-                 {WALKED_ON_SCREEN} or {LINK_DEEPEST}"
+                 {WALKED_ON_SCREEN}, {LINK_DEEPEST}, {SYNTHETIC_MENU} or {FIRST_MENU}"
             ),
         },
     }
+}
+
+/// Which scenario a row is taken in: which menu is asked, in what world, with what globally
+/// unseen.
+///
+/// THE GAME HAS TWO SCOPES OF SEEN and these differ in both, so each names both. Global state is
+/// what this player has ever seen; save state is what THIS game has displayed, and is what fires
+/// a `once`. See `menu_profile::MenuProfile::novelty`.
+enum Scenario {
+    /// Walk-deepest-X globally unseen, asked in the world the walk stopped in. The walk has
+    /// shown a great deal, so most one-time effects have already fired.
+    Walked(menu_profile::Starts),
+    /// Link-deepest-X globally unseen, everything else seen this game. The profile the
+    /// baselines were taken on, kept for comparing against them.
+    LinkDeepest,
+    /// ARTIFICIAL MENU, NOTHING SHOWN. The structural start set of `MenuProfile::of`, which is
+    /// not a menu any player can stand at, asked on a save that has never opened the
+    /// conversation - so every `once` in the group is still pending. Link-deepest-X is globally
+    /// unseen and everything else is `UnseenThisGame`.
+    ///
+    /// The most adversarial state that is still internally consistent: nothing here contradicts
+    /// anything, it simply is not a position a player can be in.
+    SyntheticMenu,
+    /// THE REAL MENU, WALKED UP TO. The conversation is opened and played forward until a menu
+    /// is on screen, choosing nothing - so the starts are the options the game would draw and
+    /// the only entries shown this game are the ones it takes to get there. Walk-deepest-X is
+    /// globally unseen.
+    ///
+    /// What a veteran player meets on a fresh save: they have read almost all of this before,
+    /// in another game, and none of it in this one.
+    ///
+    /// THE FIRST MENU, WHICH IS USUALLY BUT NOT ALWAYS THE MAIN HUB. A conversation generally
+    /// opens with a few lines and then offers its topics; a long one may put an intro menu in
+    /// front of that. Taking the first is what makes the walk-up short and the arrival honest -
+    /// it is where a player IS a few presses in. On 761 it is a seven-option menu three entries
+    /// from the start, which is a menu worth asking about rather than a two-option doorway.
+    FirstMenu,
 }
 
 const COUNTER_CAP: i32 = 16;
@@ -491,6 +548,15 @@ struct Menu {
     /// recommends while keeping the count would read as no change at all. Comparing two
     /// markings over the game is exactly what that would hide. See de-2p8j.2.
     starred: String,
+    /// Whether the EXACT marking answered, rather than the onward question.
+    ///
+    /// WHAT SELECTS THE MENUS AN OPTIMISATION TO THE EXPENSIVE HALF COULD HAVE MOVED. Step 1
+    /// settles most menus and step 2 never runs for them, so a whole-game total is mostly
+    /// rows that could not have changed, and a difference in the few that did arrives diluted
+    /// into the noise. A run wants both readings - the whole game for what a session costs,
+    /// this subset for whether the change did anything - and this column is how the second is
+    /// taken. See de-qy5t.
+    fell_through: bool,
 }
 
 fn main() {
@@ -547,7 +613,66 @@ fn main() {
         // THROUGH `MenuProfile`, for the reason it exists: a menu whose starts have nothing
         // better beyond them is refused before a diagram is touched, and the whole row reads
         // as a fast engine while measuring nothing.
-        let (profile, walked) = if let Some(which) = walked_profile() {
+        let scenario = walked_profile();
+        let (profile, walked) = if let Scenario::SyntheticMenu = scenario {
+            // NO WALK-UP AND NOTHING SHOWN. The world is the save as it is - no `seen` slot set,
+            // no `once` fired - and the starts are the structural set, which is why there is no
+            // walk to stand at them by. `walked` stays None, so no hub cut is taken either.
+            match MenuProfile::of(&graph, root, unseen_wanted, starts_wanted) {
+                Some(found) => (found.on_a_fresh_save(), None),
+                None => {
+                    row(conversation, &graph, 0, NO_MENU, None);
+                    continue;
+                }
+            }
+        } else if let Scenario::FirstMenu = scenario {
+            let base = SnapshotWorld::declaring(
+                save_world::of_save(&graph, conversation, &index, save_world::TEMPLATE),
+                save_world::declared(),
+            );
+            match menu_profile::first_menu_profile(
+                &graph,
+                &base,
+                conversation,
+                WALK_CEILING,
+                unseen_wanted,
+            ) {
+                Some(found) => {
+                    // WHICH MENU THE WALK-UP LANDED ON, and how far it had to go. The first menu
+                    // a conversation offers is usually its main hub, and in a long one it may be
+                    // an intro menu in front of that - the row cannot say which, so this does.
+                    eprintln!(
+                        "conversation {conversation}: walked up {} entries to a menu of {} \
+                         options {:?}, with {} of {} entries globally unseen",
+                        found.seen.len(),
+                        found.profile.starts.len(),
+                        found
+                            .profile
+                            .starts
+                            .iter()
+                            .map(|id| id.entry_id)
+                            .collect::<Vec<_>>(),
+                        found.profile.unseen.len(),
+                        found.reachable,
+                    );
+                    let mut world =
+                        save_world::of_save(&graph, conversation, &index, save_world::TEMPLATE);
+                    world.seen = found.seen.iter().copied().map(NodeRef::from).collect();
+                    world.variables = found.variables;
+                    (
+                        found.profile,
+                        Some(Standing {
+                            world,
+                            walk: found.walk,
+                        }),
+                    )
+                }
+                None => {
+                    row(conversation, &graph, 0, NO_MENU, None);
+                    continue;
+                }
+            }
+        } else if let Scenario::Walked(which) = scenario {
             // THE SAME WORLD THE DATASET'S WALK USES, declared table included. A walk cannot
             // decide a variable nothing declares without it, so it refuses and stops short -
             // and this walk and `greedy_playthrough`'s would then be two different walks
@@ -614,6 +739,27 @@ fn main() {
             }
         };
 
+        // WHAT THE PLAYER HAS SEEN, AT BOTH SCOPES, counted rather than described. A scenario is
+        // a claim about the novelty distribution, and the row cannot say which claim it made -
+        // every row is the same shape. Three numbers say it outright, and reading them beats
+        // reading the code that produced them.
+        {
+            let novelty = profile.novelty();
+            let mut any_game = 0;
+            let mut this_game = 0;
+            let mut seen = 0;
+            for node in graph.nodes() {
+                match novelty(node.id) {
+                    Novelty::UnseenAnyGame => any_game += 1,
+                    Novelty::UnseenThisGame => this_game += 1,
+                    Novelty::SeenThisGame => seen += 1,
+                }
+            }
+            eprintln!(
+                "conversation {conversation}: {any_game} unseen-any-game, {this_game} \
+                 unseen-this-game, {seen} seen-this-game"
+            );
+        }
         let novelty = profile.novelty();
         match menu(
             &graph,
@@ -820,16 +966,17 @@ where
         // it, so a default row measures what a player waits for; `DEGCT_MARKING=bnb` puts the
         // exact marking on every group instead. See [`marking`].
         let found = match marking() {
-            // INSIDE THE TIMED REGION, the group's hubs included: what the player passed since
-            // their current hub, from the walk, through the one call a request carrying a walk
-            // goes through in the bridge - so this row pays what a player's menu pays.
+            // INSIDE THE TIMED REGION, the group's hubs included. The WALK ITSELF is handed
+            // over and both cuts are derived from it in the bridge, through the one call a
+            // request carrying a walk goes through - so this row pays what a player's menu
+            // pays, the deriving included, and cannot drift from the rule by restating it.
             Marking::HybridBranchAndBound => lookahead_engine::bridge::mark_menu_as_shipped(
                 marking_search,
                 novelty,
                 &contestants,
                 &marking_budget,
                 &shape,
-                &lookahead_engine::bridge::passed_since_hub(graph, &shape, &walk),
+                &walk,
             ),
             Marking::BranchAndBound => menu::mark_menu(
                 marking_search,
@@ -847,23 +994,45 @@ where
                 &marking_budget,
                 &shape,
                 &lookahead_engine::bridge::passed_since_hub(graph, &shape, &walk),
+                &HashSet::new(),
                 menu::Fallback::SiblingsThenExact,
             ),
-            // BOTH CUTS, and INSIDE THE TIMING as the walk's own cut is, since a player's
-            // request would have to work this out too.
+            // THE SAME WALK CUT AS THE DEFAULT ARM in step 1, and the spent branches given to
+            // STEP 2, which is the only place they can do anything. Step 1 already refuses
+            // every loop back through a hub, and a spent branch is one, so a cut handed there
+            // is subsumed before it is asked - which is what this arm did until de-qy5t, and
+            // why it appeared to find nothing.
+            //
+            // INSIDE THE TIMING, as the walk's own cut is, since a player's request would have
+            // to work this out too.
             Marking::HybridSpent => {
-                let mut cut = lookahead_engine::bridge::passed_since_hub(graph, &shape, &walk);
+                let cut = lookahead_engine::bridge::passed_since_hub(graph, &shape, &walk);
                 let spent = lookahead_engine::bridge::spent_since_hub(
                     graph, &shape, &world, novelty, &walk,
                 );
                 // ON STDERR, because a cut that finds nothing and a cut that is not running
-                // produce the same row, and only one of those is a finding.
+                // produce the same row, and only one of those is a finding. What matters here
+                // is what the spent cut holds that the walk cut does NOT - entries already in
+                // the walk cut are refused by step 1 and never reach step 2 to be blocked.
+                // THE IDS, NOT JUST THE COUNT, AND THE OPTIONS BESIDE THEM. A count says how
+                // much was cut and cannot say WHAT, and the question a changed marker asks is
+                // whether the entry that lost its star is one of these. Printing both is what
+                // showed that conversation 45's option 73 is itself a spent-branch entry, which
+                // is the flaw in the whole cut - see `hub::spent_branches`.
+                let mut ids: Vec<i32> = spent.iter().map(|id| id.entry_id).collect();
+                ids.sort_unstable();
+                let mut options: Vec<i32> = contestants
+                    .iter()
+                    .flat_map(|c| c.landing.iter().map(|id| id.entry_id))
+                    .collect();
+                options.sort_unstable();
                 eprintln!(
-                    "conversation {conversation}: spent cut adds {} entries to a walk cut of {}",
+                    "conversation {conversation}: spent cut is {} entries, {} of them beyond \
+                     a walk cut of {}\n  spent: {ids:?}\n  options: {options:?}",
+                    spent.len(),
                     spent.difference(&cut).count(),
                     cut.len(),
                 );
-                cut.extend(spent);
                 menu::mark_menu_hybrid(
                     marking_search,
                     novelty,
@@ -871,13 +1040,27 @@ where
                     &marking_budget,
                     &shape,
                     &cut,
+                    &spent,
                     menu::Fallback::default(),
                 )
             }
+            // THROUGH THE PRODUCT'S OWN STEP 1, not a restatement of it: `mark_step_one`
+            // decides which cut the question is asked with, and a copy of that decision here
+            // would be free to drift from the rule it is supposed to be selecting against.
+            Marking::Onward => menu::mark_step_one(
+                marking_search,
+                novelty,
+                &contestants,
+                &marking_budget,
+                &shape,
+                &lookahead_engine::bridge::passed_since_hub(graph, &shape, &walk),
+                menu::Fallback::default(),
+            ),
         };
         counted.options = contestants.len();
         counted.asked = found.passes;
         counted.rounds = found.rounds;
+        counted.fell_through = found.fell_through;
         counted.settled = found.marks.iter().filter(|mark| mark.complete).count();
         counted.partly = counted.options - counted.settled;
         counted.starred = starts
@@ -926,6 +1109,7 @@ fn row(
             } else {
                 m.starred.clone()
             },
+            if m.fell_through { "yes" } else { "no" }.to_string(),
         ],
         None => {
             let mut cells = vec![

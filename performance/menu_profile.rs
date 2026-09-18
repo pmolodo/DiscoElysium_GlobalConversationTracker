@@ -36,11 +36,21 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::graph::LookAheadGraph;
 
-/// A menu to ask about: which entries are unseen, and which starts to ask.
+/// A menu to ask about: which entries the player has seen, at which of the game's two scopes,
+/// and which starts to ask.
+///
+/// TWO SETS BECAUSE THE GAME HAS TWO SCOPES, and they are not the same question - see
+/// `bridge::answer`, which takes `unseen_any_game` and `unseen_this_game` as separate inputs.
+/// Global state says what this player has ever seen, across every playthrough; save state says
+/// what THIS game has displayed, and is what fires a `once`. A veteran player on a fresh save
+/// has seen almost everything globally and nothing at all this game.
 pub struct MenuProfile {
-    /// The deepest entries, which are the only unseen ones.
+    /// Never seen in ANY game, which is the highest novelty there is.
     pub unseen: HashSet<DialogueNodeId>,
-    /// Starts that can reach one of them, shallowest first - which is what an option in a
+    /// What THIS save has displayed. Empty for a save that has not opened the conversation.
+    /// Everything in neither set has been seen before but not this game.
+    pub seen_this_game: HashSet<DialogueNodeId>,
+    /// Starts that can reach something unseen, shallowest first - which is what an option in a
     /// response menu is: an entry with the group's depth still in front of it.
     pub starts: Vec<DialogueNodeId>,
 }
@@ -76,10 +86,17 @@ impl MenuProfile {
             .take(starts_wanted)
             .collect();
 
-        (!starts.is_empty()).then_some(Self { unseen, starts })
+        let seen_this_game = everything_but(graph, &unseen);
+        (!starts.is_empty()).then_some(Self {
+            unseen,
+            seen_this_game,
+            starts,
+        })
     }
 
     /// The novelty function this profile describes.
+    /// THE SAME THREE-LEVEL RULE `bridge::answer` APPLIES, off the same two sets, so a measured
+    /// row ranks options the way a request does rather than by a flattened stand-in.
     pub fn novelty(
         &self,
     ) -> impl Fn(DialogueNodeId) -> lookahead_engine::core::types::Novelty + '_ {
@@ -87,10 +104,23 @@ impl MenuProfile {
         move |id| {
             if self.unseen.contains(&id) {
                 Novelty::UnseenAnyGame
-            } else {
+            } else if self.seen_this_game.contains(&id) {
                 Novelty::SeenThisGame
+            } else {
+                Novelty::UnseenThisGame
             }
         }
+    }
+
+    /// The same profile with NOTHING SEEN THIS GAME: a save that has never opened this
+    /// conversation, so no `once` has fired and no `seen` slot is set.
+    ///
+    /// What was `SeenThisGame` becomes `UnseenThisGame` - seen in an earlier playthrough, not in
+    /// this one - which is a state a player can be in and the one in which the most one-time
+    /// effects are still pending.
+    pub fn on_a_fresh_save(mut self) -> Self {
+        self.seen_this_game.clear();
+        self
     }
 }
 
@@ -123,6 +153,90 @@ pub struct Walked {
     /// different visit and following the hub stack through them would stack hubs the player
     /// has since left. See `Leg::restarted`.
     pub walk: Vec<DialogueNodeId>,
+}
+
+/// The menu a player is standing at when they have just walked up to it, having never opened
+/// this conversation before.
+///
+/// ## What it builds, and why each part is what a save could hold
+///
+/// THE WALK-UP IS THE WHOLE HISTORY. The conversation is opened - which shows its start, and
+/// nothing else - and then played forward taking lines as they come until a menu is on screen.
+/// Nothing is chosen. So the entries put on screen are EXACTLY the ones it takes to reach the
+/// menu, their one-time effects have fired, and every other entry in the group is still unseen
+/// this game with its `once` still pending.
+///
+/// THE MENU IS THE GAME'S OWN. `AtAMenu::menu` is what the game would draw, so the starts are
+/// the options a player is actually being offered. That is not true of [`MenuProfile::of`],
+/// which picks starts structurally - entries that can reach the unseen set, shallowest first -
+/// and they need not be the options of any one hub. Measured on conversation 631 the two sets
+/// are disjoint; on 761 no menu is reachable from where a greedy walk stops at all.
+///
+/// THE UNSEEN SET IS STILL WALK-DEEPEST-X, taken from a walk to exhaustion, so it is a set a
+/// play can leave unread. It is GLOBAL - never seen in any game - and everything between it and
+/// the walk-up is `UnseenThisGame`.
+///
+/// `None` where the conversation ends or refuses before a menu appears, which is an answer about
+/// the group rather than a failure.
+pub fn first_menu_profile(
+    graph: &LookAheadGraph,
+    world: &dyn lookahead_engine::world::ILookAheadWorld,
+    conversation: i32,
+    ceiling: usize,
+    unseen_wanted: usize,
+) -> Option<Walked> {
+    use lookahead_engine::walkthrough::{Until, greedy_playthrough, on_to_a_menu};
+
+    let none = HashSet::new();
+    let whole = greedy_playthrough(graph, world, conversation, ceiling, &none, Until::default());
+    let reachable = whole.shown.len();
+    if reachable <= unseen_wanted {
+        return None;
+    }
+    let unseen: HashSet<DialogueNodeId> = whole.shown[reachable - unseen_wanted..]
+        .iter()
+        .copied()
+        .collect();
+
+    // JUST OPENED, AND NOTHING MORE. One entry shown is the conversation's start, which opening
+    // it displays - so this is the player arriving, before any choice.
+    let arrived = greedy_playthrough(
+        graph,
+        world,
+        conversation,
+        ceiling,
+        &none,
+        Until { shown: Some(1) },
+    );
+    let at = on_to_a_menu(graph, world, &arrived, TO_A_MENU)?;
+
+    let mut seen: Vec<DialogueNodeId> = arrived.shown.clone();
+    for id in at.displayed() {
+        if !seen.contains(&id) {
+            seen.push(id);
+        }
+    }
+    let mut walk: Vec<DialogueNodeId> = last_sitting(&arrived);
+    walk.extend(at.encountered());
+
+    let starts: Vec<DialogueNodeId> = at.menu.clone();
+    if starts.is_empty() {
+        return None;
+    }
+
+    Some(Walked {
+        profile: MenuProfile {
+            seen_this_game: seen.iter().copied().collect(),
+            unseen,
+            starts,
+        },
+        world: Default::default(),
+        variables: variables_of(graph, world, &at.state),
+        seen,
+        shown: 1,
+        reachable,
+        walk,
+    })
 }
 
 /// The profile a greedy playthrough leaves when it is stopped with `unseen_wanted` entries
@@ -269,7 +383,11 @@ pub fn walked_profile(
         // EMPTY UNTIL THE CALLER FILLS IT, since building one needs the save this walk was
         // taken against and that is the caller's to name.
         world: Default::default(),
-        profile: MenuProfile { unseen, starts },
+        profile: MenuProfile {
+            seen_this_game: everything_but(graph, &unseen),
+            unseen,
+            starts,
+        },
         variables: variables_of(graph, world, &state),
         seen,
         shown: stop_at,
@@ -330,6 +448,23 @@ fn variables_of(
         found.insert(name.to_string(), wire);
     }
     found
+}
+
+/// Every entry of the group that is not in `unseen`.
+///
+/// WHAT THE PROFILES TAKEN BEFORE THREE-LEVEL NOVELTY MEANT: anything not singled out as unseen
+/// counted as seen this game. It is kept for those profiles so the rows already measured stay
+/// comparable, and it is not what a real save looks like - an entry no play has reached is not
+/// one the player has read. See de-ij9d.
+fn everything_but(
+    graph: &LookAheadGraph,
+    unseen: &HashSet<DialogueNodeId>,
+) -> HashSet<DialogueNodeId> {
+    graph
+        .nodes()
+        .map(|node| node.id)
+        .filter(|id| !unseen.contains(id))
+        .collect()
 }
 
 /// Every entry reachable from `start` by links, deepest first.
