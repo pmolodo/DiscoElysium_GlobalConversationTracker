@@ -28,7 +28,7 @@
 //!
 //! ## What it writes
 //!
-//! One JSON object per group, one per line, under `analysis/playthroughs/` - which git ignores,
+//! One JSON object per group, one per line, under `analysis/outputs/playthroughs/` - which git ignores,
 //! for the reason `measurements/README.md` gives: a table derived from the index goes stale
 //! silently the first time a group grows an entry, and a committed one is wrong without saying
 //! so. Regenerate it rather than keeping it.
@@ -86,7 +86,7 @@ const CEILING: usize = 200_000;
 fn out_dir() -> PathBuf {
     lookahead_engine::core::env::var("PLAYTHROUGHS_OUT")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("analysis/playthroughs"))
+        .unwrap_or_else(|_| PathBuf::from("analysis/outputs/playthroughs"))
 }
 
 fn ceiling() -> usize {

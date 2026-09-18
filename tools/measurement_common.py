@@ -253,12 +253,83 @@ def bash(hint=""):
     refuse("no bash to run tools/run-logged.sh with - install Git for Windows" + hint, code=1)
 
 
+# What a folder name may be before it counts as a path rather than a label: one component of
+# ordinary name characters. Anything holding a separator, a drive or a dot-dot is a path and is
+# taken literally.
+LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def is_label(value):
+    """Whether `value` names a run rather than saying where to put it."""
+    return bool(LABEL.match(str(value))) and ".." not in str(value)
+
+
+def folder_for(value, verb, out_variable):
+    """Where a driver told `value` should write: a path as given, or a label's folder.
+
+    ## Two things one variable can be
+
+    A PATH is taken literally, which is what it always was: `DEGCT_MENUS_OUT=/tmp/rows` writes
+    there and resumes there.
+
+    A LABEL - one plain word, no separators - names the run instead of placing it, and the
+    folder is built the way every log in this repository is named, with the label as the verb:
+
+        DEGCT_MENUS_OUT=qy5t-before
+        -> measurements/logs/2026-09-18/2026-09-18_10,07,41_7a2d23f_measure_qy5t-before/
+
+    WHY THE LABEL EXISTS. Naming the folder by hand is the common case, and a hand-named folder
+    sat outside the convention every other artefact follows - so `qy5t-before/` and the
+    transcript that produced it shared nothing in their names and only a file inside the folder
+    said they belonged together. A label keeps the freedom to say what a run was FOR while
+    letting the name say when it ran and against what.
+
+    ## Resuming a label
+
+    A label reuses the MOST RECENT folder carrying it, which is how resuming a path already
+    behaves: point at the same thing and it continues. A label used for the first time gets a
+    new folder. The settings check still refuses a resume whose measurement differs, so reusing
+    a label across a change is caught rather than silently mixed.
+
+    THE NAME KEEPS THE FIRST REVISION, AND THAT IS A KNOWN COST. A resumed folder is named for
+    the invocation that made it, so rows added later can have been measured at another commit
+    while the folder still says the first - and the code is deliberately not something a resume
+    is refused over, since comparing two revisions is what a measurement is often for. Keeping
+    the rows grouped is worth more than splitting them by revision, so `write_run_record` says
+    so on stderr when it happens, and each invocation's own code is recorded under `resumed`.
+    """
+    if not is_label(value):
+        return Path(value)
+
+    existing = sorted(
+        (path for path in (OUT / "logs").glob(f"*/*_{verb}_{value}") if path.is_dir()),
+        key=lambda path: path.stat().st_mtime,
+    )
+    if existing:
+        return existing[-1]
+    return run_folder(value, out_variable)
+
+
 def run_folder(verb, out_variable):
     """One folder for this run, named the way every run log in this repository is named.
 
-    ASKED OF tools/run-logged.sh RATHER THAN BUILT HERE. The format lives in that script and
-    in RunLog.cs, held to each other by RunLogTests; a third copy in Python is one nothing
-    holds to the other two, and it would drift the first time the name gains a field.
+    THE SAME NAME AS THE TRANSCRIPT, EXACTLY, where there is one. A run writes two things -
+    a transcript named for when it ran, and a folder of rows - and which belongs to which has
+    to be readable off the two names, without opening either. So the folder is the transcript's
+    path with the extension taken off:
+
+        2026-09-18/2026-09-18_10,05,29_<revision>_measure_menus.txt   the transcript
+        2026-09-18/2026-09-18_10,05,29_<revision>_measure_menus/      its rows
+
+    ASKED OF THE WRAPPER RATHER THAN REBUILT, and this is why it is taken from the exported
+    path rather than by asking for a fresh name: two calls to the wrapper are two readings of
+    the clock, so a folder named by the second would sit a second or two after the transcript
+    named by the first and the pair would no longer match.
+
+    ASKED OF tools/run-logged.sh RATHER THAN BUILT HERE, where there is no transcript to take
+    it from. The format lives in that script and in RunLog.cs, held to each other by
+    RunLogTests; a third copy in Python is one nothing holds to the other two, and it would
+    drift the first time the name gains a field.
 
     THROUGH bash, NOT AS A PROGRAM. Windows cannot execute a shell script directly -
     CreateProcess answers WinError 193, "%1 is not a valid Win32 application" - and this is
@@ -272,6 +343,10 @@ def run_folder(verb, out_variable):
     `out_variable` is the driver's own OUT name, said in the refusal when there is no bash to
     ask - naming the folder is how a run gets one without the wrapper.
     """
+    transcript = env("RUN_LOG")
+    if transcript:
+        return Path(transcript).with_suffix("")
+
     folder = subprocess.run(
         [
             bash(f", or name the run's folder with {qualified(out_variable)}"),
@@ -465,6 +540,26 @@ def write_run_record(folder, parallelism, **details):
                 + "\n".join(refusals)
                 + "\nMeasure into a new folder, or match them."
             )
+
+        # A DIFFERENT COMMIT IS ALLOWED AND SAID OUT LOUD. The code is deliberately not part of
+        # what a resume is held to - comparing two revisions is what a measurement is often for
+        # - but a resumed folder keeps the FIRST invocation's revision in its name and in its
+        # record, so rows added later can have been taken at another one and the name will not
+        # say. Grouping the rows together is worth more than splitting them, so this warns
+        # rather than refusing; `resumed` carries each invocation's own code beside its start.
+        was_code = was.get("code")
+        now_code = record.get("code")
+        before = was_code.get("revision") if isinstance(was_code, dict) else None
+        now = now_code.get("revision") if isinstance(now_code, dict) else None
+        if isinstance(before, str) and isinstance(now, str) and before != now:
+            print(
+                f"note: {folder} was started at {before[:7]} and is being resumed at "
+                f"{now[:7]}, so its rows are not all from one revision - the folder's name "
+                "keeps the first. Each invocation's own code is under `resumed` in its "
+                f"{RUN_RECORD}.",
+                file=sys.stderr,
+            )
+
         was.setdefault("resumed", []).append(invocation)
         record = was
 

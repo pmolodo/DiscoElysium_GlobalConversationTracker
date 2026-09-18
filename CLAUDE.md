@@ -11,15 +11,34 @@ it would be.
 Genuinely instant things - `ls`, `git status`, reading a file - do not need it.
 
 ```sh
-tools/run-logged.sh cargo full-suite -- cargo test --release
+tools/run-logged.sh --kind test cargo full-suite -- cargo test --release
 DEGCT_CONVERSATION=631 tools/run-logged.sh cargo shared-symbolic -- \
   cargo run --release --example shared_symbolic
 ```
 
-It tees the whole output to `measurements/logs/<date>_<time>_<revision>_<tool>_<verb>.txt`
+**`--kind` says which tree the log belongs in**, and the three are named the same way:
+
+```text
+measure   measurements/logs   the default: runs whose output is numbers to compare
+test      testing/logs        suites, in-game runs and builds, beside the harness's own logs
+analysis  analysis/logs       tools that read what a measurement produced
+```
+
+THE TOOL NAME CANNOT DECIDE IT, which is why it is said rather than inferred: `cargo
+full-suite` is a test and `cargo walk-1467` is a measurement, and both are cargo. The kind is
+about what the run is FOR, and only the caller knows that.
+
+It tees the whole output to `<tree>/<date>/<date>_<time>_<revision>_<tool>_<verb>.txt`
 (`RUN_LOG_DIR` moves that) and passes the command's own exit status straight through, so it
 drops in wherever the bare command stood. `--name-only` prints the path without running
 anything.
+
+A measurement's ROWS take the transcript's name exactly, minus the extension, so which folder
+belongs to which log is readable without opening either. `tools/tidy-logs.py` sorts any log
+that arrives loose, by the date in its name or its modification time.
+
+Analysis tools write their DATA to `analysis/outputs/`, beside their transcripts in
+`analysis/logs/`.
 
 **Never pipe such a command into `grep`, `tail`, `head`, `sort` or anything else as the
 only thing that receives its output.** A filter keeps the few lines it matched and throws

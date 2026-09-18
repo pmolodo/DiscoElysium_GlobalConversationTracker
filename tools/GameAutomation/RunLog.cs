@@ -36,6 +36,16 @@ namespace GlobalConversationTracker.Automation
         /// <summary>Stands in for the revision where git cannot say what it is.</summary>
         public const string NoRevision = "nogit";
 
+        /// <summary>How much of the commit hash a log's NAME carries.</summary>
+        /// <remarks>
+        /// SHORT IN THE NAME, FULL IN THE FILE. Forty characters made every log name too wide
+        /// to read at a glance and too wide to elide safely - the middle is what a reader
+        /// would cut, and the middle is the hash. Seven identifies a commit in this repository
+        /// unambiguously, and <see cref="FullRevision"/> goes in the transcript and in a
+        /// measurement's run.json, where nothing competes for the width.
+        /// </remarks>
+        public const int RevisionLength = 7;
+
         /// <summary>Set to opt out of logging entirely.</summary>
         public const string OptOutVariable = "DISCO_ELYSIUM_GCT_NO_RUN_LOG";
 
@@ -60,12 +70,22 @@ namespace GlobalConversationTracker.Automation
         private static readonly string[] FolderParts = { "testing", "logs" };
 
         /// <summary>The folder the logs are written to, created if it is not there.</summary>
+        /// <remarks>
+        /// A FOLDER PER DATE, under testing/logs. One directory of every run ever taken is one
+        /// nobody browses - this one reached 877 files - and the date already opens every
+        /// name, so grouping by it costs nothing and loses nothing. tools/tidy-logs.py sorts
+        /// any that arrive loose, and tools/run-logged.sh does the same for measurements/logs.
+        /// </remarks>
         /// <param name="repoRoot">The repository root, or null to find it.</param>
+        /// <param name="when">The day to file under, or null for today.</param>
         /// <returns>The folder's path.</returns>
-        public static string Folder(string? repoRoot = null)
+        public static string Folder(string? repoRoot = null, DateTime? when = null)
         {
             string folder = Path.Combine(
-                repoRoot ?? GameInstall.RepoRoot(), FolderParts[0], FolderParts[1]);
+                repoRoot ?? GameInstall.RepoRoot(),
+                FolderParts[0],
+                FolderParts[1],
+                (when ?? DateTime.Now).ToString(DateFormat, CultureInfo.InvariantCulture));
             Directory.CreateDirectory(folder);
             return folder;
         }
@@ -107,7 +127,7 @@ namespace GlobalConversationTracker.Automation
         public static string Revision(string? repoRoot = null)
         {
             string root = repoRoot ?? GameInstall.RepoRoot();
-            string? head = Git(root, "rev-parse HEAD");
+            string? head = Git(root, "rev-parse --short=" + RevisionLength + " HEAD");
             if (string.IsNullOrEmpty(head))
             {
                 return NoRevision;
@@ -117,6 +137,15 @@ namespace GlobalConversationTracker.Automation
             // --porcelain, so writing this log does not make the next one dirty.
             string? changes = Git(root, "status --porcelain");
             return changes == null || changes.Length == 0 ? head! : head + DirtySuffix;
+        }
+
+        /// <summary>The whole commit hash, for a transcript that has room for it.</summary>
+        /// <param name="repoRoot">The repository root, or null to find it.</param>
+        /// <returns>The full hash, or <see cref="NoRevision"/> where git cannot say.</returns>
+        public static string FullRevision(string? repoRoot = null)
+        {
+            string? head = Git(repoRoot ?? GameInstall.RepoRoot(), "rev-parse HEAD");
+            return string.IsNullOrEmpty(head) ? NoRevision : head!;
         }
 
         /// <summary>
@@ -165,9 +194,13 @@ namespace GlobalConversationTracker.Automation
         public static string PathFor(string tool, string verb, string? repoRoot = null)
         {
             string root = repoRoot ?? GameInstall.RepoRoot();
+            // ONE READING OF THE CLOCK for both halves. The folder is a date and so is the
+            // start of the name, and taking the time twice lets a run begun a millisecond
+            // before midnight land in one day's folder under the other day's name.
+            DateTime when = DateTime.Now;
             return Unique(Path.Combine(
-                Folder(root),
-                FileName(DateTime.Now, Revision(root), tool, verb)));
+                Folder(root, when),
+                FileName(when, Revision(root), tool, verb)));
         }
 
         /// <summary>Whether logging has been turned off for this process.</summary>

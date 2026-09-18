@@ -5,12 +5,22 @@
 # that are not ours to modify: cargo, dotnet test, and the measurement scripts.
 #
 # Usage:
-#   tools/run-logged.sh <tool> <verb> [--] <command> [args ...]
+#   tools/run-logged.sh [--kind <kind>] <tool> <verb> [--] <command> [args ...]
 #   tools/run-logged.sh --name-only <tool> <verb>     # print the path, run nothing
 #   tools/run-logged.sh --folder-only <tool> <verb>   # ditto, as a directory
 #
-# RUN_LOG_DIR overrides where logs are written; it defaults to measurements/logs, which is
-# where the slow runs that most want a log already put theirs.
+# WHICH TREE A RUN'S LOG BELONGS TO, by --kind:
+#
+#   measure   measurements/logs   the default: runs whose output is numbers to compare
+#   test      testing/logs        suites, in-game runs, and builds, beside the harness's own
+#   analysis  analysis/logs       tools that read what a measurement produced
+#
+# THE TOOL NAME CANNOT DECIDE THIS, which is why it is said rather than inferred. `cargo
+# full-suite` is a test and `cargo walk-1467` is a measurement, and both are cargo; the kind
+# is about what the run is FOR, and only the caller knows that.
+#
+# RUN_LOG_DIR still overrides all of it, for a caller that wants a log somewhere else
+# entirely.
 #
 # Examples:
 #   tools/run-logged.sh cargo shared-symbolic -- cargo run --release --example shared_symbolic
@@ -37,9 +47,32 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # for the rule and docs/environment.md for the list.
 . "$ROOT/tools/degct-env.sh"
 
-# measurements/logs unless a caller says otherwise, so that a measurement's raw output
-# stays beside the rows it produced without every incantation having to say so.
-DEGCT_LOG_DIR="$(degct_env RUN_LOG_DIR "$ROOT/measurements/logs")"
+# WHICH TREE, from --kind, read before the options below so the rest can use it.
+KIND="measure"
+if [ "${1:-}" = "--kind" ]; then
+    KIND="${2:-}"
+    shift 2
+fi
+
+case "$KIND" in
+    measure) KIND_ROOT="$ROOT/measurements/logs" ;;
+    test) KIND_ROOT="$ROOT/testing/logs" ;;
+    analysis) KIND_ROOT="$ROOT/analysis/logs" ;;
+    *)
+        echo "--kind $KIND: expected measure, test or analysis" >&2
+        exit 2
+        ;;
+esac
+
+# The kind's tree unless a caller says otherwise, so that a run's raw output stays beside
+# what it produced without every incantation having to say so.
+#
+# UNDER A FOLDER PER DATE, because one directory of every run ever taken is one nobody
+# browses: it reached 1,669 transcripts and 179 row folders before this, at which point
+# finding the run from a particular afternoon meant reading a wall of names and shell
+# completion was useless. The date is already the first field of every name, so grouping by it
+# costs nothing and loses nothing - and tools/tidy-logs.py sorts any that arrive loose.
+DEGCT_LOG_DIR="$(degct_env RUN_LOG_DIR "$KIND_ROOT")/$(date +%Y-%m-%d)"
 
 usage() {
     sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
@@ -54,9 +87,14 @@ safe() {
 
 # What the tree is sitting at: the commit, plus -dirty when it has moved on. "nogit" when
 # git cannot say, rather than no log at all - see the remarks on RunLog.Revision.
+# SHORT IN THE NAME, FULL IN THE FILE. A forty-character hash in every log name made the
+# names too wide to read at a glance and too wide to elide safely - the middle is the part a
+# reader would cut, and the middle is the hash. Seven characters identify a commit in this
+# repository unambiguously, and the full one is printed in the transcript's own header, where
+# nothing is competing for the width.
 revision() {
     local head
-    head="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null)" || { printf 'nogit'; return; }
+    head="$(git -C "$ROOT" rev-parse --short=7 HEAD 2>/dev/null)" || { printf 'nogit'; return; }
     if [ -z "$head" ]; then
         printf 'nogit'
         return
@@ -66,6 +104,11 @@ revision() {
     else
         printf '%s' "$head"
     fi
+}
+
+# The whole hash, for the transcript header. "nogit" where git cannot say, as `revision` does.
+full_revision() {
+    git -C "$ROOT" rev-parse HEAD 2>/dev/null || printf 'nogit'
 }
 
 # The stem every run-log name is built from.
@@ -118,10 +161,22 @@ mkdir -p "$DEGCT_LOG_DIR"
 LOG="$(unique "$DEGCT_LOG_DIR/$(stem "$TOOL" "$VERB")" ".txt")"
 
 {
-    printf '# %s\n\n' "$*"
+    printf '# %s\n' "$*"
+    printf '# revision %s\n\n' "$(full_revision)"
 } > "$LOG"
 
 echo "logging to $LOG"
+
+# WHICH TRANSCRIPT A FOLDER OF ROWS BELONGS TO. A run writes two things in two places - this
+# transcript, named for when it ran, and a folder of rows named for what it measured - and
+# only one direction was findable: the transcript prints where the rows went, and the rows
+# said nothing about the transcript. A driver records every DEGCT_ variable into its run.json,
+# so exporting the path is all it takes to close the loop.
+#
+# NOT COMPARED ON A RESUME, because `settings_of` matches only the variables in
+# COMPARED_VARIABLES - which this is deliberately not one of. A resumed folder would otherwise
+# refuse itself, its second invocation having a different transcript by construction.
+export DEGCT_RUN_LOG="$LOG"
 
 # tee, not a plain redirect, so a long run can still be watched while it runs. Its own
 # exit status is what matters, not tee's, hence PIPESTATUS.

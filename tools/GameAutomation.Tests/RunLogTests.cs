@@ -94,7 +94,24 @@ namespace GlobalConversationTracker.Automation.Tests
             string revision = RunLog.Revision(GameInstall.RepoRoot());
 
             Assert.Matches(
-                "^[0-9a-f]{40}(" + Regex.Escape(RunLog.DirtySuffix) + ")?$", revision);
+                "^[0-9a-f]{" + RunLog.RevisionLength + "}("
+                    + Regex.Escape(RunLog.DirtySuffix) + ")?$",
+                revision);
+        }
+
+        /// <summary>The name is short and the file is not, which is the whole arrangement.</summary>
+        [Fact]
+        public void TheFullRevisionIsTheWholeHashAndStartsWithTheShortOne()
+        {
+            string root = GameInstall.RepoRoot();
+            string full = RunLog.FullRevision(root);
+            string revision = RunLog.Revision(root);
+
+            Assert.Matches("^[0-9a-f]{40}$", full);
+            Assert.StartsWith(
+                revision.Replace(RunLog.DirtySuffix, string.Empty, StringComparison.Ordinal),
+                full,
+                StringComparison.Ordinal);
         }
 
         [Fact]

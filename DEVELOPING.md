@@ -387,9 +387,14 @@ Every run keeps its whole output under a name that says when it ran, what it ran
 and what it was:
 
 ```
-measurements/logs/2026-09-04_07,44,32_1e08319064b7bd9d115f26c3abf35145d3fb7d8e_cargo_full-suite.txt
-                  ^ date      ^ time  ^ the commit it ran against              ^ tool ^ verb
+measurements/logs/2026-09-04/2026-09-04_07,44,32_1e08319064b7bd9d115f26c3abf35145d3fb7d8e_cargo_full-suite.txt
+                  ^ a folder ^ date   ^ time     ^ the commit it ran against              ^ tool ^ verb
+                    per date
 ```
+
+The date is in the folder and in the name both, so a log still says when it ran once it has
+been copied somewhere else. `tools/tidy-logs.py` sorts any that arrive loose, taking the date
+from the name where there is one and from the file's modification time otherwise.
 
 The wrapper writes to `measurements/logs`, so that a measurement's raw output sits beside
 the rows it produced and nothing has to say so at the call site; `RUN_LOG_DIR` moves it.

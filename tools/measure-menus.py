@@ -44,7 +44,7 @@ had anything worth hunting, which says nothing about what the next menu costs.
 RESUMING. Rows are written as they finish, and pointing a later run at the same folder makes
 it skip the groups already there:
 
-    DEGCT_MENUS_OUT=measurements/logs/2026-09-09_menus tools/measure-menus.py all
+    DEGCT_MENUS_OUT=measurements/logs/2026-09-09/menus tools/measure-menus.py all
 
 The same command is the start and the resume; there is no separate mode to remember. A resumed
 group still counts towards settling, by the row it left, so a resume switches where the
@@ -577,10 +577,13 @@ def main(argv=None):
     if named != ["all"]:
         named = [int(c) for c in named]
 
-    # NAMED, OR A FOLDER OF ITS OWN. A run told where to write resumes what is there; one
-    # that is not gets a fresh folder and resumes nothing, which is the safe default - a
-    # resume into a folder taken against different settings would mix two measurements.
-    out = Path(env("MENUS_OUT") or common.run_folder("menus", "MENUS_OUT"))
+    # NAMED, LABELLED, OR A FOLDER OF ITS OWN. A path is taken literally and resumes what is
+    # there; a plain word is a LABEL, which names the run and lets the folder be named the way
+    # every log here is - see `common.folder_for`. A run told nothing gets a fresh folder and
+    # resumes nothing, which is the safe default: a resume into a folder taken against
+    # different settings would mix two measurements.
+    named_out = env("MENUS_OUT")
+    out = common.folder_for(named_out, "measure", "MENUS_OUT") if named_out else common.run_folder("menus", "MENUS_OUT")
 
     workers = env_int("WORKERS", default_workers())
     record_run(out, workers, args.runs, named)

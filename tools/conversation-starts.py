@@ -60,7 +60,7 @@ EXPORT = Path(".game_reference_copies/AssetRipperExport/ExportedProject/Assets")
 INDEX = Path(".game_reference_copies/derived/conversation_index.jsonl")
 DATABASE = EXPORT / "Dialogue Databases/Disco Elysium.asset"
 CORPUS = Path(r"D:\Downloads\Apps\Games\Disco Elysium\Saves")
-OUT = Path("analysis/conversation-starts.tsv")
+OUT = Path("analysis/outputs/conversation-starts.tsv")
 
 SCRIPT_RE = re.compile(r"m_Script:\s*\{fileID:\s*-?\d+,\s*guid:\s*([0-9a-f]{32})")
 FIELD_RE = re.compile(r"^  ([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$")
