@@ -179,9 +179,9 @@ pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> Novelty>(
     returned: &HashSet<DialogueNodeId>,
     fallback: Fallback,
 ) -> MenuAnswer {
-    // STEP 1 ONLY WHERE THE WALK CUTS SOMETHING. An option of this menu is never cut on the
-    // walk's account, so a walk holding nothing else asks step 2's question, and would ask it
-    // twice.
+    // THE WALK'S CUT IS ONLY WORTH ASKING WHERE IT CUTS SOMETHING. An option of this menu is
+    // never cut on the walk's account, so a walk holding nothing else asks exactly what the
+    // siblings-alone question asks, and the comparison arm would ask it twice.
     let siblings_alone = HashSet::new();
     let walk_cuts = returned
         .iter()
@@ -770,10 +770,12 @@ mod tests {
     enum Which {
         Exact,
         Onward,
-        /// The shipped rule, siblings alone before the exact marking.
+        /// The comparison that keeps a siblings-alone level before the exact marking - see
+        /// [`Fallback::SiblingsThenExact`].
+        HybridSiblings,
+        /// THE SHIPPED RULE: the onward question, then the exact marking - see
+        /// [`Fallback::Exact`].
         Hybrid,
-        /// The arm that drops the siblings-alone step - see [`Fallback::Exact`].
-        HybridOnwardOnly,
     }
 
     fn mark(graph: &LookAheadGraph, options: &[i32], unread: &[i32]) -> MenuAnswer {
@@ -875,36 +877,12 @@ mod tests {
         );
     }
 
-    /// Where the walk's cut leaves nothing onward - the only unread line is the bird behind the
-    /// main hub, which every kitchen option reaches only by going back out - the menu is asked
-    /// again with the siblings alone, and that answers it without the exact marking.
+    /// Under [`Fallback::SiblingsThenExact`], the comparison arm: where the walk's cut leaves
+    /// nothing onward - the only unread line is the bird behind the main hub, which every
+    /// kitchen option reaches only by going back out - the menu is asked again with the siblings
+    /// alone, and that answers it without the exact marking ever running.
     #[test]
-    fn a_walk_that_leaves_nothing_onward_is_answered_with_the_siblings_alone() {
-        let graph = kitchen();
-        let returned = returned_after(&graph, &KITCHEN_WALK);
-        let bird_only = [3];
-
-        let hybrid = marking_returning(&graph, &KITCHEN_MENU, &bird_only, Which::Hybrid, &returned);
-        let siblings = marking(&graph, &KITCHEN_MENU, &bird_only, Which::Onward);
-
-        assert!(
-            hybrid.rounds > 0,
-            "the siblings-alone level stars something"
-        );
-        assert_eq!(starred(&hybrid), starred(&siblings));
-        assert_eq!(
-            hybrid.passes, siblings.passes,
-            "the walk's cut asked nothing, and the exact marking did not run"
-        );
-    }
-
-    /// The same menu under [`Fallback::Exact`], which has no siblings-alone level: it goes on
-    /// to the exact marking instead, and a star that gives names the entry it claims.
-    ///
-    /// THE WITNESS IS WHAT TELLS THE TWO APART. Both levels star the same kitchen options for
-    /// the same bird, so the stars cannot; only the exact marking computes a witness.
-    #[test]
-    fn the_onward_only_arm_goes_to_the_exact_marking_instead() {
+    fn the_siblings_arm_answers_a_walk_that_leaves_nothing_onward() {
         let graph = kitchen();
         let returned = returned_after(&graph, &KITCHEN_WALK);
         let bird_only = [3];
@@ -913,15 +891,39 @@ mod tests {
             &graph,
             &KITCHEN_MENU,
             &bird_only,
-            Which::HybridOnwardOnly,
+            Which::HybridSiblings,
             &returned,
         );
+        let siblings = marking(&graph, &KITCHEN_MENU, &bird_only, Which::Onward);
+
+        assert!(arm.rounds > 0, "the siblings-alone level marks something");
+        assert_eq!(starred(&arm), starred(&siblings));
+        assert_eq!(
+            arm.passes, siblings.passes,
+            "the walk's cut asked nothing, and the exact marking did not run"
+        );
+    }
+
+    /// The same menu under the SHIPPED rule, which has no siblings-alone level: it goes on to
+    /// the exact marking instead, and a marker it gives names the entry it claims.
+    ///
+    /// THE WITNESS IS WHAT TELLS THE TWO APART. Both levels mark the same kitchen options for
+    /// the same bird, so the markers cannot; only the exact marking computes a witness.
+    #[test]
+    fn the_shipped_rule_goes_on_to_the_exact_marking_instead() {
+        let graph = kitchen();
+        let returned = returned_after(&graph, &KITCHEN_WALK);
+        let bird_only = [3];
+
+        let shipped =
+            marking_returning(&graph, &KITCHEN_MENU, &bird_only, Which::Hybrid, &returned);
         let exact = marking(&graph, &KITCHEN_MENU, &bird_only, Which::Exact);
 
-        assert!(arm.rounds > 0, "the exact marking stars something");
-        assert_eq!(starred(&arm), starred(&exact));
+        assert!(shipped.rounds > 0, "the exact marking marks something");
+        assert_eq!(starred(&shipped), starred(&exact));
         assert!(
-            arm.marks
+            shipped
+                .marks
                 .iter()
                 .all(|mark| mark.round.is_none() == mark.witness.is_none()),
             "every star names the entry it claims, which only the exact marking does"
@@ -1019,7 +1021,7 @@ mod tests {
                 Which::Onward => {
                     mark_onward(search, &novelty, contestants, &budget, &shape, returned)
                 }
-                Which::Hybrid => mark_menu_hybrid(
+                Which::HybridSiblings => mark_menu_hybrid(
                     search,
                     &novelty,
                     contestants,
@@ -1028,7 +1030,7 @@ mod tests {
                     returned,
                     Fallback::SiblingsThenExact,
                 ),
-                Which::HybridOnwardOnly => mark_menu_hybrid(
+                Which::Hybrid => mark_menu_hybrid(
                     search,
                     &novelty,
                     contestants,
