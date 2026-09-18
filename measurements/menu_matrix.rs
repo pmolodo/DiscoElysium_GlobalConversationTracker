@@ -537,6 +537,22 @@ fn main() {
                 // hold. Everything else - the character sheet, the checks, the inventory - is
                 // the save's, since the walk never changed those.
                 Some(found) => {
+                    // HOW MUCH OF THE GROUP THE WALK REACHED, on stderr beside the row. A
+                    // walked row is read very differently depending on whether the playthrough
+                    // behind it covered most of the group or a corner of it, and the row cannot
+                    // say, being the same shape as every other row. On 761 the walk reaches 44
+                    // entries of 2,263 from the template save, which is the difference between
+                    // a menu asked in a well-explored conversation and one asked in a doorway.
+                    //
+                    // NOT THE UNSEEN COUNT, which is `DEGCT_UNSEEN` and the same every time by
+                    // construction: printing it would have looked like a measurement and been
+                    // a restatement of the setting.
+                    let entries = graph.nodes().filter(|node| !node.is_group).count();
+                    eprintln!(
+                        "conversation {conversation}: the walk reaches {} of {entries} entries, \
+                         and the profile is taken {} in",
+                        found.reachable, found.shown,
+                    );
                     let mut world =
                         save_world::of_save(&graph, conversation, &index, save_world::TEMPLATE);
                     world.seen = found.seen.iter().copied().map(NodeRef::from).collect();
