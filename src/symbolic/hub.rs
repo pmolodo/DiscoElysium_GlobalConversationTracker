@@ -318,7 +318,7 @@ pub fn walk_to_menu(
 /// shown - so "this branch's incrementor has fired" is exactly "the player has seen this entry",
 /// the same per-entry data the novelty markers are drawn from.
 ///
-/// ## What it said, 2026-09-17: it cuts, and nothing moves
+/// ## What it said: it cuts, and nothing moves
 ///
 /// Whole game, three runs, walked profile, against the same arm without it:
 ///
@@ -327,6 +327,11 @@ pub fn walk_to_menu(
 ///   menus whose stars changed        0
 ///   sum of medians       8,698 -> 8,608 ms
 /// ```
+///
+/// THE 90 MS IS NOT A SPEEDUP, and nothing here rests on it. A whole-game arm moves by more
+/// than that between one ordering of the arms and another - de-u5ab measured 112 ms against
+/// the same arm - so a difference this size is the machine, not the cut. What the table says
+/// is that 2,029 entries stopped being searched and the answer came out the same.
 ///
 /// NOT ONE ANSWER IN THE GAME MOVED, with the walk cut running at 1,704 entries beside it. The
 /// reason looks structural rather than incidental: a spent branch holds nothing unread by

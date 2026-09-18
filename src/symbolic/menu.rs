@@ -121,21 +121,33 @@ pub enum Fallback {
 /// variable so a later pass through old territory opens something new - because a cut that keeps
 /// the loop out cannot see what the loop opens. Only step 2 finds that.
 ///
-/// ## What taking it out did, measured 2026-09-17 over the whole game (de-l88t)
+/// ## What taking it out did, measured over the whole game (de-l88t, de-u5ab)
 ///
 /// Three runs an arm, one machine, asked in a state a playthrough walked to - see
-/// `menu_profile::walked_profile`:
+/// `menu_profile::walked_profile`. Each arm was measured twice, once running first and once
+/// running second, because a whole-game arm is sensitive to how warm the machine already is:
 ///
 /// ```text
-///   with the step      8,698 ms      1,042 markers
-///   without it         8,638 ms        975 markers
+///                    sum of medians, first / second      markers
+///   with the step          8,353 / 8,241 ms               1,042
+///   without it             8,384 / 8,352 ms                 975
 ///
 ///   menus whose markers moved     40 of 389
 ///     strictly fewer                39
 ///     strictly more                  1
 /// ```
 ///
-/// It is not slower, and it takes away sixty-eight loose markers for one gained.
+/// THE TWO ARMS ARE INDISTINGUISHABLE IN TIME, and the table is laid out to show why rather
+/// than to be averaged: an arm moves further between its own two orderings - 112 ms for the
+/// step - than the arms' means differ from each other, which is 71 ms. So the timing says
+/// only that taking the step out costs nothing measurable. A gap of a few tens of
+/// milliseconds spread over 389 menus is below what this measurement resolves, and reading
+/// one as a result is how a warm cache gets mistaken for an algorithm.
+///
+/// THE MARKERS ARE THE RESULT: sixty-eight loose markers taken away for one gained. Those
+/// counts are exact and repeat - the same 40 menus of 389 move, every time the arms are
+/// compared, which is what a difference in what the marking DECIDES looks like beside a
+/// difference in how long the machine took.
 ///
 /// THE OTHER PROFILE SAYS +15.8 PER CENT AND IT IS AN ARTEFACT, which is worth knowing because
 /// the number is large enough to overturn this on sight. `MenuProfile::of` asks each menu with
