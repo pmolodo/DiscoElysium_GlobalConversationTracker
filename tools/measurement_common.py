@@ -307,10 +307,12 @@ def folder_for(value, verb, out_variable):
     )
     if existing:
         return existing[-1]
-    return run_folder(value, out_variable)
+    # NOT THE TRANSCRIPT'S NAME. A label was given, so it names the folder - see `run_folder`
+    # on why letting the transcript win here made two labels collide.
+    return run_folder(value, out_variable, use_transcript=False)
 
 
-def run_folder(verb, out_variable):
+def run_folder(verb, out_variable, use_transcript=True):
     """One folder for this run, named the way every run log in this repository is named.
 
     THE SAME NAME AS THE TRANSCRIPT, EXACTLY, where there is one. A run writes two things -
@@ -343,8 +345,13 @@ def run_folder(verb, out_variable):
     `out_variable` is the driver's own OUT name, said in the refusal when there is no bash to
     ask - naming the folder is how a run gets one without the wrapper.
     """
+    # THE TRANSCRIPT'S OWN NAME, where the run was not told what to call itself. A label is
+    # told, and must NOT land here: two labels under one wrapped invocation would both resolve
+    # to the transcript's stem, so the second would silently resume the first. That happened -
+    # a whole-game pass and a 132-menu subset wrote to one folder and reported one set of
+    # numbers twice.
     transcript = env("RUN_LOG")
-    if transcript:
+    if transcript and use_transcript:
         return Path(transcript).with_suffix("")
 
     folder = subprocess.run(
