@@ -127,8 +127,8 @@ pub enum Fallback {
 /// `menu_profile::walked_profile`:
 ///
 /// ```text
-///   with the step      8,698 ms      1,174 markers
-///   without it         8,638 ms      1,107 markers
+///   with the step      8,698 ms      1,042 markers
+///   without it         8,638 ms        975 markers
 ///
 ///   menus whose markers moved     40 of 389
 ///     strictly fewer                39

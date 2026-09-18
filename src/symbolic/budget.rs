@@ -192,8 +192,8 @@ impl DiagramBudget {
     /// THE SHIPPED MARKING DOES NOT NEED IT, which is what makes the bump cheap rather than a
     /// concession. Measured 2026-09-17 at 256 MB, `menu::mark_menu_hybrid` answers every one of
     /// the 389 menus a walked profile puts up - see `menu_profile::walked_profile` - with no
-    /// option anywhere left unsettled, on about fifty thousand diagram nodes for the worst of
-    /// them. The headroom is for the exact search behind it - the thing a fallback reaches for -
+    /// option anywhere left unsettled, and under sixty thousand diagram nodes for the worst of
+    /// them - conversation 16, at 56,644. The headroom is for the exact search behind it - the thing a fallback reaches for -
     /// and for the groups nobody has profiled.
     ///
     /// ONE MENU IN THE GAME DOES NOT SETTLE, AND MORE MEMORY IS NOT WHAT IT WANTS. Asked on the
