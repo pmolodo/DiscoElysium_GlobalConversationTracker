@@ -230,6 +230,13 @@ echo "logging to $LOG"
 # refuse itself, its second invocation having a different transcript by construction.
 export DEGCT_RUN_LOG="$LOG"
 
+# WHAT THE RUN IS FOR, which decides more than where the log lands. A cold throw-away pass
+# protects a comparison between timings; a test and an analysis pass produce neither, so they
+# skip it and cost half as much. The driver cannot work this out for itself - the same
+# measure-menus.py invocation is a measurement or a dataset derivation depending only on why
+# it was asked for - so the kind is passed down rather than guessed.
+export DEGCT_RUN_KIND="$KIND"
+
 # tee, not a plain redirect, so a long run can still be watched while it runs. Its own
 # exit status is what matters, not tee's, hence PIPESTATUS.
 "$@" 2>&1 | tee -a "$LOG"

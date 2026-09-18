@@ -28,6 +28,19 @@ THE TOOL NAME CANNOT DECIDE IT, which is why it is said rather than inferred: `c
 full-suite` is a test and `cargo walk-1467` is a measurement, and both are cargo. The kind is
 about what the run is FOR, and only the caller knows that.
 
+**THE KIND DECIDES MORE THAN THE TREE: only `measure` pays the cold-run tax.** A throw-away
+first pass protects a comparison between TIMINGS, and a test or an analysis pass produces none -
+so they skip it and cost half as much. The kind reaches the driver as `DEGCT_RUN_KIND`, and a
+perf tool pressed into deriving a dataset says so itself:
+
+```sh
+tools/measure-menus.py --kind analysis --runs 1 all   # which groups fall through; no cold pass
+```
+
+`--kind` on the tool beats the variable, and with neither the run counts as a measurement and
+pays - skipping a discard that was wanted corrupts a comparison silently, while taking one that
+was not wanted costs a run.
+
 It tees the whole output to `<tree>/<date>/<date>_<time>_<revision>_<tool>_<verb>.txt`
 (`RUN_LOG_DIR` moves that) and passes the command's own exit status straight through, so it
 drops in wherever the bare command stood. `--name-only` prints the path without running

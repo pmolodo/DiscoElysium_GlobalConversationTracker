@@ -599,9 +599,16 @@ COMPARED_VARIABLES = frozenset(
 # `algorithm_differences`. A resume still refuses one: a folder must not hold two algorithms' rows.
 ALGORITHM_VARIABLES = frozenset({qualified("MARKING")})
 
-# Driver details that say WHICH groups were measured rather than how. A comparison takes the
-# groups both folders measured, so a different selection is not a different measurement.
-SELECTION_DETAILS = frozenset({"groups"})
+# Driver details a comparison does not hold two folders to.
+#
+# `groups` says WHICH groups were measured rather than how, and a comparison takes the groups both
+# folders measured, so a different selection is not a different measurement.
+#
+# `kind` and `cold` say what the run was FOR and whether it threw a first pass away. Neither
+# touches a counted row: the discarded pass is discarded, and what is left was measured the same
+# way either side. They are recorded so a folder says whether it took one, not so that a folder
+# taken before this existed refuses every folder taken after it.
+UNCOMPARED_DETAILS = frozenset({"groups", "kind", "cold"})
 
 
 def settings_of(record):
@@ -609,7 +616,7 @@ def settings_of(record):
 
     PARALLELISM, which puts a flat cost on groups measured side by side; the DEGCT_ variables in
     COMPARED_VARIABLES, as they were set or not; and the driver's details but the ones in
-    SELECTION_DETAILS. NOT the code or the algorithm, because comparing two of either is what a
+    UNCOMPARED_DETAILS. NOT the code or the algorithm, because comparing two of either is what a
     comparison is often for - `algorithm_differences` reports the second; NOT the machine, which
     `hardware_of` answers separately because it cannot be matched by re-running; and not the other
     recorded variables, which nothing is known to read.
@@ -621,7 +628,7 @@ def settings_of(record):
     return {
         "parallelism": record.get("parallelism"),
         "environment": {name: environment.get(name) for name in sorted(COMPARED_VARIABLES)},
-        "details": {name: value for name, value in details.items() if name not in SELECTION_DETAILS},
+        "details": {name: value for name, value in details.items() if name not in UNCOMPARED_DETAILS},
     }
 
 

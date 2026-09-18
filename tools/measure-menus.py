@@ -59,9 +59,20 @@ and summary.txt, the per-run totals and the costliest groups, and prints the sum
 
     DEGCT_WORKERS=1 tools/measure-menus.py --runs 3 all
 
-A THROW-AWAY RUN COMES FIRST, ALWAYS, so --runs 3 takes four and --runs 1 takes two. It goes
-in run-cold, is reported beside the combination and left out of it, and is kept on disk rather
-than deleted. See COLD_FOLDER for the evidence, and `tools/cold-run-effect.py` to recompute it.
+A THROW-AWAY RUN COMES FIRST FOR A MEASUREMENT, so --runs 3 takes four and --runs 1 takes two.
+It goes in run-cold, is reported beside the combination and left out of it, and is kept on disk
+rather than deleted. See COLD_FOLDER for the evidence, and `tools/cold-run-effect.py` to
+recompute it.
+
+IT IS A TAX ON TIMINGS ONLY. This is a perf tool, and asking it for a DATASET rather than a
+number is an ordinary thing to want - which groups fall through to step 2, say, via
+DEGCT_MARKING=onward. Those columns read the same cold as warm, so say what the run is for and
+skip the extra pass:
+
+    tools/measure-menus.py --kind analysis --runs 1 all
+
+--kind overrides the DEGCT_RUN_KIND that `tools/run-logged.sh --kind` exports, and with neither
+the run counts as a measurement and pays. See `takes_cold_run`.
 
 WHAT COUNTS AS DONE:
 
@@ -346,8 +357,14 @@ RUN_FOLDER = "run-{}"
 
 # Where the throw-away first run is written.
 #
-# EVERY MEASUREMENT TAKES ONE MORE RUN THAN IT WAS ASKED FOR, and throws the first away, so
+# A MEASUREMENT TAKES ONE MORE RUN THAN IT WAS ASKED FOR, and throws the first away, so
 # --runs 3 takes four and --runs 1 takes two.
+#
+# ONLY A MEASUREMENT. The discard protects a comparison between TIMINGS, and a run of any
+# other kind produces none: a test asks whether the marking is right, and an analysis pass
+# asks what the marking decided - which menus fall through to step 2, say. Both read columns
+# that are the same in a cold run as a warm one, so a cold pass there is double the wall clock
+# for nothing. `DEGCT_RUN_KIND` carries the kind down from the wrapper; see `takes_cold_run`.
 #
 # THE EFFECT IS RARE AND LARGE, which is exactly the shape that justifies a fixed discard.
 # Measured over the 54 multi-run passes already on disk, treating each one's run-1 as the cold
@@ -381,6 +398,29 @@ RUN_FOLDER = "run-{}"
 # cannot answer: what a player pays on the FIRST menu of a session, which is the one they
 # notice. `tools/cold-run-effect.py` recomputes the figures above over whatever is on disk.
 COLD_FOLDER = "run-cold"
+
+# The one kind of run whose numbers a cold first run can spoil. See COLD_FOLDER.
+MEASURE_KIND = "measure"
+
+# The same three `tools/run-logged.sh` names, so a kind means one thing across the repository.
+KINDS = (MEASURE_KIND, "test", "analysis")
+
+
+def takes_cold_run(asked):
+    """Whether this run throws a first pass away, which only a measurement does.
+
+    `asked` is --kind, which WINS over the wrapper's `DEGCT_RUN_KIND`: the wrapper is told what
+    a run is for before the tool is, and a perf tool pressed into deriving a dataset is exactly
+    the case where the two differ. Saying it on the command line is what makes that a one-word
+    change rather than a reason to reach for a second driver.
+
+    UNKNOWN COUNTS AS A MEASUREMENT, deliberately. An unwrapped invocation with no --kind says
+    nothing about itself, and the failure directions are not symmetric: skipping the discard
+    where it was wanted can silently corrupt a comparison, while taking one where it was not
+    wanted costs a run. Pay the run.
+    """
+    return (asked or env("RUN_KIND", MEASURE_KIND)) == MEASURE_KIND
+
 
 # How many of the costliest groups the summary lists.
 HARDEST = 10
@@ -532,7 +572,7 @@ def combine(folders, out, cold=None):
 ###############################################################################
 
 
-def record_run(out, workers, runs, named):
+def record_run(out, workers, runs, named, kind):
     """Writes what this run is - see `measurement_common.write_run_record` - into its folder.
 
     PARALLELISM IS THE PART THAT CHANGES WHAT THE ROWS SAY: groups measured side by side pay a flat
@@ -544,7 +584,10 @@ def record_run(out, workers, runs, named):
         "workers": workers,
         "settle": Settling.from_env(SETTLE_MS).rule() if workers > 1 else None,
     }
-    common.write_run_record(out, parallelism, runs=runs, groups=named)
+    # WHETHER A COLD RUN WAS TAKEN, readable later without counting folders. The wrapper's
+    # DEGCT_RUN_KIND is recorded with every other DEGCT_ variable, but --kind overrides it and
+    # an unwrapped run has neither, so the decision itself is written down rather than inferred.
+    common.write_run_record(out, parallelism, runs=runs, groups=named, kind=kind, cold=takes_cold_run(kind))
 
 
 def get_parser():
@@ -562,6 +605,15 @@ def get_parser():
         type=int,
         default=1,
         help="how many runs to take back to back; more than one writes each under run-N and combines them",
+    )
+    parser.add_argument(
+        "--kind",
+        choices=KINDS,
+        default=None,
+        help=(
+            "what this run is for, overriding DEGCT_RUN_KIND; anything but 'measure' skips the "
+            "throw-away cold run, so asking a perf tool for a dataset does not pay for one"
+        ),
     )
     return parser
 
@@ -587,16 +639,21 @@ def main(argv=None):
     out = common.folder_for(named_out, "measure", "MENUS_OUT") if named_out else common.run_folder("menus", "MENUS_OUT")
 
     workers = env_int("WORKERS", default_workers())
-    record_run(out, workers, args.runs, named)
+    record_run(out, workers, args.runs, named, args.kind)
     try:
         # ONE RUN AFTER ANOTHER, never side by side: two runs at once would each be measuring
         # how busy the other made the machine. Each keeps its own folder, so a resume picks up
         # the run that was interrupted and leaves the finished ones alone.
         #
-        # THE COLD RUN IS FIRST AND IS NOT COMBINED. See COLD_FOLDER.
-        cold = out / COLD_FOLDER
-        print(f"\n=== cold run (discarded from the combination) -> {cold} ===")
-        measure(cold, named, workers, record=out)
+        # THE COLD RUN IS FIRST AND IS NOT COMBINED, and a run that is not a measurement does
+        # not take one at all. See COLD_FOLDER and `takes_cold_run`.
+        cold = None
+        if takes_cold_run(args.kind):
+            cold = out / COLD_FOLDER
+            print(f"\n=== cold run (discarded from the combination) -> {cold} ===")
+            measure(cold, named, workers, record=out)
+        else:
+            print(f"\n=== {args.kind or env('RUN_KIND')}: no cold run, its columns do not time ===")
 
         folders = []
         for number in range(1, args.runs + 1):
