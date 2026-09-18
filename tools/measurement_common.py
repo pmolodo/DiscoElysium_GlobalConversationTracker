@@ -23,6 +23,7 @@ sharing a coincidence.
 """
 
 import csv
+import io
 import json
 import os
 import platform
@@ -60,6 +61,31 @@ def write_lf(path, text):
 def open_lf(path, mode="a"):
     """Open a file for text writing with LF endings. See `write_lf` for why."""
     return Path(path).open(mode, encoding="utf-8", newline="\n")
+
+
+def watchable_output():
+    """Make this process's stdout line-buffered, so a long run can be watched while it runs.
+
+    WHAT IT FIXES. `tools/run-logged.sh` pipes a driver into `tee`, so stdout is a pipe rather
+    than a terminal and Python block-buffers it at 8 KB - about 270 progress lines. A run
+    therefore appears to stall for minutes and then emit a wall of output, at flush boundaries
+    that fall in the middle of whatever it was doing. The comment above that pipe says it is a
+    tee rather than a redirect "so a long run can still be watched while it runs", which the
+    buffering defeats entirely.
+
+    PYTHON ONLY. Rust's `println!` writes through a `LineWriter` and stays line-buffered when
+    piped, which is why the cargo-side measurements never showed this.
+
+    CALLED BY THE DRIVER rather than done on import, because a module that reconfigures the
+    interpreter's stdout merely by being imported is a surprise to anything that imports it
+    for one function.
+
+    GUARDED, because `sys.stdout` is only a `TextIOWrapper` when it is the real one - a test
+    harness or a caller that captured output has replaced it with something that has no
+    `reconfigure`, and buffering is not worth an exception in either.
+    """
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(line_buffering=True)
 
 
 def refuse(message, code=2):

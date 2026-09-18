@@ -59,9 +59,8 @@ and summary.txt, the per-run totals and the costliest groups, and prints the sum
     DEGCT_WORKERS=1 tools/measure-menus.py --runs 3 all
 
 A THROW-AWAY RUN COMES FIRST, ALWAYS, so --runs 3 takes four and --runs 1 takes two. It goes
-in run-cold, is reported beside the combination and left out of it, and is kept on disk so the
-question of whether discarding it is worth a run can be settled by counting rather than
-argued. See COLD_FOLDER for what is and is not known about that, and de-7ob7 for the counting.
+in run-cold, is reported beside the combination and left out of it, and is kept on disk rather
+than deleted. See COLD_FOLDER for the evidence, and `tools/cold-run-effect.py` to recompute it.
 
 WHAT COUNTS AS DONE:
 
@@ -114,6 +113,11 @@ NO_MENU = "NO-MENU"
 
 # The column a menu's cost is in, and where a verdict goes instead for an unmeasured group.
 MENU_MS = "menu_ms"
+
+# Where that column sits in a row, for reading one off a row as it is reaped - fifth, after
+# conv, entries, options and offered. Only for a progress line: everything that has to be
+# right reads the header by name instead, because the matrix's columns have moved before.
+MENU_MS_COLUMN = 4
 
 # The absolute arm of the settle rule for a menu. Menus bottom out near twenty milliseconds - a
 # matrix group, many rows long, near two seconds - so a menu under this is at the floor whatever
@@ -259,6 +263,23 @@ def serial_phase(run, conversations, recorded, workers, settle, reap):
     return len(conversations)
 
 
+def cost_of(rows):
+    """What a just-measured group cost, for its progress line, or its verdict.
+
+    READ OFF THE ROW rather than timed here, because the row already carries what the
+    measurement itself says the menu cost - and a duration taken around the subprocess would
+    include the process launch, which is the driver's overhead and not the menu's.
+
+    Defensive about the shape: a CRASHED or NO-MENU row has a verdict where the milliseconds
+    go, and a progress line is not worth an exception.
+    """
+    cells = rows.strip().split(TAB)
+    if len(cells) < 2:
+        return ""
+    verdict = cells[MENU_MS_COLUMN] if len(cells) > MENU_MS_COLUMN else ""
+    return f"{verdict} ms" if verdict.isdigit() else verdict
+
+
 def measure(out, conversations, workers, record=None):
     run = Run(out, record=record)
     run.header()
@@ -291,11 +312,21 @@ def measure(out, conversations, workers, record=None):
         rows, errors = result
         if rows.strip():
             run.append(rows)
-        if errors.strip():
-            with common.open_lf(run.log) as handle:
-                handle.write(f"=== {conversation} ===\n{errors}")
         state["done"] += 1
-        print(progress_line(state["done"], len(todo), f"conversation {conversation}"))
+        line = progress_line(state["done"], len(todo), f"conversation {conversation}", note=cost_of(rows))
+        print(line)
+        # THE SAME LINE INTO THIS RUN'S OWN LOG. A multi-run pass interleaves every run into
+        # the driver's log, so "how far into THIS run" is answerable there only by scrolling
+        # back to where the run began - and the per-run file, which is the natural one to
+        # tail, held group names and engine stderr but no position at all.
+        #
+        # THE ENGINE'S LINES STAY MARKED. A progress line is the driver's; what follows a
+        # `=== conversation ===` header is the engine's own stderr, so the two are told apart
+        # by shape rather than by guessing.
+        with common.open_lf(run.log) as handle:
+            handle.write(f"{line}\n")
+            if errors.strip():
+                handle.write(f"=== {conversation} ===\n{errors}")
 
     serial_done = serial_phase(run, conversations, recorded, workers, settle, reap)
 
@@ -537,6 +568,7 @@ def get_parser():
 def main(argv=None):
     if argv is None:
         argv = sys.argv[1:]
+    common.watchable_output()
     args = get_parser().parse_args(argv)
     if args.runs < 1:
         refuse(f"--runs {args.runs}: a run count is at least 1")
