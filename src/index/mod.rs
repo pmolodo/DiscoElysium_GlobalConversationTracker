@@ -374,7 +374,7 @@ impl VariableTable {
 /// should leave the singletons out and read a miss as "the group is just this
 /// conversation" (de-wncd.2): a stored group of one is a stored default.
 ///
-/// MEASURED, and it is most of the table. `measurements/group_census.rs`, 2026-09-07:
+/// MEASURED, and it is most of the table. `performance/group_census.rs`, 2026-09-07:
 /// 1,372 of the 1,422 distinct groups are a single conversation, and the other 50 carry
 /// fifty-five per cent of the entries. So omitting the singletons takes a group store from
 /// fourteen hundred rows to FIFTY, which is the difference between an artefact worth
@@ -506,7 +506,7 @@ pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, V
 /// ## Why it is worth doing
 ///
 /// Between a quarter and nearly a half of a group's slots are like this - measured, in
-/// `measurements/unread_slots.rs` - and a state-at-a-time search's cost is dominated by copying and
+/// `performance/unread_slots.rs` - and a state-at-a-time search's cost is dominated by copying and
 /// comparing the slot vector, about seventy per cent of the per-state cost on the widest
 /// group. The slots are written by actions, copied for every state, hashed and compared,
 /// and can never change an answer.

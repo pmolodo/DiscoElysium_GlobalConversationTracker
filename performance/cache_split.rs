@@ -81,7 +81,7 @@
 //!
 //! ## Where the question actually lives now
 //!
-//! `measurements/cache_split_menu.rs`, which sweeps the same split over a WHOLE MENU at the
+//! `performance/cache_split_menu.rs`, which sweeps the same split over a WHOLE MENU at the
 //! player's own 256 MB. A menu is a dozen searches against one manager, so its working set
 //! is the one that can outgrow a cache, and it is also the thing a player waits for. That
 //! file is where the case for the shipped quarter rests: no split is best everywhere - a

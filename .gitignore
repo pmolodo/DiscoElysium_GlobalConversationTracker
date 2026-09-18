@@ -52,8 +52,8 @@ uv.lock
 
 # What the measurement runs produced. The measurements THEMSELVES, beside this directory,
 # are committed; their results are not - a row is a wall-clock time on one machine, and a
-# committed baseline like that goes stale silently. See measurements/README.md.
-/measurements/logs/
+# committed baseline like that goes stale silently. See performance/README.md.
+/performance/logs/
 
 # Place to stash miscellaneous testing logs we want to keep around
 /testing/logs/
@@ -64,5 +64,5 @@ uv.lock
 # Derived from the shipped index and from what a measurement wrote, so a checked-in copy is a
 # second copy of something else's shape and goes wrong silently the first time a group grows
 # an entry. Regenerate it when something wants it - the generators are committed and the
-# results are not, which is the rule measurements/README.md gives for rows.
+# results are not, which is the rule performance/README.md gives for rows.
 /analysis/

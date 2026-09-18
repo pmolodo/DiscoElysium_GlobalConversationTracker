@@ -41,7 +41,7 @@ mod common;
 /// The groups where the narrowing actually removes something.
 ///
 /// 368 loses half its variables to it and 14 loses a fifth
-/// (`measurements/start_relative_layout.rs`), so these are where a dropped slot would show.
+/// (`performance/start_relative_layout.rs`), so these are where a dropped slot would show.
 /// A group the narrowing does not shrink would pass this test without exercising it.
 const GROUPS: [i32; 3] = [368, 14, 631];
 

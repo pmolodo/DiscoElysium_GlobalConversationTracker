@@ -70,116 +70,116 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
 [[example]]
 name = "backward_support"
-path = "measurements/backward_support.rs"
+path = "performance/backward_support.rs"
 
 [[example]]
 name = "cache_split"
-path = "measurements/cache_split.rs"
+path = "performance/cache_split.rs"
 
 [[example]]
 name = "guard_depth"
-path = "measurements/guard_depth.rs"
+path = "performance/guard_depth.rs"
 
 # A SNAPSHOT rather than a measurement: it dumps every parsed guard to a file named by
 # GUARD_SNAPSHOT, to be diffed across a change to the parser.
 [[example]]
 name = "guard_snapshot"
-path = "measurements/guard_snapshot.rs"
+path = "performance/guard_snapshot.rs"
 
 [[example]]
 name = "guard_stack"
-path = "measurements/guard_stack.rs"
+path = "performance/guard_stack.rs"
 
 # The half of tests/manager_memory.rs that has to FILL a manager to answer anything.
 [[example]]
 name = "manager_memory"
-path = "measurements/manager_memory.rs"
+path = "performance/manager_memory.rs"
 
 [[example]]
 name = "menu_matrix"
-path = "measurements/menu_matrix.rs"
+path = "performance/menu_matrix.rs"
 
 # Two arms of one question behind one `main`, picked by argument, because the arm that
 # fails takes the process with it - see the note there.
 [[example]]
 name = "menu_residue"
-path = "measurements/menu_residue.rs"
+path = "performance/menu_residue.rs"
 
 # Two measurements behind one `main`, picked by argument - see the note on `main` there.
 [[example]]
 name = "layout_shape"
-path = "measurements/layout_shape.rs"
+path = "performance/layout_shape.rs"
 
 [[example]]
 name = "live_ranges"
-path = "measurements/live_ranges.rs"
+path = "performance/live_ranges.rs"
 
 [[example]]
 name = "repeat_question"
-path = "measurements/repeat_question.rs"
+path = "performance/repeat_question.rs"
 
 [[example]]
 name = "per_start_setup"
-path = "measurements/per_start_setup.rs"
+path = "performance/per_start_setup.rs"
 
 [[example]]
 name = "group_census"
-path = "measurements/group_census.rs"
+path = "performance/group_census.rs"
 
 [[example]]
 name = "search_residue"
-path = "measurements/search_residue.rs"
+path = "performance/search_residue.rs"
 
 # A GENERATOR rather than a measurement: two of its three passes write the committed files
 # under analysis/.
 [[example]]
 name = "static_analysis"
-path = "measurements/static_analysis.rs"
+path = "performance/static_analysis.rs"
 
 [[example]]
 name = "unread_slots"
-path = "measurements/unread_slots.rs"
+path = "performance/unread_slots.rs"
 
 [[example]]
 name = "cache_split_menu"
-path = "measurements/cache_split_menu.rs"
+path = "performance/cache_split_menu.rs"
 
 [[example]]
 name = "manager_reuse"
-path = "measurements/manager_reuse.rs"
+path = "performance/manager_reuse.rs"
 
 [[example]]
 name = "workspace_menus"
-path = "measurements/workspace_menus.rs"
+path = "performance/workspace_menus.rs"
 
 [[example]]
 name = "menu_wall"
-path = "measurements/menu_wall.rs"
+path = "performance/menu_wall.rs"
 
 [[example]]
 name = "counter_widths"
-path = "measurements/counter_widths.rs"
+path = "performance/counter_widths.rs"
 
 [[example]]
 name = "nodes_repeat"
-path = "measurements/nodes_repeat.rs"
+path = "performance/nodes_repeat.rs"
 
 [[example]]
 name = "start_relative_layout"
-path = "measurements/start_relative_layout.rs"
+path = "performance/start_relative_layout.rs"
 
 [[example]]
 name = "bound_slack"
-path = "measurements/bound_slack.rs"
+path = "performance/bound_slack.rs"
 
 [[example]]
 name = "bidirectional_headroom"
-path = "measurements/bidirectional_headroom.rs"
+path = "performance/bidirectional_headroom.rs"
 
 [[example]]
 name = "greedy_playthrough"
-path = "measurements/greedy_playthrough.rs"
+path = "performance/greedy_playthrough.rs"
 
 [[example]]
 name = "onward_or_back"
-path = "measurements/onward_or_back.rs"
+path = "performance/onward_or_back.rs"

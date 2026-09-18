@@ -1,10 +1,11 @@
 #!/usr/bin/env python
+# run-log-kind: measure
 
 """Measure a whole MENU per group, one group per process: the heavy groups one at a time, then
 the rest several at a time.
 
 A request is a whole response menu answered against one manager, so the menu is what a player
-waits for and it is not the sum of its options. See measurements/menu_matrix.rs for what the
+waits for and it is not the sum of its options. See performance/menu_matrix.rs for what the
 columns mean.
 
 Usage:
@@ -44,7 +45,7 @@ had anything worth hunting, which says nothing about what the next menu costs.
 RESUMING. Rows are written as they finish, and pointing a later run at the same folder makes
 it skip the groups already there:
 
-    DEGCT_MENUS_OUT=measurements/logs/2026-09-09/menus tools/measure-menus.py all
+    DEGCT_MENUS_OUT=performance/logs/2026-09-09/menus tools/measure-menus.py all
 
 The same command is the start and the resume; there is no separate mode to remember. A resumed
 group still counts towards settling, by the row it left, so a resume switches where the

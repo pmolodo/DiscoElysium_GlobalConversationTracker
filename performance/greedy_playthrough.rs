@@ -29,7 +29,7 @@
 //! ## What it writes
 //!
 //! One JSON object per group, one per line, under `analysis/outputs/playthroughs/` - which git ignores,
-//! for the reason `measurements/README.md` gives: a table derived from the index goes stale
+//! for the reason `performance/README.md` gives: a table derived from the index goes stale
 //! silently the first time a group grows an entry, and a committed one is wrong without saying
 //! so. Regenerate it rather than keeping it.
 //!

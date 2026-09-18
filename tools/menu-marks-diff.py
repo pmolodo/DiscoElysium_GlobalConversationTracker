@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# run-log-kind: analysis
 
 """Which options two menu runs star differently, menu by menu.
 

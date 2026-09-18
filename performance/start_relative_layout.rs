@@ -16,7 +16,7 @@
 //!
 //! The layout stops being a property of the GROUP and becomes a property of the QUERY.
 //! Since de-2wtl that is not a small thing: `workspace::Workspace` keeps a diagram manager
-//! alive between requests, keyed on the group, and `measurements/manager_reuse.rs` prices
+//! alive between requests, keyed on the group, and `performance/manager_reuse.rs` prices
 //! that reuse at 45 ms a request (98 ms against 53 ms). A layout that differs per start
 //! cannot share one manager across starts, so the saving has to beat that.
 //!

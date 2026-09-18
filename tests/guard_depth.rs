@@ -2,7 +2,7 @@
 //! Every guard the shipped database contains still parses.
 //!
 //! The net under the guard parser. How deep real content actually goes is a number rather
-//! than a claim - it is measured in `measurements/guard_depth.rs` - and this checks the
+//! than a claim - it is measured in `performance/guard_depth.rs` - and this checks the
 //! thing the figure is only a description of: that all of that content is still read.
 
 use lookahead_engine::index::read_index;
@@ -19,7 +19,7 @@ mod common;
 /// parses is a claim about the database, which a game patch or another mod can change, and
 /// about the parser, which is rewritten from time to time.
 ///
-/// `measurements/guard_depth.rs` walks the same guards once, by hand, to describe them. This
+/// `performance/guard_depth.rs` walks the same guards once, by hand, to describe them. This
 /// is the same walk with an assertion on the end, so a database or a parser that stopped
 /// accepting something real fails here instead of silently answering Unknown.
 ///

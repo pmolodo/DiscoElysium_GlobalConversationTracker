@@ -1,7 +1,12 @@
-# Measurements
+# Performance
 
 The long-running measurements themselves, and under `logs/` what they produced. Nothing
 under here is committed except the measurements and this file.
+
+The directory is named for what the measurements are ABOUT rather than for what they are,
+which keeps it beside `testing/` and `analysis/` as one of three things a run can be: a
+number to compare, a suite that passes or fails, or a reading of what a measurement wrote.
+`tools/run-logged.sh --kind` picks between their log trees.
 
 ## Why they are not in `tests/`
 
@@ -79,7 +84,7 @@ down costs that group and nothing else:
 
     tools/measure-menus.py 368 631                        # just these
     DEGCT_WORKERS=1 tools/measure-menus.py all            # every group, one at a time
-    DEGCT_MENUS_OUT=measurements/logs/whole-game tools/measure-menus.py all
+    DEGCT_MENUS_OUT=performance/logs/whole-game tools/measure-menus.py all
     DEGCT_WORKERS=1 tools/measure-menus.py --runs 3 all   # three runs, combined
 
 `--runs N` takes N runs back to back, each in `run-1` ... `run-N` under the run's folder, and

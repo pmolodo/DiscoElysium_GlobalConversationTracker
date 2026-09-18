@@ -27,7 +27,7 @@ mod common;
 // diagram is touched, so it answers in no time at all and a wall put around it binds
 // nothing - which reads exactly like a wall that works. That module's own header records
 // the same trap catching `menu_residue`, and it is the only thing here that avoids it.
-#[path = "../measurements/menu_profile.rs"]
+#[path = "../performance/menu_profile.rs"]
 mod menu_profile;
 
 /// Small enough to search exhaustively, so the comparison is about the crossing rather

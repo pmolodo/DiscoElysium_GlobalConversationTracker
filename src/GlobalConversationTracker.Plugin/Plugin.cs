@@ -456,7 +456,7 @@ namespace GlobalConversationTracker
             // is to kill the engine. de-dt75.3.
             //
             // THREE SECONDS BECAUSE THE MEASUREMENT SAYS SO, not as a round number.
-            // measurements/menu_wall.rs asks the six heaviest groups a deliberately
+            // performance/menu_wall.rs asks the six heaviest groups a deliberately
             // adversarial menu - twenty-four starts, every one of them with unread text
             // beyond it, and a cold engine - and the worst of them, conversation 368, came
             // back in 2.05 seconds. So this sits above the worst menu anyone has measured

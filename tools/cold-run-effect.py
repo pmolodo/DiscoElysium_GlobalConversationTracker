@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# run-log-kind: analysis
 
 """Is the first run of a multi-run measurement slower than the rest, and how often?
 
@@ -37,7 +38,7 @@ import traceback
 
 from pathlib import Path
 
-LOGS = Path("measurements/logs")
+LOGS = Path("performance/logs")
 COLD = "run-cold"
 
 ###############################################################################

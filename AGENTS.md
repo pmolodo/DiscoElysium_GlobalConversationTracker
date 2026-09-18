@@ -12,14 +12,14 @@ Genuinely instant things - `ls`, `git status`, reading a file - do not need it.
 
 ```sh
 tools/run-logged.sh --kind test cargo full-suite -- cargo test --release
-DEGCT_CONVERSATION=631 tools/run-logged.sh cargo shared-symbolic -- \
+DEGCT_CONVERSATION=631 tools/run-logged.sh --kind measure cargo shared-symbolic -- \
   cargo run --release --example shared_symbolic
 ```
 
 **`--kind` says which tree the log belongs in**, and the three are named the same way:
 
 ```text
-measure   measurements/logs   the default: runs whose output is numbers to compare
+measure   performance/logs   the default: runs whose output is numbers to compare
 test      testing/logs        suites, in-game runs and builds, beside the harness's own logs
 analysis  analysis/logs       tools that read what a measurement produced
 ```

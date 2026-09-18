@@ -3,7 +3,7 @@
 //!
 //! ## What de-1e8l left open, and it named both gaps itself
 //!
-//! `measurements/cache_split.rs` swept a sixty-fourth to a half of the node store over the
+//! `performance/cache_split.rs` swept a sixty-fourth to a half of the node store over the
 //! heavy groups and found a quarter the flat optimum everywhere with a signal. Two things
 //! it could not answer, in its own words:
 //!

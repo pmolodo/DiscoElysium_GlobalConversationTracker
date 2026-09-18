@@ -4,9 +4,9 @@
 //! ## What this is for
 //!
 //! [`crate::bridge::answer`] builds everything from scratch per request: the group graph,
-//! the layout, the manager, the compiled guards and the seed. `measurements/repeat_question.rs`
+//! the layout, the manager, the compiled guards and the seed. `performance/repeat_question.rs`
 //! prices that at eighteen to twenty-seven milliseconds a request, and
-//! `measurements/manager_reuse.rs` found a second cost nobody had looked for - the FIRST
+//! `performance/manager_reuse.rs` found a second cost nobody had looked for - the FIRST
 //! request against a fresh manager takes ninety-eight milliseconds where later ones against
 //! the same manager take fifty-three, because an empty apply cache and an untouched node
 //! store have to be warmed. Today every request pays both.
@@ -14,7 +14,7 @@
 //! This keeps the expensive half alive between requests. de-2wtl.
 //!
 //! WHAT IT IS WORTH THROUGH THE SHIPPED CALL, rather than through the search underneath:
-//! `measurements/workspace_menus.rs` drives [`crate::service::Service::look_ahead`] twelve
+//! `performance/workspace_menus.rs` drives [`crate::service::Service::look_ahead`] twelve
 //! times over one group and finds a served request costs 53 to 60 milliseconds where an
 //! unserved one costs 116 to 126 - about a halving, on every menu after the first in a
 //! group. That is the measurement to re-run if this is ever suspected of not paying; the
@@ -301,7 +301,7 @@ impl Workspace {
     /// is the store's capacity, and the wrong one for asking what a menu costs.
     ///
     /// Here so that what a session accumulates can be measured rather than reasoned about -
-    /// see `measurements/workspace_menus.rs` and the note on [`memo_cap`], whose quarter is
+    /// see `performance/workspace_menus.rs` and the note on [`memo_cap`], whose quarter is
     /// argued from the other three quarters rather than from any measurement of this.
     pub fn held(&self) -> Option<usize> {
         let (held, waiting) = std::sync::mpsc::channel();

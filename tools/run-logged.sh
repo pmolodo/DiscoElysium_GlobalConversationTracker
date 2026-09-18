@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run a command and keep its whole output in measurements/logs, under the run-log name.
+# Run a command and keep its whole output under the run-log name, in the tree its kind names.
 #
 # GameHarness logs itself - see tools/GameAutomation/RunLog.cs - so this is for the runs
 # that are not ours to modify: cargo, dotnet test, and the measurement scripts.
@@ -11,23 +11,25 @@
 #
 # WHICH TREE A RUN'S LOG BELONGS TO, by --kind:
 #
-#   measure   measurements/logs   the default: runs whose output is numbers to compare
-#   test      testing/logs        suites, in-game runs, and builds, beside the harness's own
-#   analysis  analysis/logs       tools that read what a measurement produced
+#   measure   performance/logs   runs whose output is numbers to compare
+#   test      testing/logs       suites, in-game runs and builds, beside the harness's own
+#   analysis  analysis/logs      tools that read what a measurement produced
 #
-# THE TOOL NAME CANNOT DECIDE THIS, which is why it is said rather than inferred. `cargo
-# full-suite` is a test and `cargo walk-1467` is a measurement, and both are cargo; the kind
-# is about what the run is FOR, and only the caller knows that.
+# THERE IS NO DEFAULT. A tool may declare its own kind in a header line of its own - see
+# `declared_kind` - and where neither says, the run is refused. The tool NAME cannot decide
+# it: `cargo full-suite` is a test and `cargo walk-1467` is a measurement, and both are cargo.
 #
 # RUN_LOG_DIR still overrides all of it, for a caller that wants a log somewhere else
 # entirely.
 #
 # Examples:
-#   tools/run-logged.sh cargo shared-symbolic -- cargo run --release --example shared_symbolic
-#   tools/run-logged.sh cargo corpus -- cargo test --test corpus
-#   tools/run-logged.sh dotnet unit -- dotnet test
+#   tools/run-logged.sh tools/measure-menus.py all   # kind from the tool's own header
+#   tools/run-logged.sh --kind measure cargo shared-symbolic -- \
+#     cargo run --release --example shared_symbolic
+#   tools/run-logged.sh --kind test cargo corpus -- cargo test --test corpus
+#   tools/run-logged.sh --kind test dotnet unit -- dotnet test
 #   DISCO_ELYSIUM_GCT_INGAME_TESTS=1 \
-#     tools/run-logged.sh dotnet in-game -- dotnet test tools/GameAutomation.Tests
+#     tools/run-logged.sh --kind test dotnet in-game -- dotnet test tools/GameAutomation.Tests
 #
 # The name is <date>_<time>_<revision>_<tool>_<verb>, where the time is HH,MM,SS - commas
 # because a Windows file name cannot hold a colon - with -dirty on the revision when the
@@ -48,21 +50,36 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT/tools/degct-env.sh"
 
 # WHICH TREE, from --kind, read before the options below so the rest can use it.
-KIND="measure"
+KIND=""
 if [ "${1:-}" = "--kind" ]; then
     KIND="${2:-}"
     shift 2
 fi
 
-case "$KIND" in
-    measure) KIND_ROOT="$ROOT/measurements/logs" ;;
-    test) KIND_ROOT="$ROOT/testing/logs" ;;
-    analysis) KIND_ROOT="$ROOT/analysis/logs" ;;
-    *)
-        echo "--kind $KIND: expected measure, test or analysis" >&2
-        exit 2
-        ;;
-esac
+# WHAT A TOOL SAYS ABOUT ITSELF. A tool's kind is a property of the tool, not of each
+# incantation, so a script declares it once in its own header:
+#
+#     # run-log-kind: analysis
+#
+# and every call of it lands in the right tree without anyone remembering. --kind still wins,
+# for a tool used for two purposes.
+#
+# NOTHING IS GUESSED. Where no --kind is given and no script in the command declares one -
+# `cargo test`, `dotnet run`, anything that is not a file we can read - the run is REFUSED
+# rather than defaulted. A default is how a test suite's transcript ended up filed with the
+# measurements for months: the wrong answer was silent, and the right one nobody typed.
+declared_kind() {
+    local argument found
+    for argument in "$@"; do
+        [ -f "$argument" ] || continue
+        found="$(sed -n 's/^#[[:space:]]*run-log-kind:[[:space:]]*\([a-z]*\).*/\1/p' \
+            "$argument" 2>/dev/null | head -1)"
+        if [ -n "$found" ]; then
+            printf '%s' "$found"
+            return
+        fi
+    done
+}
 
 # The kind's tree unless a caller says otherwise, so that a run's raw output stays beside
 # what it produced without every incantation having to say so.
@@ -72,7 +89,33 @@ esac
 # finding the run from a particular afternoon meant reading a wall of names and shell
 # completion was useless. The date is already the first field of every name, so grouping by it
 # costs nothing and loses nothing - and tools/tidy-logs.py sorts any that arrive loose.
-DEGCT_LOG_DIR="$(degct_env RUN_LOG_DIR "$KIND_ROOT")/$(date +%Y-%m-%d)"
+#
+# Called once the command is known, since that is what carries the script whose header may
+# declare the kind. RUN_LOG_DIR skips the question entirely: a caller naming the folder has
+# already answered it.
+set_log_dir() {
+    local root
+    if [ -n "$(degct_env RUN_LOG_DIR "")" ]; then
+        DEGCT_LOG_DIR="$(degct_env RUN_LOG_DIR "")/$(date +%Y-%m-%d)"
+        return
+    fi
+    case "$1" in
+        measure) root="$ROOT/performance/logs" ;;
+        test) root="$ROOT/testing/logs" ;;
+        analysis) root="$ROOT/analysis/logs" ;;
+        "")
+            echo "run-logged.sh: no --kind, and nothing in the command declares one." >&2
+            echo "Pass --kind measure|test|analysis, or give the tool a header line:" >&2
+            echo "    # run-log-kind: analysis" >&2
+            exit 2
+            ;;
+        *)
+            echo "--kind $1: expected measure, test or analysis" >&2
+            exit 2
+            ;;
+    esac
+    DEGCT_LOG_DIR="$root/$(date +%Y-%m-%d)"
+}
 
 usage() {
     sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
@@ -134,12 +177,17 @@ unique() {
 case "${1:-}" in
     --name-only)
         [ $# -eq 3 ] || usage
+        # NAMING A PATH RUNS NOTHING, so there is no command to read a kind from - a caller
+        # asking for a name either said --kind or set RUN_LOG_DIR, which is what every
+        # in-repository caller does.
+        set_log_dir "${KIND:-measure}"
         unique "$DEGCT_LOG_DIR/$(stem "$2" "$3")" ".txt"
         echo
         exit 0
         ;;
     --folder-only)
         [ $# -eq 3 ] || usage
+        set_log_dir "${KIND:-measure}"
         unique "$DEGCT_LOG_DIR/$(stem "$2" "$3")" ""
         echo
         exit 0
@@ -156,6 +204,10 @@ VERB="$2"
 shift 2
 [ "${1:-}" = "--" ] && shift
 [ $# -ge 1 ] || usage
+
+# THE COMMAND IS KNOWN NOW, so a tool that declares its own kind can be asked.
+[ -n "$KIND" ] || KIND="$(declared_kind "$@")"
+set_log_dir "$KIND"
 
 mkdir -p "$DEGCT_LOG_DIR"
 LOG="$(unique "$DEGCT_LOG_DIR/$(stem "$TOOL" "$VERB")" ".txt")"

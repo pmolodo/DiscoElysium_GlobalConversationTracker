@@ -1042,10 +1042,10 @@ namespace GlobalConversationTracker
         ///
         /// <para>THAT IT IS OFF THIS FRAME IS THE POINT, and the cost it stays off is
         /// measured rather than assumed: reading the 14.4 MB index takes 173 to 244 ms
-        /// (measurements/repeat_question.rs, 2026-09-07) on top of the process launch, and
+        /// (performance/repeat_question.rs, 2026-09-07) on top of the process launch, and
         /// since de-2wtl the warm diagram manager for the group the player is standing in
         /// goes with the old process too - another sixty-odd milliseconds on the next menu
-        /// (measurements/workspace_menus.rs). None of that may happen while a response menu
+        /// (performance/workspace_menus.rs). None of that may happen while a response menu
         /// is being drawn.</para>
         ///
         /// <para>THE HOOKS STAY ON, unlike the give-up path. They are what will notice the

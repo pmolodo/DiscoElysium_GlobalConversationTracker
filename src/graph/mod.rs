@@ -86,7 +86,7 @@ pub struct LookAheadGraph {
     ///
     /// So the cost of leaving it was a search whose cost is not reproducible, a `nodes`
     /// column that cannot be compared between runs, and a stack depth that varies for no
-    /// reason anybody can see. See de-12wr.3 and `measurements/nodes_repeat.rs`, which is
+    /// reason anybody can see. See de-12wr.3 and `performance/nodes_repeat.rs`, which is
     /// the experiment.
     ///
     /// A SORTED KEY LIST RATHER THAN A `BTreeMap`, because `get` is the hot operation here

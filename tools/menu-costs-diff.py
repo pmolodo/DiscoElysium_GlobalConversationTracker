@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# run-log-kind: analysis
 
 """What two several-run menu measurements cost, group by group, and which groups changed marks.
 

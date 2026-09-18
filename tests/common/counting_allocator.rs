@@ -14,7 +14,7 @@
 //! the two callers that want it pull in:
 //!
 //!     #[path = "common/counting_allocator.rs"]            // from tests/
-//!     #[path = "../tests/common/counting_allocator.rs"]   // from measurements/
+//!     #[path = "../tests/common/counting_allocator.rs"]   // from performance/
 //!     mod counting_allocator;
 //!
 //! It lives under `tests/common/` rather than directly under `tests/`, where Cargo would

@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# run-log-kind: analysis
 
 """Where every conversation in the game can be started, and what nothing explains.
 

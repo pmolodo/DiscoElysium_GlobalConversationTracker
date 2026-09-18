@@ -38,7 +38,7 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "measurements"
+OUT = ROOT / "performance"
 
 TAB = "\t"
 
@@ -276,7 +276,7 @@ def folder_for(value, verb, out_variable):
     folder is built the way every log in this repository is named, with the label as the verb:
 
         DEGCT_MENUS_OUT=qy5t-before
-        -> measurements/logs/2026-09-18/2026-09-18_10,07,41_7a2d23f_measure_qy5t-before/
+        -> performance/logs/2026-09-18/2026-09-18_10,07,41_7a2d23f_measure_qy5t-before/
 
     WHY THE LABEL EXISTS. Naming the folder by hand is the common case, and a hand-named folder
     sat outside the convention every other artefact follows - so `qy5t-before/` and the
@@ -336,7 +336,7 @@ def run_folder(verb, out_variable):
     the one call a driver makes to the wrapper, so it stopped a run before its first row on
     the very path a person takes who sets nothing.
 
-    UNDER measurements/logs WHATEVER RUN_LOG_DIR SAYS. This is a folder of rows rather than a
+    UNDER performance/logs WHATEVER RUN_LOG_DIR SAYS. This is a folder of rows rather than a
     transcript, and rows belong beside the other measurements; a run that scattered them
     wherever a variable happened to point would be one nobody could find afterwards.
 

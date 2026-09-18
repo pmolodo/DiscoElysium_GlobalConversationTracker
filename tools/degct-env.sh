@@ -4,7 +4,7 @@
 # Source it:
 #
 #     . "$(dirname "$0")/degct-env.sh"
-#     DEGCT_OUT="$(degct_env MENUS_OUT measurements/logs/somewhere)"
+#     DEGCT_OUT="$(degct_env MENUS_OUT performance/logs/somewhere)"
 #     degct_env_is_set NOLIMIT && echo "limits off"
 #
 # WHY A HELPER RATHER THAN A CONVENTION. Every environment variable this project defines is

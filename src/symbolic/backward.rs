@@ -226,7 +226,7 @@ pub struct Position {
 /// credited the option earliest in the menu, which on a chain of options - one reaching the
 /// content only through another - starred the outer ones at the cost of further rounds, 353
 /// taking three rounds and 2.6 seconds against one round and 0.3. The measurement that argued
-/// for meeting in the middle is kept in `measurements/bidirectional_headroom.rs`.
+/// for meeting in the middle is kept in `performance/bidirectional_headroom.rs`.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Nearest {
     Found {

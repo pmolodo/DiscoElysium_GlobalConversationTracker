@@ -1,10 +1,11 @@
 #!/usr/bin/env python
+# run-log-kind: analysis
 
 """Flag performance regressions in a several-run menu measurement, against a baseline marked for it.
 
 ## Why a marked baseline, and not a search of old runs
 
-`measurements/logs` holds every run anybody took: trees mid-change, opt-in algorithms, a few groups
+`performance/logs` holds every run anybody took: trees mid-change, opt-in algorithms, a few groups
 rather than all of them, groups measured side by side and one at a time. A search would have to
 guess which of those says how fast the shipped code was, and a wrong guess reports a regression that
 is not there, or hides one that is, with nothing to say it guessed. So a person marks a run as a
@@ -13,10 +14,10 @@ way as it was.
 
 ## Where a baseline lives, and why not in git
 
-`measurements/README.md` gives the reason nothing a measurement produced is committed: a row is a
+`performance/README.md` gives the reason nothing a measurement produced is committed: a row is a
 wall-clock time on one machine, and a committed baseline goes stale silently. So `mark` COPIES what
 it needs of a run - `combined.tsv`, `run.json` and `summary.txt` - under
-`measurements/logs/baselines/`, which git ignores. It belongs to the machine it was measured on, and
+`performance/logs/baselines/`, which git ignores. It belongs to the machine it was measured on, and
 is refused on any other; the copy means a baseline survives its run folder being tidied away.
 
 WHAT GIT DOES GET is a tag: `mark` puts an annotated `perf-baseline/<run start>` tag, carrying the

@@ -43,7 +43,7 @@ runs_for() {
 }
 
 OVERRIDE="${1:-}"
-OUT="$ROOT/measurements/logs/$(date +%Y-%m-%d_%H,%M,%S)_residue-arms"
+OUT="$ROOT/performance/logs/$(date +%Y-%m-%d_%H,%M,%S)_residue-arms"
 mkdir -p "$OUT"
 
 echo "budget ${DEGCT_BUDGET_MB} MB, ${DEGCT_SEARCHES} searches per run"

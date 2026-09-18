@@ -238,7 +238,7 @@ impl Service {
     /// For measuring what a SESSION accumulates, which is a question the per-request path
     /// could not raise: one manager now serves every menu of a conversation, so the store
     /// grows across menus rather than starting empty each time. See
-    /// `measurements/workspace_menus.rs` and de-dt75.2.
+    /// `performance/workspace_menus.rs` and de-dt75.2.
     pub fn workspace_held(&self) -> Option<usize> {
         self.workspace.lock().ok()?.as_ref()?.held()
     }
@@ -248,7 +248,7 @@ impl Service {
     /// ## What a hit skips
     ///
     /// The group graph, the layout and the diagram manager - and the manager's WARM-UP,
-    /// which `measurements/manager_reuse.rs` found is the larger half: the first request
+    /// which `performance/manager_reuse.rs` found is the larger half: the first request
     /// against a fresh manager takes ninety-eight milliseconds where later ones against the
     /// same manager take fifty-three. What it still pays is the compiled guards and the
     /// seed, one to five milliseconds, because the world is baked into those and moves every

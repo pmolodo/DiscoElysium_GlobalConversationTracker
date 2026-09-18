@@ -387,7 +387,7 @@ Every run keeps its whole output under a name that says when it ran, what it ran
 and what it was:
 
 ```
-measurements/logs/2026-09-04/2026-09-04_07,44,32_1e08319064b7bd9d115f26c3abf35145d3fb7d8e_cargo_full-suite.txt
+performance/logs/2026-09-04/2026-09-04_07,44,32_1e08319064b7bd9d115f26c3abf35145d3fb7d8e_cargo_full-suite.txt
                   ^ a folder ^ date   ^ time     ^ the commit it ran against              ^ tool ^ verb
                     per date
 ```
@@ -396,7 +396,7 @@ The date is in the folder and in the name both, so a log still says when it ran 
 been copied somewhere else. `tools/tidy-logs.py` sorts any that arrive loose, taking the date
 from the name where there is one and from the file's modification time otherwise.
 
-The wrapper writes to `measurements/logs`, so that a measurement's raw output sits beside
+The wrapper writes to `performance/logs`, so that a measurement's raw output sits beside
 the rows it produced and nothing has to say so at the call site; `RUN_LOG_DIR` moves it.
 GameHarness keeps its own logs under `testing/logs`, which is a separate mechanism and
 reads no environment variable of ours.
@@ -423,10 +423,10 @@ dotnet run --project tools/GameHarness/GameHarness.csproj -- look-ahead
 neither is ours to modify:
 
 ```bash
-tools/run-logged.sh cargo corpus -- cargo test --test corpus
-tools/run-logged.sh dotnet unit -- dotnet test
+tools/run-logged.sh --kind test cargo corpus -- cargo test --test corpus
+tools/run-logged.sh --kind test dotnet unit -- dotnet test
 DISCO_ELYSIUM_GCT_INGAME_TESTS=1 \
-  tools/run-logged.sh dotnet in-game -- dotnet test tools/GameAutomation.Tests
+  tools/run-logged.sh --kind test dotnet in-game -- dotnet test tools/GameAutomation.Tests
 ```
 
 It tees, so a long run can still be watched, and it exits with the command's own status.

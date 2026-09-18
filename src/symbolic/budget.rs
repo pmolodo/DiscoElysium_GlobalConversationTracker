@@ -45,7 +45,7 @@ impl DiagramBudget {
     ///
     /// ## NOW MEASURED, and 32 was an undercount (de-mnrb)
     ///
-    /// `measurements/manager_memory.rs` fills one manager and reads the allocator as it
+    /// `performance/manager_memory.rs` fills one manager and reads the allocator as it
     /// grows, so the MARGINAL cost of a node - the table's share, which construction cannot
     /// show - is measured rather than reasoned:
     ///
@@ -83,7 +83,7 @@ impl DiagramBudget {
     /// How many nodes there are per apply-cache entry.
     ///
     /// A quarter, and it was convention until de-1e8l measured it -
-    /// `measurements/cache_split.rs`, which sweeps a sixty-fourth to a half over the heavy
+    /// `performance/cache_split.rs`, which sweeps a sixty-fourth to a half over the heavy
     /// groups at a held total. Every group with a signal peaks HERE and is flat or worse
     /// either side: 368 settles fastest at a quarter, and 14 and 631 get furthest in a
     /// fixed minute at a quarter. Going wider to a half buys nothing anywhere and doubles
@@ -97,7 +97,7 @@ impl DiagramBudget {
     /// is WIDE, which degrades smoothly, rather than narrow, which can end a search.
     ///
     /// AND IT HOLDS AT THE SHIPPED BUDGET AND OVER A WHOLE MENU, which de-1e8l could not
-    /// say - its sweep was single searches at 512 MB. `measurements/cache_split_menu.rs`
+    /// say - its sweep was single searches at 512 MB. `performance/cache_split_menu.rs`
     /// runs a 24-start menu against ONE manager at 256 MB, where the cache is warm from the
     /// second option onwards, and the optimum does not move. The expected result was that a
     /// warm cache would want to be wider; instead the curve is flat enough that the fastest
@@ -141,7 +141,7 @@ impl DiagramBudget {
     /// a whole menu at the shipped budget; the quarter survived both, so
     /// [`Self::NODES_PER_CACHE_ENTRY`] is a conclusion rather than a convention and every
     /// shipped caller should be taking it by going through [`Self::new`]. The callers here
-    /// are `measurements/cache_split.rs` and `measurements/cache_split_menu.rs`, and this
+    /// are `performance/cache_split.rs` and `performance/cache_split_menu.rs`, and this
     /// exists for them.
     ///
     /// # Panics
@@ -217,7 +217,7 @@ impl DiagramBudget {
     /// engine arms, records no manager that filled - `no-room` and `no-ram` appear on no row.
     ///
     /// AND A SESSION DOES NOT ACCUMULATE INTO IT, which is the question one manager per
-    /// conversation raises and a per-request manager could not. `measurements/workspace_menus.rs`
+    /// conversation raises and a per-request manager could not. `performance/workspace_menus.rs`
     /// walks forty menus through the shipped call: conversation 761, the heaviest group in
     /// the game, leaves the store holding 17.9% of this, and the next highest of the forty
     /// heaviest is 1.5%. The store is filled by the FIRST request and the other thirty-nine

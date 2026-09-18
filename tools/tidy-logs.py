@@ -1,10 +1,11 @@
 #!/usr/bin/env python
+# run-log-kind: analysis
 
 """Sort run logs into a folder per date, and keep them that way.
 
 ## Why
 
-`measurements/logs` had 1,669 loose transcripts and 179 row folders in one directory, and
+`performance/logs` had 1,669 loose transcripts and 179 row folders in one directory, and
 `testing/logs` another 877. A directory that size is one nobody browses: finding the run from
 a particular afternoon means sorting a wall of names, and a shell completing on it is useless.
 The names already begin with the date, so the information to group by was there all along.
@@ -36,7 +37,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-LOGS = (Path("measurements/logs"), Path("testing/logs"))
+LOGS = (Path("performance/logs"), Path("testing/logs"))
 
 # The date a run log's name begins with, as run-logged.sh and RunLog.cs write it.
 DATED = re.compile(r"^(\d{4}-\d{2}-\d{2})[_-]")

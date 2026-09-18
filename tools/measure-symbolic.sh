@@ -8,7 +8,7 @@
 # 631, reported nothing at all for 14, 28 and 1030.
 #
 # One process each means a crash is a RESULT for that conversation and costs nothing else.
-# Every run keeps its own folder under measurements/logs, one log per conversation inside
+# Every run keeps its own folder under performance/logs, one log per conversation inside
 # it, so a crashed row can still be read afterwards - and so can the run before this one.
 #
 # Usage:
@@ -20,7 +20,7 @@
 #   tools/measure-symbolic.sh backward_support 368 631
 #   tools/measure-symbolic.sh layout_shape slots 14
 #
-# THE MEASUREMENT IS AN EXAMPLE under measurements/, named the way Cargo.toml names it.
+# THE MEASUREMENT IS AN EXAMPLE under performance/, named the way Cargo.toml names it.
 # It used to be a test NAME plus a TEST_BINARY saying which binary to find it in; an
 # example is its own binary, so the two collapsed into one argument. That pairing had also
 # gone stale - its documented default named a test file that no longer exists, so running
@@ -52,11 +52,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # The prefix is applied by the helper rather than typed - see CLAUDE.md.
 . "$ROOT/tools/degct-env.sh"
 
-# ONE FOLDER PER RUN, and under measurements/ rather than target/ - a `cargo clean` should
+# ONE FOLDER PER RUN, and under performance/ rather than target/ - a `cargo clean` should
 # not take measurements with it, and a run's logs only mean anything as a set. LOG_DIR
 # still overrides the whole thing, which is what a one-off comparison wants.
 DEGCT_RUN_NAME="${DEGCT_MEASUREMENT}${STAGE:+-$STAGE}"
-DEGCT_LOG_DIR="$(degct_env LOG_DIR "$(DEGCT_RUN_LOG_DIR="$ROOT/measurements/logs" \
+DEGCT_LOG_DIR="$(degct_env LOG_DIR "$(DEGCT_RUN_LOG_DIR="$ROOT/performance/logs" \
     "$ROOT/tools/run-logged.sh" --folder-only measure "$DEGCT_RUN_NAME")")"
 mkdir -p "$DEGCT_LOG_DIR"
 

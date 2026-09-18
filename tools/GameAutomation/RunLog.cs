@@ -74,7 +74,7 @@ namespace GlobalConversationTracker.Automation
         /// A FOLDER PER DATE, under testing/logs. One directory of every run ever taken is one
         /// nobody browses - this one reached 877 files - and the date already opens every
         /// name, so grouping by it costs nothing and loses nothing. tools/tidy-logs.py sorts
-        /// any that arrive loose, and tools/run-logged.sh does the same for measurements/logs.
+        /// any that arrive loose, and tools/run-logged.sh does the same for performance/logs.
         /// </remarks>
         /// <param name="repoRoot">The repository root, or null to find it.</param>
         /// <param name="when">The day to file under, or null for today.</param>
