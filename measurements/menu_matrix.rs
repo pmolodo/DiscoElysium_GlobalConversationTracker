@@ -379,6 +379,17 @@ const UNSEEN: usize = 10;
 /// generator caches.
 const WALK_CEILING: usize = 200_000;
 
+/// Where a walked profile left the player: the world it stopped in, and what the conversation
+/// has shown them since it last started.
+///
+/// The two travel together because they are one reading of one moment - the walk that produced
+/// the world is the walk the hubs are followed along - and separating them is how a measurement
+/// ends up asking a menu in one world about a player standing in another.
+struct Standing {
+    world: WorldSnapshot,
+    walk: Vec<DialogueNodeId>,
+}
+
 /// Whether the profile is walked to rather than declared.
 ///
 /// ## What it changes, and why it is worth a row file of its own
@@ -499,11 +510,17 @@ fn main() {
                 // hold. Everything else - the character sheet, the checks, the inventory - is
                 // the save's, since the walk never changed those.
                 Some(found) => {
-                    let mut snapshot =
+                    let mut world =
                         save_world::of_save(&graph, conversation, &index, save_world::TEMPLATE);
-                    snapshot.seen = found.seen.iter().copied().map(NodeRef::from).collect();
-                    snapshot.variables = found.variables;
-                    (found.profile, Some(snapshot))
+                    world.seen = found.seen.iter().copied().map(NodeRef::from).collect();
+                    world.variables = found.variables;
+                    (
+                        found.profile,
+                        Some(Standing {
+                            world,
+                            walk: found.walk,
+                        }),
+                    )
                 }
                 None => {
                     row(conversation, &graph, 0, NO_MENU, None);
@@ -619,7 +636,7 @@ fn menu<F>(
     starts: &[DialogueNodeId],
     novelty: &F,
     budget: DiagramBudget,
-    walked: Option<&WorldSnapshot>,
+    walked: Option<&Standing>,
 ) -> Option<Menu>
 where
     // SYNC, because the search runs on a thread of its own - de-fpax - and the closure
@@ -630,7 +647,16 @@ where
         // WHERE A PLAYER WOULD HAVE WALKED FROM, built before the clock starts: it stands in for
         // the walk the plugin records as the conversation plays, which costs the engine nothing.
         // What the engine does with it - the group's hubs, the cut - is inside the timing below.
-        let walk = lookahead_engine::symbolic::hub::walk_to_menu(graph, conversation, starts);
+        //
+        // THE PLAYTHROUGH'S OWN WALK WHERE THERE IS ONE. A walked profile knows what the
+        // conversation has shown the player since it last started, which is what a request
+        // carries. `hub::walk_to_menu` is the stand-in for a profile with no player behind it,
+        // and it leaves a far shallower hub stack - measured on 761, a walk cut of ONE ENTRY
+        // against a sitting of twenty-six presses. See de-aqxa.9.
+        let walk = match walked {
+            Some(standing) => standing.walk.clone(),
+            None => lookahead_engine::symbolic::hub::walk_to_menu(graph, conversation, starts),
+        };
 
         let began = Instant::now();
         let symbols = graph.symbols().clone();
@@ -639,7 +665,7 @@ where
         // it would put it back among the worlds nobody walked to.
         let world = SnapshotWorld::declaring(
             match walked {
-                Some(snapshot) => snapshot.clone(),
+                Some(standing) => standing.world.clone(),
                 None => WorldSnapshot {
                     day_minutes: 720,
                     day_counter: 1,

@@ -92,6 +92,9 @@ impl MenuProfile {
 /// A profile and the world the walk that produced it stopped in.
 pub struct Walked {
     pub profile: MenuProfile,
+    /// The world the menu is asked in: the save's, less what the walk has now shown and what
+    /// its variables now hold. Filled by the caller, which is what knows the save.
+    pub world: lookahead_engine::bridge::WorldSnapshot,
     /// Entries the walk put on screen before it stopped: what the world should call seen.
     pub seen: Vec<DialogueNodeId>,
     /// The dialogue variables at the point it stopped, by name - the counters at the values
@@ -100,6 +103,15 @@ pub struct Walked {
     /// How far the walk got before it was stopped, and how far it could have gone.
     pub shown: usize,
     pub reachable: usize,
+    /// What the conversation has shown the player since it last started, oldest first: the
+    /// walk a request carries as `encountered`.
+    ///
+    /// THE LAST SITTING ONLY, not the whole playthrough. A request's walk "must begin at the
+    /// conversation's start, since the hubs are followed from there", and a restart IS the
+    /// conversation starting again - so the entries belonging to earlier sittings are a
+    /// different visit and following the hub stack through them would stack hubs the player
+    /// has since left. See `Leg::restarted`.
+    pub walk: Vec<DialogueNodeId>,
 }
 
 /// The profile a greedy playthrough leaves when it is stopped with `unseen_wanted` entries
@@ -176,12 +188,30 @@ pub fn walked_profile(
     }
 
     Some(Walked {
+        walk: last_sitting(&stopped),
+        // EMPTY UNTIL THE CALLER FILLS IT, since building one needs the save this walk was
+        // taken against and that is the caller's to name.
+        world: Default::default(),
         profile: MenuProfile { unseen, starts },
         variables: variables_of(graph, world, &stopped.ended),
         seen,
         shown: stop_at,
         reachable,
     })
+}
+
+/// Everything the conversation stepped through since it last started.
+///
+/// A playthrough is a run of sittings, each beginning at the conversation's start and ending
+/// where the game sent the player away. What a request carries is the CURRENT one, so this
+/// takes the legs from the last restart onwards. A playthrough with no legs at all has walked
+/// nothing but the start, which cuts nothing and says so.
+fn last_sitting(done: &lookahead_engine::walkthrough::Playthrough) -> Vec<DialogueNodeId> {
+    let began = done.legs.iter().rposition(|leg| leg.restarted).unwrap_or(0);
+    done.legs[began..]
+        .iter()
+        .flat_map(|leg| leg.encountered())
+        .collect()
 }
 
 /// The dialogue variables a state holds, by name, as a world answers them.
