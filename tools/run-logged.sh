@@ -9,27 +9,31 @@
 #   tools/run-logged.sh --name-only <tool> <verb>     # print the path, run nothing
 #   tools/run-logged.sh --folder-only <tool> <verb>   # ditto, as a directory
 #
-# WHICH TREE A RUN'S LOG BELONGS TO, by --kind:
+# WHICH TREE A RUN'S LOG BELONGS TO, by --kind. EVERY RUN IS A MEASUREMENT, and the kind says
+# WHAT IT MEASURES - which is why none of the three is called "measure":
 #
-#   measure   performance/logs   runs whose output is numbers to compare
-#   test      testing/logs       suites, in-game runs and builds, beside the harness's own
-#   analysis  analysis/logs      tools that read what a measurement produced
+#   performance  performance/logs  timing: numbers to compare against other numbers
+#   testing      testing/logs      correctness: suites, in-game runs and builds
+#   analysis     analysis/logs     data: what some other run decided, read back
+#
+# Each kind names its own tree, so a log's kind and its path say the same word.
 #
 # THERE IS NO DEFAULT. A tool may declare its own kind in a header line of its own - see
 # `declared_kind` - and where neither says, the run is refused. The tool NAME cannot decide
-# it: `cargo full-suite` is a test and `cargo walk-1467` is a measurement, and both are cargo.
+# it: `cargo full-suite` measures correctness and `cargo walk-1467` measures timing, and both
+# are cargo.
 #
 # RUN_LOG_DIR still overrides all of it, for a caller that wants a log somewhere else
 # entirely.
 #
 # Examples:
 #   tools/run-logged.sh tools/measure-menus.py all   # kind from the tool's own header
-#   tools/run-logged.sh --kind measure cargo shared-symbolic -- \
+#   tools/run-logged.sh --kind performance cargo shared-symbolic -- \
 #     cargo run --release --example shared_symbolic
-#   tools/run-logged.sh --kind test cargo corpus -- cargo test --test corpus
-#   tools/run-logged.sh --kind test dotnet unit -- dotnet test
+#   tools/run-logged.sh --kind testing cargo corpus -- cargo test --test corpus
+#   tools/run-logged.sh --kind testing dotnet unit -- dotnet test
 #   DISCO_ELYSIUM_GCT_INGAME_TESTS=1 \
-#     tools/run-logged.sh --kind test dotnet in-game -- dotnet test tools/GameAutomation.Tests
+#     tools/run-logged.sh --kind testing dotnet in-game -- dotnet test tools/GameAutomation.Tests
 #
 # The name is <date>_<time>_<revision>_<tool>_<verb>, where the time is HH,MM,SS - commas
 # because a Windows file name cannot hold a colon - with -dirty on the revision when the
@@ -99,18 +103,17 @@ set_log_dir() {
         DEGCT_LOG_DIR="$(degct_env RUN_LOG_DIR "")/$(date +%Y-%m-%d)"
         return
     fi
+    # A KIND IS ITS TREE'S NAME, so there is nothing to map and nothing to keep in step.
     case "$1" in
-        measure) root="$ROOT/performance/logs" ;;
-        test) root="$ROOT/testing/logs" ;;
-        analysis) root="$ROOT/analysis/logs" ;;
+        performance | testing | analysis) root="$ROOT/$1/logs" ;;
         "")
             echo "run-logged.sh: no --kind, and nothing in the command declares one." >&2
-            echo "Pass --kind measure|test|analysis, or give the tool a header line:" >&2
+            echo "Pass --kind performance|testing|analysis, or give the tool a header line:" >&2
             echo "    # run-log-kind: analysis" >&2
             exit 2
             ;;
         *)
-            echo "--kind $1: expected measure, test or analysis" >&2
+            echo "--kind $1: expected performance, testing or analysis" >&2
             exit 2
             ;;
     esac
@@ -180,14 +183,14 @@ case "${1:-}" in
         # NAMING A PATH RUNS NOTHING, so there is no command to read a kind from - a caller
         # asking for a name either said --kind or set RUN_LOG_DIR, which is what every
         # in-repository caller does.
-        set_log_dir "${KIND:-measure}"
+        set_log_dir "${KIND:-performance}"
         unique "$DEGCT_LOG_DIR/$(stem "$2" "$3")" ".txt"
         echo
         exit 0
         ;;
     --folder-only)
         [ $# -eq 3 ] || usage
-        set_log_dir "${KIND:-measure}"
+        set_log_dir "${KIND:-performance}"
         unique "$DEGCT_LOG_DIR/$(stem "$2" "$3")" ""
         echo
         exit 0

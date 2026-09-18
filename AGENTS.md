@@ -11,22 +11,26 @@ it would be.
 Genuinely instant things - `ls`, `git status`, reading a file - do not need it.
 
 ```sh
-tools/run-logged.sh --kind test cargo full-suite -- cargo test --release
-DEGCT_CONVERSATION=631 tools/run-logged.sh --kind measure cargo shared-symbolic -- \
+tools/run-logged.sh --kind testing cargo full-suite -- cargo test --release
+DEGCT_CONVERSATION=631 tools/run-logged.sh --kind performance cargo shared-symbolic -- \
   cargo run --release --example shared_symbolic
 ```
 
 **`--kind` says which tree the log belongs in**, and the three are named the same way:
 
 ```text
-measure   performance/logs   the default: runs whose output is numbers to compare
-test      testing/logs        suites, in-game runs and builds, beside the harness's own logs
-analysis  analysis/logs       tools that read what a measurement produced
+performance  performance/logs  timing: numbers to compare against other numbers
+testing      testing/logs      correctness: suites, in-game runs and builds
+analysis     analysis/logs     data: what some other run decided, read back
 ```
 
+**EVERY RUN IS A MEASUREMENT** - of correctness, of data, or of timing - which is why none of
+the three is called `measure`: the kind says WHAT IS MEASURED. Each one is also its tree's
+name, so a log's kind and its path say the same word.
+
 THE TOOL NAME CANNOT DECIDE IT, which is why it is said rather than inferred: `cargo
-full-suite` is a test and `cargo walk-1467` is a measurement, and both are cargo. The kind is
-about what the run is FOR, and only the caller knows that.
+full-suite` measures correctness and `cargo walk-1467` measures timing, and both are cargo.
+Only the caller knows which.
 
 **THE KIND DECIDES MORE THAN THE TREE: only `measure` pays the cold-run tax.** A throw-away
 first pass protects a comparison between TIMINGS, and a test or an analysis pass produces none -
@@ -37,7 +41,7 @@ perf tool pressed into deriving a dataset says so itself:
 tools/measure-menus.py --kind analysis --runs 1 all   # which groups fall through; no cold pass
 ```
 
-`--kind` on the tool beats the variable, and with neither the run counts as a measurement and
+`--kind` on the tool beats the variable, and with neither the run counts as timing and
 pays - skipping a discard that was wanted corrupts a comparison silently, while taking one that
 was not wanted costs a run.
 

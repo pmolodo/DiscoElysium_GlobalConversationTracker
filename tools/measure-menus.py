@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# run-log-kind: measure
+# run-log-kind: performance
 
 """Measure a whole MENU per group, one group per process: the heavy groups one at a time, then
 the rest several at a time.
@@ -59,20 +59,20 @@ and summary.txt, the per-run totals and the costliest groups, and prints the sum
 
     DEGCT_WORKERS=1 tools/measure-menus.py --runs 3 all
 
-A THROW-AWAY RUN COMES FIRST FOR A MEASUREMENT, so --runs 3 takes four and --runs 1 takes two.
-It goes in run-cold, is reported beside the combination and left out of it, and is kept on disk
-rather than deleted. See COLD_FOLDER for the evidence, and `tools/cold-run-effect.py` to
-recompute it.
+A THROW-AWAY RUN COMES FIRST WHERE TIMING IS WHAT IS BEING MEASURED, so --runs 3 takes four and
+--runs 1 takes two. It goes in run-cold, is reported beside the combination and left out of it,
+and is kept on disk rather than deleted. See COLD_FOLDER for the evidence, and
+`tools/cold-run-effect.py` to recompute it.
 
-IT IS A TAX ON TIMINGS ONLY. This is a perf tool, and asking it for a DATASET rather than a
-number is an ordinary thing to want - which groups fall through to step 2, say, via
-DEGCT_MARKING=onward. Those columns read the same cold as warm, so say what the run is for and
+IT IS A TAX ON TIMINGS ONLY. This is a performance tool, and asking it for a DATASET rather than
+a number is an ordinary thing to want - which groups fall through to step 2, say, via
+DEGCT_MARKING=onward. Those columns read the same cold as warm, so say what the run measures and
 skip the extra pass:
 
     tools/measure-menus.py --kind analysis --runs 1 all
 
 --kind overrides the DEGCT_RUN_KIND that `tools/run-logged.sh --kind` exports, and with neither
-the run counts as a measurement and pays. See `takes_cold_run`.
+the run counts as a performance run and pays. See `takes_cold_run`.
 
 WHAT COUNTS AS DONE:
 
@@ -140,16 +140,27 @@ SETTLE_MS = 100
 class Run:
     """One folder of rows, and what has already been written into it."""
 
-    def __init__(self, out, record=None):
+    def __init__(self, out, menus, digest):
         self.folder = Path(out)
         self.folder.mkdir(parents=True, exist_ok=True)
         self.rows = self.folder / "menus.tsv"
         self.log = self.folder / "menus.log"
-        # THE BUILD'S OWN OUTPUT GOES IN THIS RUN'S FOLDER, and what it did goes into the run
-        # record - which lives at `record` for a multi-run pass, where the folder here is one
-        # run of several and the record is their shared one.
-        self.menus, did = build_measurement(MENUS, folder=self.folder)
-        common.add_build_record(record or self.folder, did, run=self.folder.name)
+        # THE BINARY IS HANDED IN, BUILT ONCE FOR THE WHOLE PASS, AND CHECKED HERE. Building
+        # once makes the runs agree only as far as this process is concerned; anything else on
+        # the machine can relink the file between run 2 and run 3. Refused rather than reported,
+        # because the rows either side would be a comparison between two binaries wearing one
+        # revision - see `measurement_common.binary_digest`.
+        self.menus = menus
+        now = common.binary_digest(menus)
+        if now != digest:
+            refuse(
+                f"{Path(menus).name} changed during this pass - built {digest[:12]}, now "
+                f"{now[:12]}.\n"
+                "Something rebuilt it between runs: most likely a cargo build started by hand "
+                "while this was running.\n"
+                f"The runs already in {self.folder.parent} measured the earlier binary, so the "
+                "pass is half one build and half another. Re-run it.",
+            )
 
     def recorded(self):
         """The rows already written, by conversation, so a resume can skip them.
@@ -292,8 +303,8 @@ def cost_of(rows):
     return f"{verdict} ms" if verdict.isdigit() else verdict
 
 
-def measure(out, conversations, workers, record=None):
-    run = Run(out, record=record)
+def measure(out, conversations, workers, menus, digest):
+    run = Run(out, menus, digest)
     run.header()
 
     if conversations == ["all"]:
@@ -400,26 +411,28 @@ RUN_FOLDER = "run-{}"
 COLD_FOLDER = "run-cold"
 
 # The one kind of run whose numbers a cold first run can spoil. See COLD_FOLDER.
-MEASURE_KIND = "measure"
+PERFORMANCE_KIND = "performance"
 
-# The same three `tools/run-logged.sh` names, so a kind means one thing across the repository.
-KINDS = (MEASURE_KIND, "test", "analysis")
+# The same three `tools/run-logged.sh` names, each of which is also its tree's name. EVERY RUN
+# IS A MEASUREMENT - of correctness, of data, or of timing - so none of them is called
+# "measure"; the kind says what is being measured.
+KINDS = (PERFORMANCE_KIND, "testing", "analysis")
 
 
 def takes_cold_run(asked):
-    """Whether this run throws a first pass away, which only a measurement does.
+    """Whether this run throws a first pass away, which only a performance run does.
 
     `asked` is --kind, which WINS over the wrapper's `DEGCT_RUN_KIND`: the wrapper is told what
-    a run is for before the tool is, and a perf tool pressed into deriving a dataset is exactly
-    the case where the two differ. Saying it on the command line is what makes that a one-word
-    change rather than a reason to reach for a second driver.
+    a run measures before the tool is, and a performance tool pressed into deriving a dataset is
+    exactly the case where the two differ. Saying it on the command line is what makes that a
+    one-word change rather than a reason to reach for a second driver.
 
-    UNKNOWN COUNTS AS A MEASUREMENT, deliberately. An unwrapped invocation with no --kind says
+    UNKNOWN COUNTS AS TIMING, deliberately. An unwrapped invocation with no --kind says
     nothing about itself, and the failure directions are not symmetric: skipping the discard
     where it was wanted can silently corrupt a comparison, while taking one where it was not
     wanted costs a run. Pay the run.
     """
-    return (asked or env("RUN_KIND", MEASURE_KIND)) == MEASURE_KIND
+    return (asked or env("RUN_KIND", PERFORMANCE_KIND)) == PERFORMANCE_KIND
 
 
 # How many of the costliest groups the summary lists.
@@ -640,18 +653,35 @@ def main(argv=None):
 
     workers = env_int("WORKERS", default_workers())
     record_run(out, workers, args.runs, named, args.kind)
+
+    # BUILT ONCE FOR THE WHOLE PASS, BEFORE THE FIRST RUN, so every run of it is the same
+    # binary BY CONSTRUCTION. Building per run made that a matter of nobody having touched the
+    # tree meanwhile: an edit between run 2 and run 3 turned the next staleness check into a
+    # real compile, and runs 1-2 and run 3 then measured different code under one revision in
+    # run.json. Half a second is not why this is here - a pass that silently measures two
+    # binaries is, and it looks exactly like a pass that measured one.
+    #
+    # A RESUME IS A NEW PASS and builds again, which is right: it is a separate invocation and
+    # may be at a separate revision, which `write_run_record` already says out loud.
+    #
+    # AND ITS DIGEST IS TAKEN HERE and checked before every run, because building once only
+    # binds what THIS process does. A cargo build started by hand in another window while a
+    # pass is running relinks the file underneath it; see `Run.__init__`.
+    menus, did = build_measurement(MENUS, folder=out)
+    digest = did["sha256"]
+    common.add_build_record(out, did)
     try:
         # ONE RUN AFTER ANOTHER, never side by side: two runs at once would each be measuring
         # how busy the other made the machine. Each keeps its own folder, so a resume picks up
         # the run that was interrupted and leaves the finished ones alone.
         #
-        # THE COLD RUN IS FIRST AND IS NOT COMBINED, and a run that is not a measurement does
-        # not take one at all. See COLD_FOLDER and `takes_cold_run`.
+        # THE COLD RUN IS FIRST AND IS NOT COMBINED, and a run measuring anything but timing
+        # does not take one at all. See COLD_FOLDER and `takes_cold_run`.
         cold = None
         if takes_cold_run(args.kind):
             cold = out / COLD_FOLDER
             print(f"\n=== cold run (discarded from the combination) -> {cold} ===")
-            measure(cold, named, workers, record=out)
+            measure(cold, named, workers, menus, digest)
         else:
             print(f"\n=== {args.kind or env('RUN_KIND')}: no cold run, its columns do not time ===")
 
@@ -659,7 +689,7 @@ def main(argv=None):
         for number in range(1, args.runs + 1):
             folder = out / RUN_FOLDER.format(number)
             print(f"\n=== run {number} of {args.runs} -> {folder} ===")
-            measure(folder, named, workers, record=out)
+            measure(folder, named, workers, menus, digest)
             folders.append(folder)
         combine(folders, out, cold=cold)
         return 0

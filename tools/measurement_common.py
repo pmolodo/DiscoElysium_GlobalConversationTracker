@@ -23,6 +23,7 @@ sharing a coincidence.
 """
 
 import csv
+import hashlib
 import io
 import json
 import os
@@ -386,13 +387,13 @@ def read_run_record(folder):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def add_build_record(folder, did, run=None):
+def add_build_record(folder, did):
     """Adds what one build did to `folder`'s run record, under `builds`.
 
     APPENDED RATHER THAN WRITTEN WITH THE REST, because the record is written before anything
-    is built - it is what a resume is checked against - and a multi-run pass builds once per
-    run. So `builds` grows to one entry per run, each saying how long cargo took and whether
-    it actually recompiled.
+    is built - it is what a resume is checked against. A pass builds ONCE, so `builds` gains one
+    entry saying how long cargo took and whether it actually recompiled; it grows past one only
+    where a folder was resumed, and then each entry is a separate invocation's build.
 
     WHAT IT ANSWERS LATER: whether two runs being compared were built the same way. A revision
     and a dirty flag say what the SOURCE was; they do not say whether the binary was freshly
@@ -405,10 +406,7 @@ def add_build_record(folder, did, run=None):
     if not path.exists():
         return
     record = json.loads(path.read_text(encoding="utf-8"))
-    entry = dict(did)
-    if run is not None:
-        entry["run"] = str(run)
-    record.setdefault("builds", []).append(entry)
+    record.setdefault("builds", []).append(dict(did))
     write_lf(path, json.dumps(record, indent=2))
 
 
@@ -778,12 +776,21 @@ BUILD_LOG = "build.log"
 def build_measurement(example, folder=None, quiet=False):
     """Builds `example` once and returns `(binary, what_the_build_did)`, or stops the run.
 
-    BUILT ONCE, UP FRONT, and then called DIRECTLY rather than through `cargo run`. Letting
-    each row build would put a compile inside the timing of whichever row happened to run
-    first, and `cargo run` re-checks the build on every invocation - measured 2026-09-08 on an
-    up-to-date tree at 0.552s against 0.042s for the binary, which over a whole-game run is
-    about two hours spent re-answering one question. It is also a LOCK: concurrent `cargo
-    run`s serialise on the target directory, which is fatal to running groups side by side.
+    BUILT ONCE PER PASS, UP FRONT, and then called DIRECTLY rather than through `cargo run`.
+
+    ONCE PER PASS RATHER THAN ONCE PER RUN, and the reason is correctness before cost. A
+    staleness check between two runs turns into a real compile if anything touched the tree
+    meanwhile, so runs 1-2 and run 3 would measure different binaries while run.json recorded
+    one revision for all three - a pass that silently measured two builds, looking exactly like
+    a pass that measured one. Building before the first run makes them the same binary by
+    construction rather than by nobody having edited anything.
+
+    ONCE PER PASS RATHER THAN ONCE PER ROW for cost as well: a compile inside the timing of
+    whichever row ran first, and `cargo run` re-checking the build on every invocation -
+    measured 2026-09-08 on an up-to-date tree at 0.552s against 0.042s for the binary, about
+    two hours over a whole-game run spent re-answering one question. It is also a LOCK:
+    concurrent `cargo run`s serialise on the target directory, which is fatal to running groups
+    side by side.
 
     ## What the build has to say for itself, and why
 
@@ -858,7 +865,30 @@ def build_measurement(example, folder=None, quiet=False):
         "seconds": round(seconds, 3),
         "status": built.returncode,
         "recompiled": recompiled,
+        "sha256": binary_digest(binary),
     }
+
+
+# How much of a binary is read at a time when hashing it. Large enough that a release binary
+# takes a handful of reads, small enough not to hold it all in memory at once.
+DIGEST_BLOCK = 1 << 20
+
+
+def binary_digest(path):
+    """The SHA-256 of a built binary, so a pass can PROVE every run used the same one.
+
+    Building once per pass makes the runs agree by construction only as far as this process is
+    concerned. Nothing stops another one - a cargo build in a second window, an editor's
+    save-and-build, a concurrent driver - from relinking the file underneath a pass that is
+    halfway through it. The mtime would move and nothing here would look; a digest taken after
+    the build and checked before each run turns that into a refusal instead of a quiet
+    half-and-half comparison.
+    """
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(DIGEST_BLOCK), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def ask(binary, extra_env, base_env=None):
