@@ -23,9 +23,9 @@
 //! the product gives it: the onward question first, and the exact marking by branch and bound
 //! only where that marks nothing. `DEGCT_MARKING=hybrid-bnb` names that default;
 //! `DEGCT_MARKING=bnb` puts the exact marking on every group instead, and
-//! `DEGCT_MARKING=hybrid-onward` drops the hybrid's siblings-alone level so that a menu whose
-//! walk cut leaves nothing onward goes straight to the exact marking. Both are opt-in
-//! comparisons.
+//! `DEGCT_MARKING=hybrid-siblings` puts back the siblings-alone level the shipped rule
+//! leaves out, asking the onward question a second time with the walk forgotten before any
+//! exact search. Both are opt-in comparisons.
 //!
 //! WITH THE WALK, because the product asks with one. A profile's menu has nobody behind it, so
 //! the walk a player would have been shown is built from the conversation's start before the
@@ -214,9 +214,9 @@ enum Marking {
     /// The exact marking by branch and bound on every group, with no onward question first -
     /// see `menu::mark_menu`. An opt-in comparison: it takes no cut and no walk.
     BranchAndBound,
-    /// The hybrid WITHOUT its siblings-alone level, so a menu whose walk cut leaves nothing
-    /// onward goes straight to the exact marking - see `menu::Fallback::Exact` and de-l88t.
-    HybridOnwardOnly,
+    /// The hybrid WITH a siblings-alone level before the exact marking, which the shipped
+    /// rule leaves out - see `menu::Fallback::SiblingsThenExact` and de-l88t.
+    HybridSiblings,
     /// The shipped hybrid with the SPENT BRANCHES cut beside the walk: a branch off a hub the
     /// player is inside whose one-time effects have all fired and which shows nothing unread
     /// cannot be the way on, so it is refused like the walk itself. See de-wi02.
@@ -226,7 +226,7 @@ enum Marking {
 /// What `DEGCT_MARKING` says for each marking.
 const HYBRID_BRANCH_AND_BOUND: &str = "hybrid-bnb";
 const BRANCH_AND_BOUND: &str = "bnb";
-const HYBRID_ONWARD_ONLY: &str = "hybrid-onward";
+const HYBRID_SIBLINGS: &str = "hybrid-siblings";
 const HYBRID_SPENT: &str = "hybrid-spent";
 
 /// The marking `DEGCT_MARKING` names: `hybrid-bnb`, the default and what the product marks
@@ -247,10 +247,10 @@ fn marking() -> Marking {
     {
         "" | HYBRID_BRANCH_AND_BOUND => Marking::HybridBranchAndBound,
         BRANCH_AND_BOUND => Marking::BranchAndBound,
-        HYBRID_ONWARD_ONLY => Marking::HybridOnwardOnly,
+        HYBRID_SIBLINGS => Marking::HybridSiblings,
         HYBRID_SPENT => Marking::HybridSpent,
         other => panic!(
-            "DEGCT_MARKING={other:?}: expected {HYBRID_BRANCH_AND_BOUND}, {BRANCH_AND_BOUND},              {HYBRID_ONWARD_ONLY} or {HYBRID_SPENT}"
+            "DEGCT_MARKING={other:?}: expected {HYBRID_BRANCH_AND_BOUND}, {BRANCH_AND_BOUND},              {HYBRID_SIBLINGS} or {HYBRID_SPENT}"
         ),
     }
 }
@@ -763,14 +763,14 @@ where
             ),
             // THE SAME WALK AND THE SAME CUT as the shipped arm, differing only in what it does
             // where the onward question stars nothing, so the two are a controlled comparison.
-            Marking::HybridOnwardOnly => menu::mark_menu_hybrid(
+            Marking::HybridSiblings => menu::mark_menu_hybrid(
                 marking_search,
                 novelty,
                 &contestants,
                 &marking_budget,
                 &shape,
                 &lookahead_engine::bridge::passed_since_hub(graph, &shape, &walk),
-                menu::Fallback::Exact,
+                menu::Fallback::SiblingsThenExact,
             ),
             // BOTH CUTS, and INSIDE THE TIMING as the walk's own cut is, since a player's
             // request would have to work this out too.

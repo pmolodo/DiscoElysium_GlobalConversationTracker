@@ -81,13 +81,13 @@ pub struct Budget {
 /// See CLAUDE.md on keeping one algorithm everywhere by default.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
 pub enum Fallback {
-    /// The shipped rule: ask the onward question again with the siblings alone, and only then
-    /// the exact marking.
+    /// The shipped rule: straight to the exact marking, so a route that goes back is offered
+    /// only where the walk's own cut found nothing going on at all.
     #[default]
-    SiblingsThenExact,
-    /// Straight to the exact marking, so a route that goes back is shown only where the walk's
-    /// own cut found nothing going on. See de-l88t.
     Exact,
+    /// Ask the onward question a second time with the siblings alone, forgetting the walk,
+    /// before reaching for the exact marking. An opt-in comparison. See de-l88t.
+    SiblingsThenExact,
 }
 
 /// Marks a menu by the cheap question, falling back to the exact one only where it answers
@@ -95,45 +95,55 @@ pub enum Fallback {
 ///
 /// ## The rule
 ///
-/// Up to three steps, stopping at the first that stars anything:
+/// Two steps, and the second runs only where the first stars nothing:
 ///
 /// 1. WALK AND SIBLINGS CUT. Ask each option whether it reaches unread content with its
 ///    siblings cut and everything the player has passed since their hubs cut too. A route that
 ///    had to return through another option of this menu, or back through a menu the player
-///    already left, cannot survive the cut, so a yes means the option leads onward. Where the
-///    walk cuts nothing beyond this menu's own options, this is step 2's question, and is
-///    skipped for it.
-/// 2. SIBLINGS CUT ONLY, asked where step 1 starred nothing. The walk can leave nothing onward
-///    at all - every route to unread content going back through the hub the menu hangs off -
-///    and the menu is then answered as though nothing had been walked. [`Fallback::Exact`]
-///    leaves this step out.
-/// 3. EXACT MARKING, NOTHING CUT, where neither question starred anything and something is
-///    reachable. It keeps the routes the cuts cannot see, such as one that sets a variable and
-///    comes back through the hub to what the variable opens.
+///    already left, cannot survive the cut, so a yes means the option leads onward. An empty
+///    walk, or one holding nothing but this menu's own options, cuts the siblings alone.
+/// 2. EXACT MARKING, NOTHING CUT, where step 1 starred nothing and something is reachable. It
+///    keeps the routes the cut cannot see, such as one that sets a variable and comes back
+///    through the hub to what the variable opens.
 ///
-/// STEP 2 IS WHAT KEEPS THE EXACT MARKING RARE. Without it a walk cut that empties the onward
-/// question sends the menu straight to the exact marking, which knows nothing of the walk and
-/// is the costliest arrangement there is: measured on the whole-game matrix, 761's menu then
-/// fails to settle at 256 MB, and 640's takes three times as long to star what it did anyway.
+/// SO A ROUTE THAT GOES BACK IS OFFERED ONLY WHERE NOTHING GOES ON, which is the whole of what
+/// a player has to learn: a marker means "onward from here", and the one time it means anything
+/// looser is a menu where onward leads nowhere at all.
 ///
-/// ## What dropping step 2 costs, measured 2026-09-17 (de-l88t)
+/// ## The step that is not here, and why it was taken out
 ///
-/// [`Fallback::Exact`] is the arm that leaves it out. It is worth having because step 2 hands
-/// back exactly the routes step 1's cut exists to refuse - an option whose only way to unread
-/// content runs back out through the hub the player just came in by - so a menu answered at
-/// step 2 contradicts what step 1 taught the player.
+/// [`Fallback::SiblingsThenExact`] puts it back, as a comparison. It asks the onward question a
+/// SECOND time with the siblings alone, forgetting the walk, before reaching the exact marking -
+/// which answers a menu whose walk cut emptied the first question without paying for an exact
+/// search. What it hands back there is exactly what step 1's cut exists to refuse: an option
+/// whose only way to unread content runs back out through the hub the player just came in by.
+/// It also does not reach the case that motivates going back at all - a loop that sets a
+/// variable so a later pass through old territory opens something new - because a cut that keeps
+/// the loop out cannot see what the loop opens. Only step 2 finds that.
 ///
-/// Over the whole game, three runs each, it moved four menus of 395 and THREE OF THEM GOT
-/// TIGHTER at no cost: 517 went from five stars to one and 554 from five to one, both at
-/// unchanged milliseconds, and 16 lost a star it should lose.
+/// ## What taking it out did, measured 2026-09-17 over the whole game (de-l88t)
 ///
-/// The fourth is why it is an arm and not the default. 761 stopped settling at all - 0 of 8
-/// options, 2,628 ms against 981 - and the whole game rose 15.8 per cent. The nolimit arm says
-/// that is structural rather than a budget to raise: the exact marking answers 761 with the
-/// same four stars step 2 gave, in 140,103 ms and 93,353,567 diagram nodes, about 3.7 GB.
+/// Three runs an arm, one machine, asked in a state a playthrough walked to - see
+/// `menu_profile::walked_profile`:
 ///
-/// NEITHER READING IS SETTLED, because both were taken on a profile that asks every menu in a
-/// state no save holds - see `menu_matrix`'s `seen_world` and de-aqxa.
+/// ```text
+///   with the step      8,698 ms      1,174 markers
+///   without it         8,638 ms      1,107 markers
+///
+///   menus whose markers moved     40 of 389
+///     strictly fewer                39
+///     strictly more                  1
+/// ```
+///
+/// It is not slower, and it takes away sixty-eight loose markers for one gained.
+///
+/// THE OTHER PROFILE SAYS +15.8 PER CENT AND IT IS AN ARTEFACT, which is worth knowing because
+/// the number is large enough to overturn this on sight. `MenuProfile::of` asks each menu with
+/// almost every line called read while the world it hands the engine has been shown NOTHING, and
+/// `state::seed_state` seeds every `once` slot from that world - so every one-time effect in the
+/// group is still pending. On 761 that is the difference between 50 thousand diagram nodes and
+/// 93 million. No save holds it: a player meeting a conversation for the first time has its
+/// onces unfired AND its lines unread, which stars at step 1 immediately.
 ///
 /// ## Why, from the whole game
 ///
@@ -144,8 +154,8 @@ pub enum Fallback {
 ///
 /// Its one cost is 25 menus of 395 where content is reachable and every route to it returns
 /// through the menu, so the cheap question marks nothing. Those are all small - 24 of the 25
-/// answer exactly in between 18 and 80 ms - so step 2 is affordable exactly where it fires,
-/// and never fires on 761, 631 or 640.
+/// answer exactly in between 18 and 80 ms - so the exact marking is affordable exactly where
+/// it fires.
 ///
 /// IT IS NOT A SUPERSET OF THE EXACT MARKING, and it is worth being exact about why, since
 /// the shape of the rule invites the assumption. Where the cheap question marks SOME options
