@@ -431,6 +431,7 @@ COMPARED_VARIABLES = frozenset(
         "NOLIMIT",
         "SEEN_WORLD",
         "STARTS",
+        "WALKED_PROFILE",
         "UNSEEN",
         "SETTLE_GROUPS",
         "SETTLE_FACTOR",

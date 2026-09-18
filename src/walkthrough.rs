@@ -234,7 +234,25 @@ pub struct Playthrough {
     /// WHAT THE NEXT STAGE OF AN ESCALATION PICKS FROM: the closest check not yet being passed
     /// is the one to try a 12 on.
     pub rolled: Vec<(DialogueNodeId, usize)>,
+    /// The data state the playthrough ends in: what a save would hold, the counters at the
+    /// values the walk drove them to and the one-time effects it fired already fired.
+    ///
+    /// WHAT MAKES A TRUNCATED WALK USABLE AS A PROFILE. The seen set alone says which entries
+    /// were displayed; this says what they DID, and the two together are the world the walk
+    /// stopped in rather than a world somebody declared.
+    pub ended: LookAheadState,
     pub stopped: Stop,
+}
+
+/// When a playthrough stops short of exhausting the conversation.
+///
+/// WHY IT IS COUNTED IN ENTRIES SHOWN rather than legs: a leg can show several entries, so
+/// stopping after n legs stops at a number nobody chose. A profile wants exactly so many
+/// entries still to come.
+#[derive(Clone, Copy, Default)]
+pub struct Until {
+    /// Stop once this many entries have been shown. `None` walks to exhaustion.
+    pub shown: Option<usize>,
 }
 
 /// How many refusals a playthrough keeps the reason for. Enough to see the shape of what a
@@ -279,6 +297,7 @@ pub fn greedy_playthrough(
     conversation: i32,
     ceiling: usize,
     passing: &HashSet<DialogueNodeId>,
+    until: Until,
 ) -> Playthrough {
     let start = DialogueNodeId::new(conversation, 0);
     let mut done = Playthrough {
@@ -287,6 +306,7 @@ pub fn greedy_playthrough(
         refused: 0,
         blocked: Vec::new(),
         rolled: Vec::new(),
+        ended: seed_state(graph, world),
         stopped: Stop::Exhausted,
     };
     if graph.get(start).is_none() {
@@ -370,6 +390,10 @@ pub fn greedy_playthrough(
             ..reached.leg
         });
         state = reached.state;
+        done.ended = state.clone();
+        if until.shown.is_some_and(|wanted| done.shown.len() >= wanted) {
+            return done;
+        }
         at = reached.at;
         line_up = reached.line_up;
         restarting = false;
@@ -424,7 +448,14 @@ pub fn roll_escalation(
     let mut stages = Vec::new();
 
     loop {
-        let walk = greedy_playthrough(graph, world, conversation, ceiling, &passing);
+        let walk = greedy_playthrough(
+            graph,
+            world,
+            conversation,
+            ceiling,
+            &passing,
+            Until::default(),
+        );
         // THE CLOSEST STILL FAILING, and ties go to the smaller entry so two runs of this
         // concede the same check in the same order.
         let next = walk

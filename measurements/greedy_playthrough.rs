@@ -62,7 +62,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use lookahead_engine::bridge::{NodeRef, SnapshotWorld, WorldSnapshot};
+use lookahead_engine::bridge::SnapshotWorld;
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{Index, build_group_graph, discover_group, read_index};
@@ -71,33 +71,15 @@ use lookahead_engine::walkthrough::{Playthrough, Stage, Stop, roll_escalation};
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+#[path = "save_world.rs"]
+mod save_world;
+
 /// What one leg's search may hold in walk positions before it gives up.
 ///
 /// Well under `oracle::CEILING`, because this runs a search PER LEG and a group has as many
 /// legs as it has entries worth reaching, where the oracle runs one. A group that needs more
 /// says so in its row rather than costing the whole run.
 const CEILING: usize = 200_000;
-
-/// The save every walk is taken against.
-///
-/// ## Why one save, and why this one
-///
-/// A default snapshot cannot walk: `walkthrough` refuses rather than guesses where it cannot
-/// decide what the game would show, so a world that answers no skill check, no item test and no
-/// variable stops after a step or two. Measured on 537, which walks 0 -> 171 -> 574 -> 482 and
-/// then refuses.
-///
-/// So a walk needs a save. Which save is not a free choice in principle: a conversation can be
-/// written to assume variables that only hold at a point in the game, and walking it from a save
-/// that could never stand there gives a degenerate walk. Establishing which saves are legitimate
-/// for which conversations is a far bigger question than this answers.
-///
-/// The template is the fair common denominator - the blank slate every committed scenario save
-/// is eventually a diff over - so every group is walked from the same place and no group is
-/// favoured by a save that happens to suit it. What that costs is stated rather than hidden: a
-/// group whose content assumes a later game will not be walked far, and its row says so in
-/// `unshown`.
-const SAVE: &str = "save_template";
 
 fn out_dir() -> PathBuf {
     lookahead_engine::core::env::var("PLAYTHROUGHS_OUT")
@@ -135,59 +117,6 @@ fn group_starts(index: &Index) -> Vec<i32> {
     let mut starts: Vec<i32> = canonical.into_values().collect();
     starts.sort_unstable();
     starts
-}
-
-/// The world [`SAVE`] puts this group in, built the way `tests/scenario_suites.rs` builds one.
-///
-/// EVERY FIELD THAT LETS THE WALK DECIDE SOMETHING, because a field left out is a question the
-/// world cannot answer and a position the walk refuses. The `seen` set matters twice over: the
-/// engine seeds its `once` and `seen` slots from it, so without it every one-time effect starts
-/// unfired and a route the save has already spent is open to the walk.
-fn world_of(graph: &LookAheadGraph, conversation: i32, index: &Index) -> WorldSnapshot {
-    let group: Vec<i32> = discover_group(index, conversation).into_iter().collect();
-    let asked = lookahead_engine::bridge::questions_of(graph, group.clone());
-    let holdings = common::fixtures::holdings_in_save(SAVE);
-    // LOUDLY, because the quiet failure here is not a stricter world but a different one: a
-    // `None` says the actor table or the full index is missing, NOT that the save cannot decide
-    // its checks - it computes them from the character sheet. Defaulting it to empty answers
-    // "unknown" for every check, and the walk then refuses at the first one. That is what
-    // stopped 761 a step past its start, at the Perception (Sight) check on 761:302.
-    let checks = common::fixtures::checks_in_save(SAVE, &group)
-        .expect("the actor table and the full index are both present");
-
-    let mut snapshot = WorldSnapshot {
-        money: holdings.money,
-        day_minutes: holdings.day_minutes,
-        day_counter: holdings.day_counter,
-        // LOCKED, as the plugin sends it, for the reason the scenario suites give: nothing the
-        // game exposes to Lua says whether its clock is locked, so a walk that let time pass
-        // would be walking a world no run of the game is in.
-        clock_locked: true,
-        data_values: holdings.data_for(&asked.data),
-        items: holdings.items.clone(),
-        thoughts: holdings.thoughts.clone(),
-        variables: common::fixtures::variables_sent(SAVE, &asked),
-        seen: common::fixtures::read_in_save_group(SAVE, &group)
-            .into_iter()
-            .map(|(conversation, entry)| NodeRef {
-                conversation,
-                entry,
-            })
-            .collect(),
-        checks_pass: checks.pass,
-        checks_fail: checks.fail,
-        check_margins: checks.margins,
-        red_checks_fail: common::fixtures::passive_thoughts_in_save(SAVE).red_checks_fail,
-        ..Default::default()
-    };
-    // NAMED BY THE REQUESTS THAT ASKED FOR THEM. The data answers go over the wire positionally
-    // and a request resolves them on arrival; a world built here has no request to do it, so
-    // every query would stay Unknown and the walk would refuse at the first one. That is what
-    // stopped 761 at `CheckEquipped("jacket_carabineer")` on 761:87.
-    snapshot
-        .resolve(&asked)
-        .expect("the answers were built from these very questions");
-    snapshot
 }
 
 /// An entry as `conversation:entry`, which is how every log in this repository names one.
@@ -304,7 +233,10 @@ fn main() {
         if graph.get(DialogueNodeId::new(conversation, 0)).is_none() {
             continue;
         }
-        let world = SnapshotWorld::declaring(world_of(&graph, conversation, &index), None);
+        let world = SnapshotWorld::declaring(
+            save_world::of_save(&graph, conversation, &index, save_world::TEMPLATE),
+            None,
+        );
 
         let began = Instant::now();
         let stages = roll_escalation(&graph, &world, conversation, ceiling());

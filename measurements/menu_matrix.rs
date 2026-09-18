@@ -162,6 +162,9 @@ mod common;
 mod menu_profile;
 use menu_profile::MenuProfile;
 
+#[path = "save_world.rs"]
+mod save_world;
+
 #[path = "seen_profile.rs"]
 mod seen_profile;
 use seen_profile::candidates;
@@ -365,6 +368,31 @@ const STARTS: usize = 8;
 /// How many of the group's deepest entries are unread.
 const UNSEEN: usize = 10;
 
+/// What one leg of a walked profile's search may hold, where `DEGCT_WALKED_PROFILE` asks for
+/// one. The same bound `greedy_playthrough` uses, so a profile built here is the one that
+/// generator caches.
+const WALK_CEILING: usize = 200_000;
+
+/// Whether the profile is walked to rather than declared.
+///
+/// ## What it changes, and why it is worth a row file of its own
+///
+/// A default row's unseen set is the structurally deepest entries by link depth, and its world
+/// is a default snapshot that has been shown nothing. Those two disagree, and the engine seeds
+/// its `once` and `seen` slots from the world - so a default row measures a menu with almost
+/// every line read and every one-time effect still pending, which is a state no save holds.
+///
+/// A walked profile takes a greedy playthrough from the template save, stops it with
+/// `DEGCT_UNSEEN` entries still to come, and measures THAT: the unseen entries are the last ones
+/// a nearest-first play reaches, the seen set is what it displayed, and the variables are what
+/// its walk left them at. The keypresses are the witness that some play stands there.
+///
+/// ROWS ARE NOT COMPARABLE ACROSS IT, which is why it is in `COMPARED_VARIABLES`: it is a
+/// different question about a different world, not the same question measured better.
+fn walked_profile() -> bool {
+    lookahead_engine::core::env::is_set("WALKED_PROFILE")
+}
+
 const COUNTER_CAP: i32 = 16;
 
 /// A verdict for a row that could not be measured, which is not a slow row.
@@ -448,13 +476,53 @@ fn main() {
         // THROUGH `MenuProfile`, for the reason it exists: a menu whose starts have nothing
         // better beyond them is refused before a diagram is touched, and the whole row reads
         // as a fast engine while measuring nothing.
-        let Some(profile) = MenuProfile::of(&graph, root, unseen_wanted, starts_wanted) else {
-            row(conversation, &graph, 0, NO_MENU, None);
-            continue;
+        let (profile, walked) = if walked_profile() {
+            let base = SnapshotWorld::declaring(
+                save_world::of_save(&graph, conversation, &index, save_world::TEMPLATE),
+                None,
+            );
+            match menu_profile::walked_profile(
+                &graph,
+                &base,
+                conversation,
+                WALK_CEILING,
+                unseen_wanted,
+                starts_wanted,
+            ) {
+                // THE WALK'S OWN WORLD, less what it has now shown and what its variables now
+                // hold. Everything else - the character sheet, the checks, the inventory - is
+                // the save's, since the walk never changed those.
+                Some(found) => {
+                    let mut snapshot =
+                        save_world::of_save(&graph, conversation, &index, save_world::TEMPLATE);
+                    snapshot.seen = found.seen.iter().copied().map(NodeRef::from).collect();
+                    snapshot.variables = found.variables;
+                    (found.profile, Some(snapshot))
+                }
+                None => {
+                    row(conversation, &graph, 0, NO_MENU, None);
+                    continue;
+                }
+            }
+        } else {
+            match MenuProfile::of(&graph, root, unseen_wanted, starts_wanted) {
+                Some(found) => (found, None),
+                None => {
+                    row(conversation, &graph, 0, NO_MENU, None);
+                    continue;
+                }
+            }
         };
 
         let novelty = profile.novelty();
-        match menu(&graph, conversation, &profile.starts, &novelty, budget) {
+        match menu(
+            &graph,
+            conversation,
+            &profile.starts,
+            &novelty,
+            budget,
+            walked.as_ref(),
+        ) {
             Some(measured) => row(
                 conversation,
                 &graph,
@@ -545,6 +613,7 @@ fn menu<F>(
     starts: &[DialogueNodeId],
     novelty: &F,
     budget: DiagramBudget,
+    walked: Option<&WorldSnapshot>,
 ) -> Option<Menu>
 where
     // SYNC, because the search runs on a thread of its own - de-fpax - and the closure
@@ -559,14 +628,20 @@ where
 
         let began = Instant::now();
         let symbols = graph.symbols().clone();
+        // THE WALKED WORLD WHERE THERE IS ONE, and it is taken WHOLE rather than patched: it
+        // came out of a playthrough that reached the state it describes, and editing a field of
+        // it would put it back among the worlds nobody walked to.
         let world = SnapshotWorld::declaring(
-            WorldSnapshot {
-                day_minutes: 720,
-                day_counter: 1,
-                // EMPTY BY DEFAULT, and `DEGCT_SEEN_WORLD` is what makes it agree with the
-                // novelty function - see [`seen_world`] for what that changes.
-                seen: seen_by_world(graph, novelty, starts, seen_world()),
-                ..Default::default()
+            match walked {
+                Some(snapshot) => snapshot.clone(),
+                None => WorldSnapshot {
+                    day_minutes: 720,
+                    day_counter: 1,
+                    // EMPTY BY DEFAULT, and `DEGCT_SEEN_WORLD` is what makes it agree with the
+                    // novelty function - see [`seen_world`] for what that changes.
+                    seen: seen_by_world(graph, novelty, starts, seen_world()),
+                    ..Default::default()
+                },
             },
             None,
         );

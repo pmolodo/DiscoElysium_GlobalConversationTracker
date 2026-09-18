@@ -89,6 +89,142 @@ impl MenuProfile {
     }
 }
 
+/// A profile and the world the walk that produced it stopped in.
+pub struct Walked {
+    pub profile: MenuProfile,
+    /// Entries the walk put on screen before it stopped: what the world should call seen.
+    pub seen: Vec<DialogueNodeId>,
+    /// The dialogue variables at the point it stopped, by name - the counters at the values
+    /// the walk drove them to, and the flags it set.
+    pub variables: HashMap<String, lookahead_engine::bridge::WireValue>,
+    /// How far the walk got before it was stopped, and how far it could have gone.
+    pub shown: usize,
+    pub reachable: usize,
+}
+
+/// The profile a greedy playthrough leaves when it is stopped with `unseen_wanted` entries
+/// still to come.
+///
+/// ## Why this exists beside [`MenuProfile::of`]
+///
+/// `of` RANKS BY STRUCTURE and asserts the result: the deepest entries by link depth are
+/// called unseen and everything else seen, and nothing checks that any play could stand
+/// there. An asserted state can contradict itself - a `seen:` slot shuts an entry that shuts
+/// once seen, so declaring most of a conversation seen can close the routes to the rest, and
+/// on 761 that left its unread content link-reachable and symbolically unreachable.
+///
+/// This walks instead. The playthrough is taken twice: once to exhaustion, to learn how many
+/// entries any play reaches at all, and once stopped that many less `unseen_wanted`. What
+/// comes back is the seen set and the DATA STATE at the moment of stopping, so the unseen
+/// entries are the last ones a nearest-first play would reach and the world around them is the
+/// one it walked into.
+///
+/// ## What it does not do, and why
+///
+/// THE STARTS ARE CHOSEN AS `of` CHOOSES THEM - entries that can reach something unseen,
+/// shallowest first - rather than being the menu the walk was standing at. A walk stops at the
+/// entry it went for, which is not generally a menu, so standing it at one would mean walking
+/// further on a different rule. Keeping the same start rule also keeps a row the same width as
+/// the rows already measured, so only the world differs. See de-aqxa.2.
+pub fn walked_profile(
+    graph: &LookAheadGraph,
+    world: &dyn lookahead_engine::world::ILookAheadWorld,
+    conversation: i32,
+    ceiling: usize,
+    unseen_wanted: usize,
+    starts_wanted: usize,
+) -> Option<Walked> {
+    use lookahead_engine::walkthrough::{Until, greedy_playthrough};
+
+    let none = HashSet::new();
+    let whole = greedy_playthrough(graph, world, conversation, ceiling, &none, Until::default());
+    // THE START IS ALWAYS SHOWN - opening a conversation displays its entry 0 - so a walk that
+    // reached nothing else has nothing to take an unseen set from.
+    let reachable = whole.shown.len();
+    if reachable <= unseen_wanted {
+        return None;
+    }
+
+    let stop_at = reachable - unseen_wanted;
+    let stopped = greedy_playthrough(
+        graph,
+        world,
+        conversation,
+        ceiling,
+        &none,
+        Until {
+            shown: Some(stop_at),
+        },
+    );
+    let seen = stopped.shown.clone();
+    let unseen: HashSet<DialogueNodeId> = whole.shown[seen.len()..].iter().copied().collect();
+    if unseen.is_empty() {
+        return None;
+    }
+
+    let reaching = can_reach(graph, &unseen);
+    let ranked = deepest_first(graph, DialogueNodeId::new(conversation, 0));
+    let starts: Vec<DialogueNodeId> = ranked
+        .iter()
+        .rev()
+        .filter(|id| reaching.contains(*id) && !unseen.contains(*id))
+        .copied()
+        .take(starts_wanted)
+        .collect();
+    if starts.is_empty() {
+        return None;
+    }
+
+    Some(Walked {
+        profile: MenuProfile { unseen, starts },
+        variables: variables_of(graph, world, &stopped.ended),
+        seen,
+        shown: stop_at,
+        reachable,
+    })
+}
+
+/// The dialogue variables a state holds, by name, as a world answers them.
+///
+/// ONLY THE ONES THAT NAME A VARIABLE. A slot table also carries `seen:`, `once:`, `item:` and
+/// the rest, which a world answers from its own sets rather than from its variables - see
+/// `core::state::seed_state` for which prefix goes where.
+fn variables_of(
+    graph: &LookAheadGraph,
+    world: &dyn lookahead_engine::world::ILookAheadWorld,
+    state: &lookahead_engine::core::state::LookAheadState,
+) -> HashMap<String, lookahead_engine::bridge::WireValue> {
+    use lookahead_engine::bridge::WireValue;
+    use lookahead_engine::core::guard_value::GuardValueKind;
+
+    let symbols = graph.symbols();
+    let mut found = HashMap::new();
+    for slot in 0..symbols.count() {
+        let Some(name) = symbols.name_of(slot) else {
+            continue;
+        };
+        if !lookahead_engine::core::state::names_a_variable(name) {
+            continue;
+        }
+        let Some(variable) = symbols.variable_ref(name) else {
+            continue;
+        };
+        // THE KIND THE WORLD ALREADY GIVES IT, with only the value changed. A slot holds a
+        // number whatever the variable was declared as, and answering a boolean with a number
+        // is a different answer to a guard that compares against true - so the kind is taken
+        // from what this world already says rather than guessed from the slot.
+        let value = state.get(slot);
+        let wire = match world.get_variable(variable).kind() {
+            GuardValueKind::Boolean => WireValue::Bool { value: value != 0 },
+            _ => WireValue::Number {
+                value: f64::from(value),
+            },
+        };
+        found.insert(name.to_string(), wire);
+    }
+    found
+}
+
 /// Every entry reachable from `start` by links, deepest first.
 fn deepest_first(graph: &LookAheadGraph, start: DialogueNodeId) -> Vec<DialogueNodeId> {
     let mut depth: HashMap<DialogueNodeId, usize> = HashMap::new();

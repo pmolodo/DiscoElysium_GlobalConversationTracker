@@ -50,13 +50,14 @@ that started this was a local.
 
 Generated from the code rather than maintained by hand, by `tools/env-table.py`: it greps each
 tracked file for a variable spelled out in full or asked for by bare name through the helper
-for its language, so it says what the code actually asks for. 41 variables.
+for its language, so it says what the code actually asks for. 44 variables.
 
 | `DEGCT_ALL_COMMITTED_SAVES` | `tests/common/mod.rs` |
 | `DEGCT_ARMS` | `tools/measure-residue-arms.sh` |
 | `DEGCT_BUDGET_MB` | `measurements/bidirectional_headroom.rs`, `measurements/bound_slack.rs`, `measurements/cache_split.rs`, `measurements/cache_split_menu.rs`, `measurements/manager_reuse.rs`, `measurements/menu_matrix.rs`, `measurements/onward_or_back.rs`, `measurements/repeat_question.rs`, `measurements/search_residue.rs`, `tools/measure-residue-arms.sh` |
+| `DEGCT_CEILING` | `measurements/greedy_playthrough.rs` |
 | `DEGCT_COMPARE` | `measurements/onward_or_back.rs` |
-| `DEGCT_CONVERSATION` | `AGENTS.md`, `CLAUDE.md`, `docs/modelling-gaps.md`, `measurements/README.md`, `measurements/backward_support.rs`, `measurements/bidirectional_headroom.rs`, `measurements/bound_slack.rs`, `measurements/cache_split.rs`, `measurements/cache_split_menu.rs`, `measurements/counter_widths.rs`, `measurements/layout_shape.rs`, `measurements/manager_reuse.rs`, `measurements/menu_matrix.rs`, `measurements/menu_wall.rs`, `measurements/nodes_repeat.rs`, `measurements/onward_or_back.rs`, `measurements/per_start_setup.rs`, `measurements/repeat_question.rs`, `measurements/workspace_menus.rs`, `src/core/env.rs`, `tests/modelling_gaps.rs`, `tests/reference_oracle.rs`, `tools/degct-env.sh`, `tools/measure-menus.py`, `tools/measure-symbolic.sh`, `tools/measurement_common.py` |
+| `DEGCT_CONVERSATION` | `AGENTS.md`, `CLAUDE.md`, `docs/modelling-gaps.md`, `measurements/README.md`, `measurements/backward_support.rs`, `measurements/bidirectional_headroom.rs`, `measurements/bound_slack.rs`, `measurements/cache_split.rs`, `measurements/cache_split_menu.rs`, `measurements/counter_widths.rs`, `measurements/greedy_playthrough.rs`, `measurements/layout_shape.rs`, `measurements/manager_reuse.rs`, `measurements/menu_matrix.rs`, `measurements/menu_wall.rs`, `measurements/nodes_repeat.rs`, `measurements/onward_or_back.rs`, `measurements/per_start_setup.rs`, `measurements/repeat_question.rs`, `measurements/workspace_menus.rs`, `src/core/env.rs`, `tests/modelling_gaps.rs`, `tests/reference_oracle.rs`, `tools/degct-env.sh`, `tools/measure-menus.py`, `tools/measure-symbolic.sh`, `tools/measurement_common.py` |
 | `DEGCT_EACH_MS` | `measurements/onward_or_back.rs` |
 | `DEGCT_FRESH` | `measurements/workspace_menus.rs` |
 | `DEGCT_GIT_INDEX_FILE` | `build.rs` |
@@ -65,13 +66,14 @@ for its language, so it says what the code actually asks for. 41 variables.
 | `DEGCT_HEADER` | `measurements/menu_matrix.rs`, `tools/measure-menus.py`, `tools/measurement_common.py` |
 | `DEGCT_LAYERS` | `measurements/bidirectional_headroom.rs` |
 | `DEGCT_LOG_DIR` | `tools/measure-symbolic.sh`, `tools/run-logged.sh` |
-| `DEGCT_MARKING` | `AGENTS.md`, `CLAUDE.md`, `measurements/README.md`, `measurements/menu_matrix.rs`, `tools/measurement_common.py`, `tools/menu-costs-diff.py` |
+| `DEGCT_MARKING` | `AGENTS.md`, `CLAUDE.md`, `measurements/README.md`, `measurements/menu_matrix.rs`, `src/symbolic/menu.rs`, `tools/measurement_common.py`, `tools/menu-costs-diff.py` |
 | `DEGCT_MEASUREMENT` | `tools/measure-symbolic.sh` |
 | `DEGCT_MEMORY_BUDGET_MB` | `measurements/menu_residue.rs` |
 | `DEGCT_MENUS_OUT` | `measurements/README.md`, `tools/DegctEnv.psm1`, `tools/degct-env.sh`, `tools/measure-menus.py`, `tools/measurement_common.py` |
 | `DEGCT_MENU_TIME_BUDGET_MS` | `measurements/menu_wall.rs` |
 | `DEGCT_NOLIMIT` | `measurements/menu_matrix.rs`, `src/GlobalConversationTracker.Core/DegctEnvironment.cs`, `src/core/env.rs`, `tools/DegctEnv.psm1`, `tools/degct-env.sh`, `tools/measurement_common.py` |
 | `DEGCT_OUT` | `tools/degct-env.sh` |
+| `DEGCT_PLAYTHROUGHS_OUT` | `measurements/greedy_playthrough.rs` |
 | `DEGCT_PROFILE` | `measurements/seen_profile.rs` |
 | `DEGCT_REPEATS` | `measurements/cache_split.rs`, `measurements/per_start_setup.rs`, `measurements/repeat_question.rs` |
 | `DEGCT_ROUNDS` | `measurements/manager_reuse.rs`, `measurements/nodes_repeat.rs`, `measurements/workspace_menus.rs` |
@@ -82,7 +84,7 @@ for its language, so it says what the code actually asks for. 41 variables.
 | `DEGCT_SCATTER` | `measurements/onward_or_back.rs` |
 | `DEGCT_SEARCHES` | `measurements/search_residue.rs`, `tools/measure-residue-arms.sh` |
 | `DEGCT_SEARCH_MS` | `measurements/repeat_question.rs` |
-| `DEGCT_SEEN_WORLD` | `measurements/menu_matrix.rs` |
+| `DEGCT_SEEN_WORLD` | `measurements/greedy_playthrough.rs`, `measurements/menu_matrix.rs` |
 | `DEGCT_SETTLE_FACTOR` | `tools/measure-menus.py`, `tools/measurement_common.py` |
 | `DEGCT_SETTLE_GROUPS` | `tools/measure-menus.py`, `tools/measurement_common.py` |
 | `DEGCT_SETTLE_MS` | `tools/measure-menus.py`, `tools/measurement_common.py` |
@@ -92,6 +94,7 @@ for its language, so it says what the code actually asks for. 41 variables.
 | `DEGCT_THREAD` | `measurements/search_residue.rs`, `tools/measure-residue-arms.sh` |
 | `DEGCT_TIME_BUDGET_MS` | `measurements/menu_residue.rs`, `measurements/menu_wall.rs` |
 | `DEGCT_UNSEEN` | `measurements/bidirectional_headroom.rs`, `measurements/bound_slack.rs`, `measurements/cache_split_menu.rs`, `measurements/manager_reuse.rs`, `measurements/menu_matrix.rs`, `measurements/menu_residue.rs`, `measurements/nodes_repeat.rs`, `measurements/onward_or_back.rs` |
+| `DEGCT_WALKED_PROFILE` | `measurements/menu_matrix.rs` |
 | `DEGCT_WORKERS` | `measurements/README.md`, `tools/measure-menus.py`, `tools/measurement_common.py` |
 
 ## Keeping this current
