@@ -31,6 +31,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 from datetime import datetime
 from pathlib import Path
@@ -275,6 +276,32 @@ def read_run_record(folder):
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def add_build_record(folder, did, run=None):
+    """Adds what one build did to `folder`'s run record, under `builds`.
+
+    APPENDED RATHER THAN WRITTEN WITH THE REST, because the record is written before anything
+    is built - it is what a resume is checked against - and a multi-run pass builds once per
+    run. So `builds` grows to one entry per run, each saying how long cargo took and whether
+    it actually recompiled.
+
+    WHAT IT ANSWERS LATER: whether two runs being compared were built the same way. A revision
+    and a dirty flag say what the SOURCE was; they do not say whether the binary was freshly
+    linked for one of them and months old for the other, which is the difference a first-run
+    timing question turns on.
+
+    Silent where the folder has no record, because a driver may build before it writes one.
+    """
+    path = Path(folder) / RUN_RECORD
+    if not path.exists():
+        return
+    record = json.loads(path.read_text(encoding="utf-8"))
+    entry = dict(did)
+    if run is not None:
+        entry["run"] = str(run)
+    record.setdefault("builds", []).append(entry)
+    write_lf(path, json.dumps(record, indent=2))
 
 
 def read_combined(folder):
@@ -609,8 +636,12 @@ def setting_differences(first, second):
     return differ
 
 
-def build_measurement(example, quiet=False):
-    """Builds `example` once and returns its binary, or stops the run.
+# Where a build's own output is kept, under the run folder it built for.
+BUILD_LOG = "build.log"
+
+
+def build_measurement(example, folder=None, quiet=False):
+    """Builds `example` once and returns `(binary, what_the_build_did)`, or stops the run.
 
     BUILT ONCE, UP FRONT, and then called DIRECTLY rather than through `cargo run`. Letting
     each row build would put a compile inside the timing of whichever row happened to run
@@ -619,13 +650,35 @@ def build_measurement(example, quiet=False):
     about two hours spent re-answering one question. It is also a LOCK: concurrent `cargo
     run`s serialise on the target directory, which is fatal to running groups side by side.
 
-    CHECKED ONCE, HERE. A missing binary called directly gives an error per group, and every
-    one of those would be recorded as a crashed group - a build failure written into the
-    folder as hundreds of findings.
+    ## What the build has to say for itself, and why
+
+    A NON-ZERO EXIT IS FATAL HERE, and this is the hole it closes. Testing only that a runnable
+    binary exists passes when a compile FAILED and the previous one is still sitting in the
+    target directory - so the run measures old code while its record names the current
+    revision. That is not a confusing error, it is a wrong answer that looks right. Cargo's own
+    stderr goes out with the refusal, because "no runnable binary at <path>" names a path where
+    the compiler had already said what was wrong.
+
+    ITS OUTPUT IS KEPT whether or not it failed. A build that succeeded WITH WARNINGS is
+    exactly the state where something later looks wrong for no visible reason, and capturing
+    the output into a value nobody reads is how that evidence was being destroyed.
+
+    HOW LONG IT TOOK, AND WHETHER IT DID ANYTHING, are reported because a measurement cannot
+    otherwise tell a compile from a staleness check - about half a second on an unchanged tree
+    against tens of seconds for real work. That distinction decided a real question and could
+    not be answered from any log: whether a first run is slower because it ran a freshly linked
+    binary. The binary's mtime moving is the signal, so it is taken before and after.
     """
+    target = Path(env("CARGO_TARGET_DIR", foreign=True) or (ROOT / "target"))
+    binary = target / "release" / "examples" / example
+    if not os.access(binary, os.X_OK):
+        binary = binary.with_suffix(".exe")
+    before = binary.stat().st_mtime if binary.exists() else None
+
     if not quiet:
         print(f"building {example}...")
-    subprocess.run(
+    began = time.monotonic()
+    built = subprocess.run(
         [
             "cargo",
             "build",
@@ -636,16 +689,41 @@ def build_measurement(example, quiet=False):
             str(ROOT / "Cargo.toml"),
         ],
         capture_output=True,
+        text=True,
         check=False,
     )
+    seconds = time.monotonic() - began
 
-    target = Path(env("CARGO_TARGET_DIR", foreign=True) or (ROOT / "target"))
-    binary = target / "release" / "examples" / example
-    if not os.access(binary, os.X_OK):
-        binary = binary.with_suffix(".exe")
+    if folder is not None:
+        path = Path(folder)
+        path.mkdir(parents=True, exist_ok=True)
+        write_lf(
+            path / BUILD_LOG,
+            f"# cargo build --release --example {example}\n"
+            f"# exit {built.returncode} in {seconds:.2f}s\n\n"
+            f"{built.stdout}{built.stderr}",
+        )
+
+    if built.returncode != 0:
+        refuse(
+            f"the measurement did not build - cargo exited {built.returncode}:\n{built.stderr.rstrip()}",
+            code=1,
+        )
+
+    after = binary.stat().st_mtime if binary.exists() else None
+    recompiled = before != after
+    if not quiet:
+        did = "recompiled" if recompiled else "already current"
+        print(f"  built {example} in {seconds:.2f}s ({did})")
+
     if not os.access(binary, os.X_OK):
         refuse(f"the measurement did not build - no runnable binary at {binary}", code=1)
-    return binary
+    return binary, {
+        "example": example,
+        "seconds": round(seconds, 3),
+        "status": built.returncode,
+        "recompiled": recompiled,
+    }
 
 
 def ask(binary, extra_env, base_env=None):

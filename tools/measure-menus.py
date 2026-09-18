@@ -120,12 +120,16 @@ SETTLE_MS = 100
 class Run:
     """One folder of rows, and what has already been written into it."""
 
-    def __init__(self, out):
+    def __init__(self, out, record=None):
         self.folder = Path(out)
         self.folder.mkdir(parents=True, exist_ok=True)
         self.rows = self.folder / "menus.tsv"
         self.log = self.folder / "menus.log"
-        self.menus = build_measurement(MENUS)
+        # THE BUILD'S OWN OUTPUT GOES IN THIS RUN'S FOLDER, and what it did goes into the run
+        # record - which lives at `record` for a multi-run pass, where the folder here is one
+        # run of several and the record is their shared one.
+        self.menus, did = build_measurement(MENUS, folder=self.folder)
+        common.add_build_record(record or self.folder, did, run=self.folder.name)
 
     def recorded(self):
         """The rows already written, by conversation, so a resume can skip them.
@@ -251,8 +255,8 @@ def serial_phase(run, conversations, recorded, workers, settle, reap):
     return len(conversations)
 
 
-def measure(out, conversations, workers):
-    run = Run(out)
+def measure(out, conversations, workers, record=None):
+    run = Run(out, record=record)
     run.header()
 
     if conversations == ["all"]:
@@ -497,7 +501,7 @@ def main(argv=None):
         for number in range(1, args.runs + 1):
             folder = out / RUN_FOLDER.format(number)
             print(f"\n=== run {number} of {args.runs} -> {folder} ===")
-            measure(folder, named, workers)
+            measure(folder, named, workers, record=out)
             folders.append(folder)
         combine(folders, out)
         return 0
