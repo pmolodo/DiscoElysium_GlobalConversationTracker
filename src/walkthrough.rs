@@ -175,8 +175,13 @@ pub struct Leg {
 }
 
 impl Leg {
-    /// The keypress sequence, which is what both executors replay: the in-game harness
-    /// through the probe and the offline runner through [`walk_inputs`].
+    /// The keypress sequence: what the in-game harness presses through the probe.
+    ///
+    /// NOT AN INPUT LIST [`walk_inputs`] WILL TAKE BACK, which is worth saying because the
+    /// shapes match and the assumption is free to make. That function must finish exactly at a
+    /// menu; a session finishes wherever its last leg's target was, and a walk driving at the
+    /// last entries nobody has seen characteristically ends on a terminal line. Measured over
+    /// five real groups, not one session was accepted - see `greedy_playthrough`'s own check.
     pub fn inputs(&self) -> Vec<Input> {
         self.steps.iter().filter_map(|step| step.input).collect()
     }
@@ -1515,15 +1520,21 @@ mod tests {
         assert_eq!(done.legs[1].inputs().len(), 1, "an option costs one press");
     }
 
-    /// THE KEYPRESSES ARE THE WITNESS, so they have to replay: a leg's inputs are fed back
-    /// through `walk_inputs`, the shipped replay path, and must walk the same route.
+    /// THE KEYPRESSES ARE THE WITNESS, so where they can be fed back they have to walk the same
+    /// route: this leg's inputs go through `walk_inputs` and reach what the leg reached.
     ///
     /// A PREFIX RATHER THAN THE SAME LIST, and the difference is each side doing its job. A leg
     /// stops AT ITS TARGET, having gone there to see one new thing; `walk_inputs` must end at a
     /// MENU, so it plays on past the target until one comes up. The leg is the beginning of the
     /// replay, not the whole of it.
+    ///
+    /// WHICH IS WHY THIS IS A GRAPH WITH A MENU AHEAD rather than a claim about the dataset. On
+    /// real conversations a session usually ends on a terminal line, there is no menu to play on
+    /// to, and `walk_inputs` refuses the sequence outright - measured over five groups, none was
+    /// accepted. What this pins is that the keys are RIGHT, not that the offline runner will
+    /// take them.
     #[test]
-    fn a_legs_keypresses_replay_through_walk_inputs() {
+    fn a_legs_keypresses_walk_the_same_route_where_they_can_be_fed_back() {
         let built = graph(a_hub_of_three());
         let done = greedy_playthrough(
             &built,

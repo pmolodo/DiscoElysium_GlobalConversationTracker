@@ -35,8 +35,10 @@ would be a distinction nobody remembers:
 - `greedy_playthrough.rs` is a GENERATOR. It walks each group the way a player would - always
   to the nearest entry not yet shown, counted in presses - and writes the walk under
   `analysis/playthroughs/`: the keypresses, the menu on screen at each decision, and the flat
-  node walk, so a leg replays in game through the probe and offline through
-  `walkthrough::walk_inputs`. NOT COMMITTED, for the reason the group partition is not - it is
+  node walk. The keys are what the in-game harness presses; they are NOT something
+  `walkthrough::walk_inputs` will take back, because that function must finish at a menu and a
+  session finishes wherever its last leg's target was - see `sessions_replay`, which measured
+  that and found none of them accepted. NOT COMMITTED, for the reason the group partition is not - it is
   derived from the index and goes stale silently the first time a group grows an entry.
   `menu_profile::walked_profile` builds the same walk for itself rather than reading the file,
   so nothing breaks when it is missing; the file is for reading, and for anything that wants a

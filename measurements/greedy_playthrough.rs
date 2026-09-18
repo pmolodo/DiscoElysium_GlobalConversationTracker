@@ -36,8 +36,10 @@
 //! Each row carries the legs, and each leg both readings of the same walk:
 //!
 //! - `inputs`, the keys pressed - `enter` for a waiting line, the option's number for a menu of
-//!   several - which is what the in-game harness replays through the probe and what the offline
-//!   runner replays through `walkthrough::walk_inputs`;
+//!   several - which is what the in-game harness presses through the probe. NOT something
+//!   `walkthrough::walk_inputs` takes back: that function must finish at a menu, and a session
+//!   finishes wherever its last leg's target was, which on a greedy walk is characteristically
+//!   a terminal line. `sessions_replay` measured it and found none accepted;
 //! - `steps`, one per press, saying where it was pressed, what menu was on screen, and every
 //!   entry the game stepped through in answer;
 //! - `encountered`, the flat node walk, which is what `LookAheadRequest::encountered` carries.
@@ -151,6 +153,74 @@ fn unshown(graph: &LookAheadGraph, done: &Playthrough) -> Vec<DialogueNodeId> {
     left
 }
 
+/// Whether a session's keypresses are ones `walk_inputs` will take back.
+///
+/// ## What it found, 2026-09-17: NONE OF THEM, AND THE REASON IS THE CONTRACT
+///
+/// Measured over 229, 16, 631, 761 and 537: not one session of any of them replays, and every
+/// failure is the same - "the conversation ends after X, before the inputs reach a menu".
+///
+/// `walk_inputs` GIVEN INPUTS MUST FINISH EXACTLY AT A MENU. A greedy session finishes wherever
+/// its last leg's target was, and a walk that drives at the last entries nobody has been shown
+/// characteristically ends on a terminal line - so the function plays past the inputs looking
+/// for a menu and reaches the end of the conversation instead. Playing on first does not help,
+/// because there is no menu ahead to play on to.
+///
+/// SO THIS IS NOT A VALIDATOR FOR THESE SEQUENCES, and the module doc no longer claims it is.
+/// What the keys are good for is the in-game harness, which presses them and has no such
+/// contract; validating them offline would want a walk that may end anywhere, which is a
+/// different function from the one scenarios need. See de-iph8.
+///
+/// A SESSION RATHER THAN A LEG is the other half of the correction: a leg that did not restart
+/// begins where the last one stopped, so its inputs mean nothing from the conversation's start.
+/// What a keypress sequence corresponds to is the run of legs from the last restart onwards,
+/// which is what `Leg::restarted` delimits.
+///
+/// Returns how many sessions were tried, how many replayed, and why the first failure failed.
+fn sessions_replay(
+    graph: &LookAheadGraph,
+    world: &dyn lookahead_engine::world::ILookAheadWorld,
+    conversation: i32,
+    done: &Playthrough,
+) -> (usize, usize, Option<String>) {
+    let mut tried = 0;
+    let mut replayed = 0;
+    let mut why: Option<String> = None;
+    let mut session: Vec<&lookahead_engine::walkthrough::Leg> = Vec::new();
+
+    let check = |session: &[&lookahead_engine::walkthrough::Leg]| {
+        if session.is_empty() {
+            return (0, 0, None);
+        }
+        let inputs: Vec<_> = session.iter().flat_map(|leg| leg.inputs()).collect();
+        let walked: Vec<DialogueNodeId> =
+            session.iter().flat_map(|leg| leg.encountered()).collect();
+        match lookahead_engine::walkthrough::walk_inputs(graph, world, conversation, Some(&inputs))
+        {
+            Ok(again) if again.encountered.starts_with(&walked) => (1, 1, None),
+            Ok(_) => (
+                1,
+                0,
+                Some("it replayed, but walked somewhere else".to_string()),
+            ),
+            Err(why) => (1, 0, Some(why)),
+        }
+    };
+
+    for leg in &done.legs {
+        if leg.restarted && !session.is_empty() {
+            let (one, ok, reason) = check(&session);
+            tried += one;
+            replayed += ok;
+            why = why.or(reason);
+            session.clear();
+        }
+        session.push(leg);
+    }
+    let (one, ok, reason) = check(&session);
+    (tried + one, replayed + ok, why.or(reason))
+}
+
 fn stage_row(graph: &LookAheadGraph, number: usize, stage: &Stage) -> serde_json::Value {
     let mut body = row_of(graph, &stage.walk);
     body["stage"] = serde_json::json!(number);
@@ -241,6 +311,19 @@ fn main() {
         let began = Instant::now();
         let stages = roll_escalation(&graph, &world, conversation, ceiling());
         let elapsed = began.elapsed().as_millis();
+
+        // ON STDERR AND ONLY WHERE ASKED FOR, because it re-walks every session and the answer
+        // is about the dataset rather than about this group.
+        if lookahead_engine::core::env::is_set("VERIFY_REPLAY") {
+            for stage in &stages {
+                let (tried, replayed, why) =
+                    sessions_replay(&graph, &world, conversation, &stage.walk);
+                eprintln!(
+                    "conversation {conversation}: replayed {replayed} of {tried} sessions{}",
+                    why.map(|text| format!("; {text}")).unwrap_or_default(),
+                );
+            }
+        }
 
         for (number, stage) in stages.iter().enumerate() {
             let done = &stage.walk;
