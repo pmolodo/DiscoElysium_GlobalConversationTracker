@@ -2060,7 +2060,11 @@ impl<'a> Backward<'a> {
         let world = search.world;
         let vars = search.compiler.vars();
         let began = std::time::Instant::now();
-        let mut image = ActionImage::new(vars, search.counter_cap);
+        // FOR THE WORLD, as every other search builds it. An image with no clock FORGETS the slot
+        // an action stores a reading into - any value, which keeps every state the real reading
+        // could produce and is sound but loose, and forgetting a slot is what makes a set grow.
+        // This search predates `for_world` and was recovered without it.
+        let mut image = ActionImage::for_world(vars, search.counter_cap, world);
 
         let Some((mut forward, mut reached)) = union_front(positions, cut, vars) else {
             return Round::Unfinished {
