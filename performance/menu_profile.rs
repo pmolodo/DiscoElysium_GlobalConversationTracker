@@ -46,7 +46,12 @@ pub struct MenuProfile {
 }
 
 impl MenuProfile {
-    /// Builds the profile for one group, or `None` if every start would be refused.
+    /// Builds LINK-DEEPEST-X for one group, where X is `unseen_wanted`, or `None` if every start
+    /// would be refused.
+    ///
+    /// The unseen entries are the deepest by LINK DISTANCE, asserted rather than walked to: no
+    /// play is known to stand where they are still unread. [`walked_profile`] is the set a walk
+    /// vouches for.
     ///
     /// `None` rather than an empty profile, because a run of refusals measures nothing and
     /// a caller has to be able to tell that apart from a group that was simply fast.
@@ -121,9 +126,10 @@ pub struct Walked {
 }
 
 /// The profile a greedy playthrough leaves when it is stopped with `unseen_wanted` entries
-/// still to come.
+/// still to come. THIS IS WALK-DEEPEST-X, where X is `unseen_wanted`: the unseen entries are the
+/// deepest ones a walk reaches.
 ///
-/// ## Why this exists beside [`MenuProfile::of`]
+/// ## Why this exists beside [`MenuProfile::of`], which is LINK-DEEPEST-X
 ///
 /// `of` RANKS BY STRUCTURE and asserts the result: the deepest entries by link depth are
 /// called unseen and everything else seen, and nothing checks that any play could stand

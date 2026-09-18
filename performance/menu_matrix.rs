@@ -135,16 +135,19 @@
 //! `DEGCT_NOLIMIT=1` takes the limits off: a 6144 MB manager and a five-minute wall, which is
 //! also each pass's ration.
 //!
-//! `DEGCT_WALKED_PROFILE=1` asks each menu in a state a greedy playthrough walked to, with the
-//! deepest `DEGCT_UNSEEN` entries still to come - see `menu_profile::walked_profile`. `=menu`
-//! asks about the menu the player is standing at instead of entries chosen for reaching the
-//! unseen; it is the more honest profile and the weaker measurement, and `menu_profile::Starts`
-//! carries the numbers.
+//! EVERY ROW IS WALK-DEEPEST-X BY DEFAULT, where X is `DEGCT_UNSEEN`: each menu is asked in a
+//! state a greedy playthrough reached, with the deepest entries THAT WALK REACHES still to come.
+//! The world it hands the engine IS the walk's own, so there is one account of what the player
+//! has read rather than two that can disagree. `DEGCT_WALKED_PROFILE=menu` asks instead about
+//! the menu the player is standing at; it is the more honest profile and the weaker
+//! measurement, and `menu_profile::Starts` carries the numbers. `=link-deepest` takes the
+//! deepest entries by LINK DISTANCE instead, whether or not a play can stand where they are
+//! still unread - see [`walked_profile`] for why that is not the default, and for why it does
+//! not reproduce the runs taken before the world became mandatory.
 //!
-//! `DEGCT_SEEN_WORLD=all` makes the world agree with the novelty function about what the
-//! player has been shown, and `=body` does the same but leaves the menu's own options unseen.
-//! A default row's world has been shown NOTHING whatever its novelty function says, which is
-//! the state in which the most one-time effects are still pending. See [`seen_world`].
+//! `DEGCT_SEEN_WORLD=all` makes a link-deepest row's world agree with its asserted unseen set
+//! about what the player has been shown, and `=body` does the same but leaves the menu's own
+//! options unseen. It does not repair the contradiction; see [`walked_profile`].
 
 use std::collections::{BTreeSet, HashMap};
 use std::time::{Duration, Instant};
@@ -396,41 +399,66 @@ struct Standing {
     walk: Vec<DialogueNodeId>,
 }
 
-/// Whether the profile is walked to rather than declared.
+/// The default. The X unseen entries are the deepest ones A WALK REACHES: `DEGCT_UNSEEN` is the
+/// X in walk-deepest-X, and a run of keypresses is the witness that a player can stand there.
+const WALK_DEEPEST: &str = "walk-deepest";
+/// The X unseen entries are the deepest ones BY LINK DISTANCE, picked off the dialogue graph
+/// with no regard for whether any play can be standing where they are still unread -
+/// link-deepest-X. No walk vouches for it.
+const LINK_DEEPEST: &str = "link-deepest";
+/// The menu the player is standing at, rather than starts chosen for reaching the unseen.
+const WALKED_ON_SCREEN: &str = "menu";
+/// What 21 rows already in `performance/logs` name `WALK_DEEPEST` as, kept so they stay
+/// reproducible. Nothing else spells it this way any more.
+const WALKED_FLAG: &str = "1";
+
+/// Which unseen set a row is taken on: walk-deepest-X by default, link-deepest-X on request.
 ///
-/// ## What it changes, and why it is worth a row file of its own
+/// ## The world says what is seen, and nothing else does
 ///
-/// A default row's unseen set is the structurally deepest entries by link depth, and its world
-/// is a default snapshot that has been shown nothing. Those two disagree, and the engine seeds
-/// its `once` and `seen` slots from the world - so a default row measures a menu with almost
-/// every line read and every one-time effect still pending, which is a state no save holds.
+/// walk-deepest-X takes a greedy playthrough from the template save, stops it with `DEGCT_UNSEEN`
+/// entries still to come, and measures THAT: the unseen entries are the last ones a nearest-first
+/// play reaches, the seen set is what it displayed, and the variables are what its walk left them
+/// at. There is ONE account of what the player has read - the world - and the novelty function
+/// agrees with it because it was derived from it.
 ///
-/// A walked profile takes a greedy playthrough from the template save, stops it with
-/// `DEGCT_UNSEEN` entries still to come, and measures THAT: the unseen entries are the last ones
-/// a nearest-first play reaches, the seen set is what it displayed, and the variables are what
-/// its walk left them at. The keypresses are the witness that some play stands there.
+/// link-deepest-X takes the structurally deepest entries by link depth instead, and has two
+/// accounts that can disagree: that asserted unseen set, and a world the walk never moved. The
+/// engine seeds its `once` and `seen` slots from the WORLD, so such a row asks its menu with
+/// almost every line called read AND every one-time effect still pending - a state no save holds.
+/// On 761 that is the difference between fifty thousand diagram nodes and ninety-three million,
+/// and it is where the +15.8 per cent reading that nearly overturned de-l88t came from.
+///
+/// FILLING THE WORLD FROM THE ASSERTION DOES NOT REPAIR IT, which is what `DEGCT_SEEN_WORLD`
+/// was for: a `seen` slot shuts an entry that shuts once seen, so declaring most of a
+/// conversation read closes the routes to the rest. On 761 it took the menu from 2,513 ms
+/// unsettled to 511 ms settled AND STARRING NOTHING. An asserted state can contradict itself;
+/// a reached one cannot.
+///
+/// ## link-deepest-X does not reproduce the runs it descends from
+///
+/// It is the nearest thing still available to them, not a rerun of them. Those rows were taken
+/// when a row could be asked with NO world at all, and the world is mandatory now - so
+/// link-deepest-X pairs the old asserted unseen set with a world that has to be there. Where an
+/// old figure and a link-deepest-X figure differ, that gap is a candidate explanation and not a
+/// regression. Treat the old numbers as history, and re-take anything a decision rests on.
 ///
 /// ROWS ARE NOT COMPARABLE ACROSS IT, which is why it is in `COMPARED_VARIABLES`: it is a
 /// different question about a different world, not the same question measured better.
-/// What `DEGCT_WALKED_PROFILE` names for the menu a walked row asks about.
-const WALKED_REACHING: &str = "reaching";
-const WALKED_ON_SCREEN: &str = "menu";
-/// What a bare flag means, kept so the rows already taken as `=1` stay reproducible.
-const WALKED_FLAG: &str = "1";
 ///
 /// # Panics
 ///
 /// On any other value, so a misspelt run does not quietly measure something else.
 fn walked_profile() -> Option<menu_profile::Starts> {
     match lookahead_engine::core::env::var("WALKED_PROFILE") {
-        Err(_) => None,
+        Err(_) => Some(menu_profile::Starts::Reaching),
         Ok(value) => match value.as_str() {
-            "" => None,
-            WALKED_FLAG | WALKED_REACHING => Some(menu_profile::Starts::Reaching),
+            "" | WALKED_FLAG | WALK_DEEPEST => Some(menu_profile::Starts::Reaching),
             WALKED_ON_SCREEN => Some(menu_profile::Starts::OnScreen),
+            LINK_DEEPEST => None,
             other => panic!(
-                "DEGCT_WALKED_PROFILE={other:?}: expected {WALKED_FLAG}, {WALKED_REACHING} \
-                 or {WALKED_ON_SCREEN}"
+                "DEGCT_WALKED_PROFILE={other:?}: expected {WALK_DEEPEST} (or {WALKED_FLAG}), \
+                 {WALKED_ON_SCREEN} or {LINK_DEEPEST}"
             ),
         },
     }
@@ -520,9 +548,15 @@ fn main() {
         // better beyond them is refused before a diagram is touched, and the whole row reads
         // as a fast engine while measuring nothing.
         let (profile, walked) = if let Some(which) = walked_profile() {
+            // THE SAME WORLD THE DATASET'S WALK USES, declared table included. A walk cannot
+            // decide a variable nothing declares without it, so it refuses and stops short -
+            // and this walk and `greedy_playthrough`'s would then be two different walks
+            // called by one name. Giving the table to one and not the other is what made 761's
+            // cached playthrough run fourteen legs while the profile measured here stopped at
+            // seven. See de-qy5t.
             let base = SnapshotWorld::declaring(
                 save_world::of_save(&graph, conversation, &index, save_world::TEMPLATE),
-                None,
+                save_world::declared(),
             );
             match menu_profile::walked_profile(
                 &graph,
