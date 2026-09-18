@@ -318,7 +318,16 @@ pub fn walk_to_menu(
 /// shown - so "this branch's incrementor has fired" is exactly "the player has seen this entry",
 /// the same per-entry data the novelty markers are drawn from.
 ///
-/// ## What it said: it cuts, and nothing moves
+/// ## What it is for: cost, and only cost
+///
+/// IT IS AN OPTIMISATION AND MUST NOT MOVE A SINGLE STAR. Removing a loop that cannot mutate
+/// anything removes no route to anything, so the marking it produces has to be the marking it
+/// would have produced anyway. "No answer changed" is this cut PASSING ITS CORRECTNESS TEST,
+/// not a disappointing result - an arm that moved a star would mean one of the three conditions
+/// is wrong, and would be a bug rather than a trade-off. The only number that can speak for it
+/// is what the search spends.
+///
+/// ## What was measured, and why it settles nothing
 ///
 /// Whole game, three runs, walked profile, against the same arm without it:
 ///
@@ -328,20 +337,32 @@ pub fn walk_to_menu(
 ///   sum of medians       8,698 -> 8,608 ms
 /// ```
 ///
-/// THE 90 MS IS NOT A SPEEDUP, and nothing here rests on it. A whole-game arm moves by more
-/// than that between one ordering of the arms and another - de-u5ab measured 112 ms against
-/// the same arm - so a difference this size is the machine, not the cut. What the table says
-/// is that 2,029 entries stopped being searched and the answer came out the same.
+/// THE 90 MS IS NOT A SPEEDUP. A whole-game arm moves by more than that between one ordering of
+/// the arms and another - de-u5ab measured 112 ms against the same arm - so a difference this
+/// size is the machine. And the zero beside it is the correctness test passing, which was never
+/// in doubt. Neither line says whether the cut is worth having.
 ///
-/// NOT ONE ANSWER IN THE GAME MOVED, with the walk cut running at 1,704 entries beside it. The
-/// reason looks structural rather than incidental: a spent branch holds nothing unread by
-/// condition 1, so it is only ever TRANSIT, and the routes through it are loops back to the hub
-/// - which is exactly what the walk cut already refuses. The two cuts overlap where it counts.
+/// THE ARM ALSO ASKED IN THE WRONG PLACE, which is why even its cost reading is uninformative. It
+/// unions the spent entries into the cut that `mark_menu_hybrid` hands STEP 1, where the walk
+/// cut is already refusing every loop back through the hub - and a spent branch is a loop back
+/// through the hub, by conditions 1 and 3. So the second cut was added where the first already
+/// subsumed it, and came back empty for that reason alone.
 ///
-/// It is therefore an opt-in arm that no default path calls, kept because the analysis is sound
-/// and cheap to re-measure if the walk or the profile changes. It has no row in
-/// `docs/modelling-gaps.md`, because a row there is for an answer that can differ and this one
-/// does not. See de-wi02.
+/// STEP 2 IS WHERE IT BELONGS AND HAS NEVER RUN. The exact marking cuts NOTHING, deliberately:
+/// it exists to keep the routes step 1's cut cannot see, such as one that sets a variable and
+/// returns through the hub to what the variable opens. Cutting every loop there would refuse
+/// the answer it is for. But a loop that CANNOT MUTATE ANYTHING is a different case - it can
+/// never open what it returns to - and that is what this computes. It is an optimisation for
+/// the search that pays for the whole hybrid, not a second opinion for the cheap question.
+///
+/// A SPENT BRANCH IS ONE MEMBER OF THAT CLASS. Others are worth having and are not written yet:
+/// a loop carrying no actions at all, one that only sets a variable already set, one that only
+/// increments a counter already past every threshold a guard compares it to. Each is inert for
+/// the same reason - the state the search would carry out of it equals the state it carried in.
+///
+/// So this is an opt-in arm no default path calls, and its worth is UNMEASURED rather than
+/// disproven. It has no row in `docs/modelling-gaps.md`, because a row there is for an answer
+/// that can differ, and a cut that removes only inert loops cannot change one. See de-wi02.
 pub fn spent_branches<F>(
     graph: &LookAheadGraph,
     order: &IterationOrder,
