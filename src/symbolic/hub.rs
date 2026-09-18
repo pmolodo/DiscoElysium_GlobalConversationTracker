@@ -430,6 +430,7 @@ fn is_no_op_on_re_entry(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::core::types::Novelty;
     use crate::test_graph::{Entry, GraphBuilder, node};
 
     /// Garte's kitchen, cut down to its shape.
@@ -693,5 +694,155 @@ pub(crate) mod tests {
 
         assert_eq!(reached.hubs(), nodes(&[6]));
         assert_eq!(reached.since(), set(&[6]));
+    }
+
+    /// A hub with two topics, each a player line that fires a one-time increment and returns.
+    ///
+    /// ```text
+    ///    0  start            -> 1
+    ///    1  HUB              -> 2, 4
+    ///    2    topic one      -> 3 -> 1     (+once)
+    ///    4    topic two      -> 5 -> 1     (+once)
+    /// ```
+    fn two_spendable_topics() -> LookAheadGraph {
+        GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).group().links(&[2, 4]))
+            .add(
+                Entry::new(2)
+                    .player()
+                    .script("SetVariableValue(\"count\", Variable[\"count\"] +once(1))")
+                    .links(&[3]),
+            )
+            .add(Entry::new(3).links(&[1]))
+            .add(
+                Entry::new(4)
+                    .player()
+                    .script("SetVariableValue(\"count\", Variable[\"count\"] +once(1))")
+                    .links(&[5]),
+            )
+            .add(Entry::new(5).links(&[1]))
+            .build()
+    }
+
+    /// Nothing unread anywhere, which is condition one out of the way.
+    fn all_read(_: DialogueNodeId) -> Novelty {
+        Novelty::SeenThisGame
+    }
+
+    fn spent_with(
+        graph: &LookAheadGraph,
+        seen: &[i32],
+        novelty: &dyn Fn(DialogueNodeId) -> Novelty,
+    ) -> HashSet<DialogueNodeId> {
+        let seen: HashSet<DialogueNodeId> = seen.iter().map(|id| node(*id)).collect();
+        let was_seen = |id: DialogueNodeId| seen.contains(&id);
+        spent_branches(
+            graph,
+            &IterationOrder::of(graph),
+            node(1),
+            &was_seen,
+            &novelty,
+            Novelty::UnseenThisGame,
+        )
+    }
+
+    /// A branch whose one-time effects have fired and which shows nothing unread is spent: going
+    /// round it again returns the same state having shown nothing.
+    #[test]
+    fn a_branch_whose_once_has_fired_is_spent() {
+        let graph = two_spendable_topics();
+        let spent = spent_with(&graph, &[2, 3], &all_read);
+
+        assert!(spent.contains(&node(2)), "the topic the world has shown");
+        assert!(spent.contains(&node(3)), "and what it leads to");
+        assert!(
+            !spent.contains(&node(4)),
+            "the other topic has not been walked, so its once is still to fire"
+        );
+    }
+
+    /// AN UNSEEN ENTRY STILL DOES SOMETHING. Until the world has shown it, its once has not
+    /// fired, so walking it is not a no-op however little it shows.
+    #[test]
+    fn a_branch_nobody_has_walked_is_not_spent() {
+        let graph = two_spendable_topics();
+        assert!(spent_with(&graph, &[], &all_read).is_empty());
+    }
+
+    /// CONDITION ONE. A branch holding something unread is the destination rather than a spent
+    /// loop, whatever its actions have done.
+    #[test]
+    fn a_branch_holding_something_unread_is_not_spent() {
+        let graph = two_spendable_topics();
+        let unread_at_three = |id: DialogueNodeId| {
+            if id == node(3) {
+                Novelty::UnseenAnyGame
+            } else {
+                Novelty::SeenThisGame
+            }
+        };
+        let spent = spent_with(&graph, &[2, 3], &unread_at_three);
+
+        assert!(
+            !spent.contains(&node(2)),
+            "the branch leads to something unread, so it is where the player should go"
+        );
+    }
+
+    /// CONDITION THREE, WHICH IS WHAT KEEPS IT SOUND. A branch that fires its once and then
+    /// leaves the hub's component is a one-way door, not a loop back - cutting it would refuse
+    /// the only route onward.
+    #[test]
+    fn a_branch_that_leaves_the_hubs_component_is_never_spent() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).group().links(&[2, 4]))
+            .add(
+                Entry::new(2)
+                    .player()
+                    .script("SetVariableValue(\"count\", Variable[\"count\"] +once(1))")
+                    .links(&[3]),
+            )
+            // 3 goes ON rather than back to the hub, so 2 is a door out of the loop.
+            .add(Entry::new(3))
+            .add(
+                Entry::new(4)
+                    .player()
+                    .script("SetVariableValue(\"count\", Variable[\"count\"] +once(1))")
+                    .links(&[5]),
+            )
+            .add(Entry::new(5).links(&[1]))
+            .build();
+
+        let spent = spent_with(&graph, &[2, 3, 4, 5], &all_read);
+
+        assert!(
+            !spent.contains(&node(2)),
+            "2 leaves the hub's component, so it is a one-way door however spent it looks"
+        );
+        assert!(
+            spent.contains(&node(4)),
+            "4 loops back and is genuinely spent"
+        );
+    }
+
+    /// AN ORDINARY ACTION FIRES EVERY TIME, so an entry carrying one is never a no-op on
+    /// re-entry however often it has been walked.
+    #[test]
+    fn a_branch_with_an_ordinary_action_is_never_spent() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).group().links(&[2]))
+            .add(
+                Entry::new(2)
+                    .player()
+                    .script("SetVariableValue(\"flag\", true)")
+                    .links(&[3]),
+            )
+            .add(Entry::new(3).links(&[1]))
+            .build();
+
+        assert!(spent_with(&graph, &[2, 3], &all_read).is_empty());
     }
 }

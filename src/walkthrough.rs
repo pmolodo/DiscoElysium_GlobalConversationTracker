@@ -1403,4 +1403,359 @@ mod tests {
         let error = walked(entries, &TestWorld::new(), Some(&[Input::Choose(1)])).unwrap_err();
         assert!(error.contains("rolled check"), "{error}");
     }
+
+    /// A hub with three topics off it, each one line deep, and a line past the hub that only
+    /// opens once a variable is set. The shape a greedy playthrough is about: a player standing
+    /// at a hub takes the topics one at a time without leaving.
+    fn a_hub_of_three() -> Vec<Entry> {
+        vec![
+            Entry::new(0).links(&[1]),
+            Entry::new(1).group().links(&[2, 4, 6]),
+            Entry::new(2).player().links(&[3]),
+            Entry::new(3).links(&[1]),
+            Entry::new(4).player().links(&[5]),
+            Entry::new(5).links(&[1]),
+            Entry::new(6).player().links(&[7]),
+            Entry::new(7).links(&[1]),
+        ]
+    }
+
+    fn playthrough(entries: Vec<Entry>, world: &TestWorld) -> Playthrough {
+        greedy_playthrough(
+            &graph(entries),
+            world,
+            crate::test_graph::DEFAULT_CONVERSATION,
+            10_000,
+            &HashSet::new(),
+            Until::default(),
+        )
+    }
+
+    /// Every entry a walk can reach is reached, and the walk says so rather than stopping.
+    #[test]
+    fn a_playthrough_shows_everything_it_can_reach() {
+        let done = playthrough(a_hub_of_three(), &TestWorld::new());
+
+        assert_eq!(done.stopped, Stop::Exhausted);
+        assert_eq!(done.refused, 0, "{:?}", done.blocked);
+        let shown: HashSet<i32> = done.shown.iter().map(|id| id.entry_id).collect();
+        assert_eq!(
+            shown,
+            HashSet::from([0, 2, 3, 4, 5, 6, 7]),
+            "the start, the three topics and what each leads to; 1 is a group and never shown"
+        );
+    }
+
+    /// A LEG STOPS AT ITS TARGET AND THE NEXT ONE CARRIES ON FROM THERE. Standing at a hub, a
+    /// player takes the next topic rather than leaving and walking back to the conversation's
+    /// start - so only the first leg is a restart.
+    #[test]
+    fn legs_continue_from_where_the_last_one_stopped() {
+        let done = playthrough(a_hub_of_three(), &TestWorld::new());
+
+        assert!(
+            done.legs[0].restarted,
+            "the player has not sat down before the first leg"
+        );
+        assert!(
+            done.legs[1..].iter().all(|leg| !leg.restarted),
+            "everything else is reachable from the hub without leaving: {:?}",
+            done.legs
+                .iter()
+                .map(|leg| (leg.target.entry_id, leg.restarted))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// THE GAME FORCES THE RESTART, not a rule of its own: a conversation that ends leaves
+    /// nowhere to continue from, so the next leg begins at the start again.
+    #[test]
+    fn a_conversation_that_ends_forces_the_next_leg_to_restart() {
+        // Two topics off a hub, and the first is a dead end that ends the conversation.
+        let entries = vec![
+            Entry::new(0).links(&[1]),
+            Entry::new(1).group().links(&[2, 3]),
+            Entry::new(2).player(),
+            Entry::new(3).player().links(&[4]),
+            Entry::new(4).links(&[1]),
+        ];
+        let done = playthrough(entries, &TestWorld::new());
+
+        assert_eq!(done.stopped, Stop::Exhausted);
+        let restarts = done.legs.iter().filter(|leg| leg.restarted).count();
+        assert!(
+            restarts >= 2,
+            "the dead end ends the conversation, so what follows it begins again: {:?}",
+            done.legs
+                .iter()
+                .map(|leg| (leg.target.entry_id, leg.restarted))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// NEAREST IS COUNTED IN PRESSES, which is what a player pays. A line that plays without
+    /// waiting costs nothing, so it is reached before an option that costs a choice.
+    #[test]
+    fn the_nearest_unshown_entry_is_the_one_fewest_presses_away() {
+        // 1 says itself with a menu behind it, so reaching 1 costs no press; 2 and 3 each cost
+        // one.
+        let entries = vec![
+            Entry::new(0).links(&[1]),
+            Entry::new(1).links(&[2, 3]),
+            Entry::new(2).player(),
+            Entry::new(3).player(),
+        ];
+        let done = playthrough(entries, &TestWorld::new());
+
+        assert_eq!(done.legs[0].target, node(1), "the free line comes first");
+        assert!(
+            done.legs[0].inputs().is_empty(),
+            "and it costs nothing to reach"
+        );
+        assert_eq!(done.legs[1].inputs().len(), 1, "an option costs one press");
+    }
+
+    /// THE KEYPRESSES ARE THE WITNESS, so they have to replay: a leg's inputs are fed back
+    /// through `walk_inputs`, the shipped replay path, and must walk the same route.
+    ///
+    /// A PREFIX RATHER THAN THE SAME LIST, and the difference is each side doing its job. A leg
+    /// stops AT ITS TARGET, having gone there to see one new thing; `walk_inputs` must end at a
+    /// MENU, so it plays on past the target until one comes up. The leg is the beginning of the
+    /// replay, not the whole of it.
+    #[test]
+    fn a_legs_keypresses_replay_through_walk_inputs() {
+        let built = graph(a_hub_of_three());
+        let done = greedy_playthrough(
+            &built,
+            &TestWorld::new(),
+            crate::test_graph::DEFAULT_CONVERSATION,
+            10_000,
+            &HashSet::new(),
+            Until::default(),
+        );
+
+        let first = &done.legs[0];
+        let replay = walk_inputs(
+            &built,
+            &TestWorld::new(),
+            crate::test_graph::DEFAULT_CONVERSATION,
+            Some(&first.inputs()),
+        )
+        .expect("the leg's own keypresses are walkable");
+        let walked = first.encountered();
+        assert_eq!(
+            replay.encountered.get(..walked.len()),
+            Some(walked.as_slice()),
+            "the replay begins by walking exactly what the leg walked"
+        );
+        assert!(
+            replay.encountered.len() > walked.len(),
+            "and carries on to a menu, which the leg had no reason to reach"
+        );
+    }
+
+    /// A STEP CARRIES WHAT ITS NUMBER MEANT. An `Input::Choose(n)` indexes the menu that was on
+    /// screen, so the step records that menu rather than leaving a reader to recover it.
+    #[test]
+    fn a_step_records_the_menu_its_number_indexed() {
+        let done = playthrough(a_hub_of_three(), &TestWorld::new());
+
+        let chose = done
+            .legs
+            .iter()
+            .flat_map(|leg| leg.steps.iter())
+            .find(|step| matches!(step.input, Some(Input::Choose(_))))
+            .expect("a hub of three is chosen from");
+        let Some(Input::Choose(number)) = chose.input else {
+            unreachable!()
+        };
+        assert_eq!(
+            chose.menu.get(number - 1),
+            chose.displayed.first(),
+            "the number indexes the menu the step recorded, from one"
+        );
+    }
+
+    /// STATE CARRIES ACROSS LEGS, which is what a save holds: an entry the walk has already
+    /// been shown is not shown again, and its one-time effects stay fired.
+    #[test]
+    fn what_the_world_has_shown_is_not_walked_to_again() {
+        let already = TestWorld::new().set_seen(node(4), true);
+        let done = greedy_playthrough(
+            &graph(a_hub_of_three()),
+            &already,
+            crate::test_graph::DEFAULT_CONVERSATION,
+            10_000,
+            &HashSet::new(),
+            Until::default(),
+        );
+
+        assert!(
+            !done.legs.iter().any(|leg| leg.target == node(4)),
+            "4 is already shown, so no leg is walked to reach it"
+        );
+    }
+
+    /// STOPPING SHORT IS WHAT A PROFILE USES, and it stops on entries shown rather than legs,
+    /// since one leg can show several.
+    #[test]
+    fn a_walk_can_be_stopped_with_entries_still_to_come() {
+        let built = graph(a_hub_of_three());
+        let whole = greedy_playthrough(
+            &built,
+            &TestWorld::new(),
+            crate::test_graph::DEFAULT_CONVERSATION,
+            10_000,
+            &HashSet::new(),
+            Until::default(),
+        );
+        let wanted = whole.shown.len() - 2;
+
+        let stopped = greedy_playthrough(
+            &built,
+            &TestWorld::new(),
+            crate::test_graph::DEFAULT_CONVERSATION,
+            10_000,
+            &HashSet::new(),
+            Until {
+                shown: Some(wanted),
+            },
+        );
+
+        assert!(stopped.shown.len() >= wanted);
+        assert!(
+            stopped.shown.len() < whole.shown.len(),
+            "it stopped short of the whole walk"
+        );
+        assert_eq!(
+            stopped.shown,
+            whole.shown[..stopped.shown.len()],
+            "and it is a PREFIX of the same walk, which is what makes the rest the deepest"
+        );
+    }
+
+    /// A rolled check behind a hub, with a line past it that only the pass reaches.
+    fn a_check_off_a_hub() -> Vec<Entry> {
+        vec![
+            Entry::new(0).links(&[1]),
+            Entry::new(1).group().links(&[2, 5]),
+            Entry::new(2)
+                .player()
+                .kind(DialogueCheckKind::White)
+                .flag("roll")
+                .links(&[3, 4]),
+            Entry::new(3),
+            Entry::new(4),
+            Entry::new(5).player().links(&[6]),
+            Entry::new(6).links(&[1]),
+        ]
+    }
+
+    /// STAGE ZERO ROLLS A TWO EVERYWHERE, and a failed check is still ENTERED - it says its
+    /// failure line - which is why the first stage is not empty.
+    #[test]
+    fn the_first_stage_fails_every_roll_and_still_walks_the_check() {
+        let stages = roll_escalation(
+            &graph(a_check_off_a_hub()),
+            &TestWorld::new(),
+            crate::test_graph::DEFAULT_CONVERSATION,
+            10_000,
+        );
+
+        let first = &stages[0];
+        assert!(first.passing.is_empty(), "stage zero concedes nothing");
+        assert!(
+            first.walk.shown.iter().any(|id| *id == node(2)),
+            "the check itself is entered and shown even though it fails"
+        );
+        assert!(
+            first
+                .walk
+                .legs
+                .iter()
+                .flat_map(|leg| leg.steps.iter())
+                .any(|step| step.rolled == Some(false)),
+            "and the step records that the die was taken as a two"
+        );
+    }
+
+    /// EACH LATER STAGE CONCEDES ONE MORE, so the set only grows and the schedule terminates.
+    #[test]
+    fn each_stage_concedes_one_more_check() {
+        let stages = roll_escalation(
+            &graph(a_check_off_a_hub()),
+            &TestWorld::new(),
+            crate::test_graph::DEFAULT_CONVERSATION,
+            10_000,
+        );
+
+        assert!(stages.len() >= 2, "there is a check to concede");
+        for (before, after) in stages.iter().zip(&stages[1..]) {
+            assert_eq!(
+                after.passing.len(),
+                before.passing.len() + 1,
+                "one at a time"
+            );
+            assert!(
+                before.passing.iter().all(|id| after.passing.contains(id)),
+                "and the set only grows"
+            );
+            assert!(
+                after.added.is_some(),
+                "a later stage names what it conceded"
+            );
+        }
+    }
+
+    /// A playthrough stops at the entry it went for, which is usually a line. Playing on reaches
+    /// the menu a request would be about, pressing continues and choosing nothing.
+    #[test]
+    fn playing_on_stops_at_the_first_menu() {
+        let entries = vec![
+            Entry::new(0).links(&[1]),
+            Entry::new(1).links(&[2]),
+            Entry::new(2).links(&[3, 4]),
+            Entry::new(3).player(),
+            Entry::new(4).player(),
+        ];
+        let world = TestWorld::new();
+        let built = graph(entries);
+        let stopped = greedy_playthrough(
+            &built,
+            &world,
+            crate::test_graph::DEFAULT_CONVERSATION,
+            10_000,
+            &HashSet::new(),
+            Until { shown: Some(2) },
+        );
+
+        let standing = on_to_a_menu(&built, &world, &stopped, 64).expect("a menu is ahead");
+        assert_eq!(standing.menu, nodes(&[3, 4]), "in drawn order");
+        assert!(
+            standing
+                .steps
+                .iter()
+                .all(|step| !matches!(step.input, Some(Input::Choose(_)))),
+            "nothing is chosen on the way to a menu"
+        );
+    }
+
+    /// A conversation with no menu ahead of it has no menu to be standing at, which is an answer
+    /// rather than a failure.
+    #[test]
+    fn playing_on_gives_nothing_where_the_conversation_ends() {
+        let entries = vec![Entry::new(0).links(&[1]), Entry::new(1)];
+        let world = TestWorld::new();
+        let built = graph(entries);
+        let done = greedy_playthrough(
+            &built,
+            &world,
+            crate::test_graph::DEFAULT_CONVERSATION,
+            10_000,
+            &HashSet::new(),
+            Until::default(),
+        );
+
+        assert!(on_to_a_menu(&built, &world, &done, 64).is_none());
+    }
 }
