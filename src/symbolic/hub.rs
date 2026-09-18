@@ -318,7 +318,25 @@ pub fn walk_to_menu(
 /// shown - so "this branch's incrementor has fired" is exactly "the player has seen this entry",
 /// the same per-entry data the novelty markers are drawn from.
 ///
-/// See de-wi02, and `docs/modelling-gaps.md` for it as an approximation.
+/// ## What it said, 2026-09-17: it cuts, and nothing moves
+///
+/// Whole game, three runs, walked profile, against the same arm without it:
+///
+/// ```text
+///   entries cut          2,029 over 95 groups of 389
+///   menus whose stars changed        0
+///   sum of medians       8,698 -> 8,608 ms
+/// ```
+///
+/// NOT ONE ANSWER IN THE GAME MOVED, with the walk cut running at 1,704 entries beside it. The
+/// reason looks structural rather than incidental: a spent branch holds nothing unread by
+/// condition 1, so it is only ever TRANSIT, and the routes through it are loops back to the hub
+/// - which is exactly what the walk cut already refuses. The two cuts overlap where it counts.
+///
+/// It is therefore an opt-in arm that no default path calls, kept because the analysis is sound
+/// and cheap to re-measure if the walk or the profile changes. It has no row in
+/// `docs/modelling-gaps.md`, because a row there is for an answer that can differ and this one
+/// does not. See de-wi02.
 pub fn spent_branches<F>(
     graph: &LookAheadGraph,
     order: &IterationOrder,
