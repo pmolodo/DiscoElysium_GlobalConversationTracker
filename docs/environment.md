@@ -50,7 +50,7 @@ that started this was a local.
 
 Generated from the code rather than maintained by hand, by `tools/env-table.py`: it greps each
 tracked file for a variable spelled out in full or asked for by bare name through the helper
-for its language, so it says what the code actually asks for. 44 variables.
+for its language, so it says what the code actually asks for. 45 variables.
 
 | `DEGCT_ALL_COMMITTED_SAVES` | `tests/common/mod.rs` |
 | `DEGCT_ARMS` | `tools/measure-residue-arms.sh` |
@@ -94,6 +94,7 @@ for its language, so it says what the code actually asks for. 44 variables.
 | `DEGCT_THREAD` | `measurements/search_residue.rs`, `tools/measure-residue-arms.sh` |
 | `DEGCT_TIME_BUDGET_MS` | `measurements/menu_residue.rs`, `measurements/menu_wall.rs` |
 | `DEGCT_UNSEEN` | `measurements/bidirectional_headroom.rs`, `measurements/bound_slack.rs`, `measurements/cache_split_menu.rs`, `measurements/manager_reuse.rs`, `measurements/menu_matrix.rs`, `measurements/menu_residue.rs`, `measurements/nodes_repeat.rs`, `measurements/onward_or_back.rs` |
+| `DEGCT_VERIFY_REPLAY` | `measurements/greedy_playthrough.rs` |
 | `DEGCT_WALKED_PROFILE` | `measurements/menu_matrix.rs` |
 | `DEGCT_WORKERS` | `measurements/README.md`, `tools/measure-menus.py`, `tools/measurement_common.py` |
 
