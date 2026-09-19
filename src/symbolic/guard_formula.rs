@@ -1320,19 +1320,6 @@ impl<'a> GuardCompiler<'a> {
         self.decided(formula)
     }
 
-    /// `Variable[name] op value` for an ordering operator, over a tracked slot.
-    ///
-    /// ## The blowup the epic expected, and where it went
-    ///
-    /// Magnitude comparison on bit-blasted integers is the classic way to make a decision
-    /// diagram explode, and de-sze names it as the likely failure. This used to enumerate
-    /// the satisfying values and union them, which a counter can afford - the cap bounds
-    /// it to five bits and 32 values - and which money's thirteen bits and the clock's
-    /// eleven cannot: eight thousand conjunctions to say one thing.
-    ///
-    /// It is now a ripple comparator instead, O(bits) rather than O(2^bits), so the same
-    /// routine serves a five-bit counter and a thirteen-bit balance. See
-    /// [`crate::symbolic::register`].
     /// `Variable[name] op value` over a slot the layout holds as a DELTA.
     ///
     /// ## What the slot holds, and what the guard asks about
