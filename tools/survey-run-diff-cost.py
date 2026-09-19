@@ -2,12 +2,15 @@
 
 """How much of a run string a one-entry change rewrites, over the committed corpus."""
 
+import inspect
 import json
 import os
 import subprocess
 import sys
 
-REPO = r"D:/Downloads/Apps/Games/Disco Elysium/DiscoElysium_GlobalConversationTracker"
+THIS_FILE = os.path.abspath(inspect.getsourcefile(lambda: None) or __file__)
+THIS_DIR = os.path.dirname(THIS_FILE)
+REPO = os.path.dirname(THIS_DIR)
 HOST = os.path.join(REPO, "target", "release", "gct-engine-host.exe")
 
 
