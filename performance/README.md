@@ -140,8 +140,10 @@ a player would have been shown from the conversation's start (`hub::walk_to_menu
 cut it drives is worked out inside the timing, as a player's request has it worked out. Every
 driver that asks menus - `cache_split_menu`, `manager_reuse`, `menu_residue`, `menu_wall`,
 `nodes_repeat`, `workspace_menus` - asks with a walk the same way (de-r2xf.11).
-`DEGCT_MARKING=bnb` puts the exact marking on every group instead of the shipped hybrid, as an
-opt-in comparison, so two row files can be compared on the same profile and the same allowance.
+Every `DEGCT_MARKING` arm asks the onward question first, because the product always does. There
+is no arm that puts the exact marking on every group: no state exists in which a player's engine
+marks a menu without asking the cheap question first, so such a row would describe code the game
+cannot run. A test that wants the exact answer calls `menu::mark_menu` directly.
 
 ## Where a run's results are
 

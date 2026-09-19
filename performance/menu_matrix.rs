@@ -21,8 +21,7 @@
 //! `menu_residue` and `menu_wall` - takes its starts as the menu, and marks the whole menu
 //! against one manager through `bridge::mark_menu_as_shipped`, so each group gets the marking
 //! the product gives it: the onward question first, and the exact marking by branch and bound
-//! only where that marks nothing. `DEGCT_MARKING=hybrid-bnb` names that default, and
-//! `DEGCT_MARKING=bnb` puts the exact marking on every group instead, as an opt-in comparison.
+//! only where that marks nothing. `DEGCT_MARKING=hybrid-bnb` names that default.
 //!
 //! WITH THE WALK, because the product asks with one. A profile's menu has nobody behind it, so
 //! the walk a player would have been shown is built from the conversation's start before the
@@ -263,9 +262,6 @@ enum Marking {
     /// the exact marking by branch and bound only answers where that marks nothing. See
     /// `bridge::mark_menu_as_shipped`, which the plugin's requests reach too.
     HybridBranchAndBound,
-    /// The exact marking by branch and bound on every group, with no onward question first -
-    /// see `menu::mark_menu`. An opt-in comparison: it takes no cut and no walk.
-    BranchAndBound,
     /// The shipped hybrid with the SPENT BRANCHES cut beside the walk: a branch off a hub the
     /// player is inside whose one-time effects have all fired and which shows nothing unread
     /// cannot be the way on, so it is refused like the walk itself. See de-wi02.
@@ -283,17 +279,23 @@ enum Marking {
 
 /// What `DEGCT_MARKING` says for each marking.
 const HYBRID_BRANCH_AND_BOUND: &str = "hybrid-bnb";
-const BRANCH_AND_BOUND: &str = "bnb";
 const HYBRID_SPENT: &str = "hybrid-spent";
 const ONWARD: &str = "onward";
 
 /// The marking `DEGCT_MARKING` names: `hybrid-bnb`, the default and what the product marks
-/// with, walk and all; or `bnb` for the exact marking on every group. Row files can be taken
-/// each way and compared on the same profile and the same allowance (de-0jsf.20).
+/// with, walk and all. Row files can be taken each way and compared on the same profile and the
+/// same allowance (de-0jsf.20).
 ///
 /// THE DEFAULT IS THE SHIPPED ALGORITHM, walk included, because a measurement that is not the
 /// game's algorithm describes code no player runs (de-r2xf.11). There is no default without the
 /// walk to fall back to.
+///
+/// EVERY ARM HERE STILL ASKS THE ONWARD QUESTION FIRST, because the product always does. The
+/// exact marking alone is not offered: there is no state in which a player's engine marks a
+/// menu without asking the cheap question first, so an arm that did would describe code the
+/// game cannot run - and rows taken that way were repeatedly compared against shipped rows as
+/// though the two answered one question. `menu::mark_menu` is still what step 2 calls, and a
+/// test that wants the exact answer calls it directly. See de-eo76.
 ///
 /// # Panics
 ///
@@ -304,12 +306,11 @@ fn marking() -> Marking {
         .as_str()
     {
         "" | HYBRID_BRANCH_AND_BOUND => Marking::HybridBranchAndBound,
-        BRANCH_AND_BOUND => Marking::BranchAndBound,
         HYBRID_SPENT => Marking::HybridSpent,
         ONWARD => Marking::Onward,
         other => panic!(
-            "DEGCT_MARKING={other:?}: expected {HYBRID_BRANCH_AND_BOUND}, {BRANCH_AND_BOUND}, \
-             {HYBRID_SPENT} or {ONWARD}"
+            "DEGCT_MARKING={other:?}: expected {HYBRID_BRANCH_AND_BOUND}, {HYBRID_SPENT} or \
+             {ONWARD}"
         ),
     }
 }
@@ -332,6 +333,11 @@ const SEEN_WORLD_BODY: &str = "body";
 
 /// What `DEGCT_SEEN_WORLD` names, default [`SeenWorld::Nothing`].
 ///
+/// UNDER INVESTIGATION, and a row taken with `all` or `body` should not be relied on until it
+/// is settled: both come back having asked NOTHING - no pass, no diagram - and starring
+/// nothing, and what makes that happen is not established. See de-rnrb, and the table below
+/// for the rows that raised it.
+///
 /// ## What this arm is for, and why the default is the incoherent one
 ///
 /// The profile says "exactly the deepest entries are unseen and everything else is seen", and
@@ -350,24 +356,24 @@ const SEEN_WORLD_BODY: &str = "body";
 ///
 /// ## WHAT IT SAID ON 761, AND WHY THE NUMBER MUST NOT BE QUOTED AS A SPEED-UP
 ///
+/// Link-deepest-10 with the limits off, at 90caf3d:
+///
 /// ```text
-///   arm                  menu_ms  asked  rounds  settled  partly      nodes
-///   bnb/seen-nothing        2513      2       0        0       8  4,437,846
-///   bnb/seen-body            511      1       0        8       0    937,766
-///   bnb/seen-all             507      1       0        8       0    937,766
+///   seen world  menu_ms  asked  rounds  settled  partly      nodes  starred
+///   nothing        5657     23       4        8       0  4,810,836  422,164,989,848
+///   all             436      0       0        8       0     33,977  -
+///   body            423      0       0        8       0     33,977  -
 /// ```
 ///
-/// IT SETTLES BECAUSE THERE IS NOTHING LEFT TO FIND. One gate pass runs, the unread targets
-/// come back symbolically unreachable, and every option settles with no marker - `rounds` is
-/// zero and `starred` is empty. The targets are still LINK-reachable, or no pass would have
-/// run; what closed the routes is `seen_slot`, which shuts an entry that shuts once seen. Mark
-/// most of a conversation as seen and enough of it closes that its deepest entries cannot be
-/// reached at all.
+/// A SEEN WORLD SETTLES WITHOUT ASKING ANYTHING: `asked` is zero, so no pass runs and no
+/// diagram is built, and nothing is starred. WHY is the open question - de-rnrb - and until it
+/// is answered the 436 ms is not a speed-up over the 5,657: the two rows did different amounts
+/// of work because they were asked different questions, and what the shorter one decided is
+/// exactly what is not established.
 ///
-/// So this arm does not isolate the once-slots: it changes them and destroys the profile in the
-/// same move, and 511 ms is the cost of proving an empty menu. A seen set that was never walked
-/// to is not merely unwitnessed, it contradicts itself - it claims the player saw content that
-/// the flags it sets make unreachable.
+/// What IS established is that the arm does not isolate the once-slots. A seen set that was
+/// never walked to is not merely unwitnessed, it contradicts itself - it claims the player saw
+/// content while setting the flags that decide what that content leaves reachable.
 ///
 /// WHAT THE QUESTION ACTUALLY NEEDS is a profile whose seen set came from a walk: step to the
 /// nearest unseen entry, mark the route seen and apply its actions so the one-time effects fire
@@ -959,8 +965,7 @@ where
             }
         };
         // THE MARKING THE PRODUCT MARKS WITH by default, through the one function that chooses
-        // it, so a default row measures what a player waits for; `DEGCT_MARKING=bnb` puts the
-        // exact marking on every group instead. See [`marking`].
+        // it, so a default row measures what a player waits for. See [`marking`].
         let found = match marking() {
             // INSIDE THE TIMED REGION, the group's hubs included. The WALK ITSELF is handed
             // over and both cuts are derived from it in the bridge, through the one call a
@@ -973,13 +978,6 @@ where
                 &marking_budget,
                 &shape,
                 &walk,
-            ),
-            Marking::BranchAndBound => menu::mark_menu(
-                marking_search,
-                novelty,
-                &contestants,
-                &marking_budget,
-                &shape,
             ),
             // THE SAME WALK CUT AS THE DEFAULT ARM in step 1, and the spent branches given to
             // STEP 2, which is the only place they can do anything. Step 1 already refuses
