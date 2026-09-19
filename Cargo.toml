@@ -161,6 +161,10 @@ name = "counter_widths"
 path = "performance/counter_widths.rs"
 
 [[example]]
+name = "redundant_counters"
+path = "performance/redundant_counters.rs"
+
+[[example]]
 name = "nodes_repeat"
 path = "performance/nodes_repeat.rs"
 

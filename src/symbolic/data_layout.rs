@@ -48,6 +48,82 @@ fn bits_for(max: u32) -> u8 {
     }
 }
 
+/// Counter slots whose value is a second copy of state the search already carries, and the
+/// `once` slots that determine each one.
+///
+/// ## What makes a counter redundant
+///
+/// Every write to it an INCREMENT BY ONE, every one of them `once`, and nothing assigning or
+/// decrementing it. A `once` action fires only while its entry's own `once_slot` is clear and
+/// raises that slot as it fires - so the guard and the increment are on ONE node by
+/// construction, and the counter moves by exactly as many as those slots gain, on every route
+/// that could reach anything reading it. There is no dominance question to ask, because there
+/// is no route where one happens without the other.
+///
+/// The world's starting value is no bar. The slots are seeded from the save, so what fired
+/// before it was written is in the count already; what a conversation OUTSIDE this group
+/// contributed is not, and is a constant for the request. `DataLayout::counter_onces` carries
+/// that constant and the guards rebase their thresholds by it.
+///
+/// ## Why this is worth more than the bits
+///
+/// A slot three bits wide costs three decision-diagram variables, which is the small part. The
+/// large part is that the diagram must carry the RELATION between them and the once slots -
+/// `counter == how many of these five are set` - and no variable order makes that cheap: the
+/// counter's bits have to interleave with the once bits, and whatever order is chosen is wrong
+/// for some of them. Dropping the counter does not narrow the state by three bits, it deletes a
+/// constraint over six variables and leaves five independent ones with nothing to relate.
+///
+/// Conversation 1168, in 761's group, holds two of these: `seafort.deserter_charge_counter`,
+/// five sites and three bits, and `seafort.deserter_scope_hub_counter`, six sites and two. The
+/// first is the deserter confession - press him on at least three of five charges.
+///
+/// ## What a caller still has to do
+///
+/// DROPPING THE SLOT IS NOT ENOUGH ON ITS OWN, and is unsound by itself: a guard still reading
+/// it would compile against a slot the layout does not carry, which reads as unknown and lets
+/// the gate through. The comparison has to be rewritten as a threshold over the returned slots
+/// first. See de-bfs0.
+pub fn counters_from_onces(graph: &LookAheadGraph) -> HashMap<usize, Vec<(DialogueNodeId, usize)>> {
+    let mut contributors: HashMap<usize, Vec<(DialogueNodeId, usize)>> = HashMap::new();
+    let mut disqualified: HashSet<usize> = HashSet::new();
+
+    for node in graph.nodes() {
+        for action in node.all_actions() {
+            let slot = action.slot();
+            if slot < 0 {
+                continue;
+            }
+            let slot = slot as usize;
+            match action.kind() {
+                DialogueActionKind::Increment => {
+                    // BY ONE AND `once`, or the count of fired slots is not the value.
+                    if action.value() != 1 || !action.once() || node.once_slot < 0 {
+                        disqualified.insert(slot);
+                        continue;
+                    }
+                    contributors
+                        .entry(slot)
+                        .or_default()
+                        .push((node.id, node.once_slot as usize));
+                }
+                // AN ASSIGNMENT PUTS A VALUE IN THE SLOT THAT NO COUNT EXPLAINS.
+                DialogueActionKind::Assign => {
+                    disqualified.insert(slot);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    contributors.retain(|slot, onces| {
+        onces.sort_unstable_by_key(|(node, once)| (node.conversation_id, node.entry_id, *once));
+        onces.dedup();
+        !disqualified.contains(slot) && !onces.is_empty()
+    });
+    contributors
+}
+
 /// Where each part of a data state lives, in variable numbers.
 #[derive(Debug, Clone)]
 pub struct DataLayout {
@@ -61,6 +137,14 @@ pub struct DataLayout {
     ///
     /// A set rather than a per-slot field because most slots are not counters.
     deltas: HashSet<usize>,
+    /// Counter slots dropped because their value is how many of some `once` slots are set, and
+    /// which slots those are. Empty unless [`Self::dropping_redundant_counters`] ran.
+    ///
+    /// A GUARD READING ONE OF THESE MUST BE REWRITTEN, not compiled against the slot: the slot
+    /// is gone, and a comparison against a slot the layout does not carry reads as unknown,
+    /// which lets the gate through. [`crate::symbolic::guard_formula::GuardCompiler`] asks this
+    /// and builds a threshold over the listed slots instead.
+    from_onces: HashMap<usize, (Vec<usize>, i32)>,
     /// The counters held as their value that saturate at their own ceiling rather than at the
     /// counter cap, because they cannot loop. See [`Self::lay_out_counters`].
     unsaturated: HashSet<usize>,
@@ -152,6 +236,7 @@ impl DataLayout {
             total: next,
             deltas,
             unsaturated,
+            from_onces: HashMap::new(),
         }
     }
 
@@ -444,6 +529,7 @@ impl DataLayout {
             false,
         )
         .keeping_only_read(graph.symbols(), &reads)
+        .dropping_redundant_counters_if_asked(graph, world)
     }
 
     /// Every entry reachable by links from any entry of `conversations`, those included.
@@ -547,6 +633,87 @@ impl DataLayout {
 
         self.renumber();
         self
+    }
+
+    /// The same layout with every counter dropped whose value is how many `once` slots are set.
+    ///
+    /// EXACT, NOT AN APPROXIMATION, unlike [`Self::without_visit_flags`]. The dropped slot's
+    /// value is recoverable from slots the layout still carries and a constant this records -
+    /// see [`counters_from_onces`] for why the count moves with the value, and
+    /// [`Self::counter_onces`] for the constant between them.
+    ///
+    /// A CALLER MUST REWRITE THE GUARDS. This leaves the map behind in [`Self::counter_onces`]
+    /// precisely because dropping alone is unsound: a comparison compiled against a slot the
+    /// layout no longer carries reads as unknown and lets its gate through. The compiler asks
+    /// for the map and builds a threshold over the contributing slots instead.
+    pub fn dropping_redundant_counters(
+        mut self,
+        graph: &LookAheadGraph,
+        world: &dyn crate::world::ILookAheadWorld,
+    ) -> Self {
+        let symbols = graph.symbols();
+        self.from_onces = counters_from_onces(graph)
+            .into_iter()
+            // WHAT THE WORLD CONTRIBUTES FROM OUTSIDE, which is what makes this sound rather
+            // than group-local. `counters_from_onces` sees ONE group, and these are global
+            // variables: another conversation can increment the same one, and the save's value
+            // then counts a write no slot here reflects. That does not stop the substitution,
+            // it shifts it. The value is
+            //
+            //     counter = outside + (how many of these once slots are set)
+            //
+            // because a site that fired before the save arrives with its slot seeded, so the
+            // set counts the group's own history already. Take `outside` to be the save's value
+            // less the sites it records as shown, and every guard rebases by it: `counter >= k`
+            // is `at least k - outside of these are set`.
+            .filter_map(|(slot, contributors)| {
+                let name = symbols.name_of(slot)?;
+                let declared = symbols.variable_ref(name)?;
+                let held = crate::core::state::slot_value_of(&world.get_variable(declared));
+                let fired = contributors
+                    .iter()
+                    .filter(|(node, _)| world.is_seen(*node))
+                    .count() as i32;
+                let onces = contributors.into_iter().map(|(_, once)| once).collect();
+                Some((slot, (onces, held - fired)))
+            })
+            .collect();
+
+        for slot in self.from_onces.keys() {
+            if let Some(held) = self.slots.get_mut(*slot) {
+                held.1 = 0;
+            }
+        }
+        self.renumber();
+        self
+    }
+
+    /// [`Self::dropping_redundant_counters`] where `DEGCT_DROP_COUNTERS` asks, and otherwise
+    /// the layout unchanged.
+    ///
+    /// BEHIND A SWITCH WHILE IT IS BEING MEASURED. It changes what every search carries, and
+    /// what it buys is a question about diagrams rather than about bits - see de-bfs0.
+    fn dropping_redundant_counters_if_asked(
+        self,
+        graph: &LookAheadGraph,
+        world: &dyn crate::world::ILookAheadWorld,
+    ) -> Self {
+        if crate::core::env::var("DROP_COUNTERS").as_deref() == Ok("1") {
+            self.dropping_redundant_counters(graph, world)
+        } else {
+            self
+        }
+    }
+
+    /// The `once` slots a dropped counter's value counts, and what the value holds on top of
+    /// them - `None` for a slot the layout still carries.
+    ///
+    /// The second number is what writers outside this group contributed, so the counter is
+    /// `offset + (how many of the slots are set)` and a guard rebases its constant by it.
+    pub fn counter_onces(&self, slot: usize) -> Option<(&[usize], i32)> {
+        self.from_onces
+            .get(&slot)
+            .map(|(onces, offset)| (onces.as_slice(), *offset))
     }
 
     /// The same layout with the per-entry visit flags dropped.
@@ -1218,6 +1385,128 @@ mod tests {
         assert!(
             !layout.saturates_at_cap(slot),
             "it cannot loop, so its ceiling stops it"
+        );
+    }
+
+    /// A group whose counter is raised once from each of two entries, behind a gate reading it.
+    ///
+    /// The gate is what makes the variable DECLARED, which is what lets a world be asked for
+    /// its value - only what a guard reads is.
+    fn gated_counter(name: &str, sites: usize, raise: i32, once: bool) -> LookAheadGraph {
+        let mut symbols = StateSymbols::new();
+        let slot = symbols.variable(name);
+        let gate = Guard::comparison(
+            ">=".to_string(),
+            Guard::variable(name.to_string()),
+            Guard::literal(crate::core::guard_value::GuardValue::from_number(2.0)),
+        );
+
+        let nodes = (0..sites)
+            .map(|site| LookAheadNode {
+                guard: gate.clone(),
+                actions: vec![DialogueAction::increment(
+                    slot,
+                    raise,
+                    once,
+                    "SetVariableValue".to_string(),
+                )],
+                ..LookAheadNode::new(DialogueNodeId::new(1, site as i32))
+            })
+            .collect();
+        LookAheadGraph::new(nodes, symbols).unwrap()
+    }
+
+    /// The slot a name ended up on, which graph building is free to move.
+    fn slot_named(graph: &LookAheadGraph, name: &str) -> usize {
+        let symbols = graph.symbols();
+        (0..symbols.count())
+            .find(|slot| symbols.name_of(*slot) == Some(name))
+            .expect("the name is on a slot")
+    }
+
+    /// Every raise `once` and by one, so the value is how many of the once slots are set.
+    #[test]
+    fn a_counter_only_once_actions_raise_is_a_count_of_them() {
+        let graph = gated_counter("charges", 3, 1, true);
+        let slot = slot_named(&graph, "charges");
+
+        let found = counters_from_onces(&graph);
+        let onces = found.get(&slot).expect("the counter is redundant");
+        assert_eq!(onces.len(), 3, "one contributor per site");
+    }
+
+    /// A raise that is not `once` can fire again, so no set of slots counts it.
+    #[test]
+    fn a_counter_an_unguarded_raise_touches_is_not() {
+        assert!(counters_from_onces(&gated_counter("charges", 3, 1, false)).is_empty());
+    }
+
+    /// A raise by more than one moves the value further than the count.
+    #[test]
+    fn a_counter_raised_by_more_than_one_is_not() {
+        assert!(counters_from_onces(&gated_counter("charges", 3, 2, true)).is_empty());
+    }
+
+    /// The bits leave the layout, and the map the guards need is left behind.
+    #[test]
+    fn dropping_a_redundant_counter_takes_its_bits_out() {
+        let graph = gated_counter("charges", 3, 1, true);
+        let slot = slot_named(&graph, "charges");
+        let world = crate::world::test_world::TestWorld::new();
+
+        let kept = DataLayout::for_group(&graph, &world, 16);
+        let (_, width) = kept.slot(slot).expect("carried before");
+        assert!(width > 0);
+
+        let dropped = kept.clone().dropping_redundant_counters(&graph, &world);
+        assert_eq!(dropped.slot(slot), None, "the slot is gone");
+        assert_eq!(
+            kept.total_vars() - dropped.total_vars(),
+            width as u32,
+            "and exactly its own width went with it"
+        );
+        assert_eq!(
+            dropped.counter_onces(slot).map(|(onces, _)| onces.len()),
+            Some(3)
+        );
+    }
+
+    /// What the save holds beyond this group's own shown sites is the offset the guards rebase
+    /// by: a conversation elsewhere raising the same variable does not stop the substitution,
+    /// it lowers the threshold the once slots have to meet.
+    #[test]
+    fn a_counter_the_world_holds_above_its_shown_sites_keeps_the_difference() {
+        use crate::core::guard_value::GuardValue;
+
+        const HELD: i32 = 3;
+        let graph = gated_counter("charges", 3, 1, true);
+        let slot = slot_named(&graph, "charges");
+
+        // One site shown, three raises in the value: two of them came from somewhere else.
+        let world = crate::world::test_world::TestWorld::new()
+            .set_variable("charges", GuardValue::from_number(HELD as f64))
+            .set_seen(DialogueNodeId::new(1, 0), true);
+
+        let dropped =
+            DataLayout::for_group(&graph, &world, 16).dropping_redundant_counters(&graph, &world);
+        assert_eq!(
+            dropped.counter_onces(slot).map(|(_, offset)| offset),
+            Some(HELD - 1)
+        );
+    }
+
+    /// A save whose counter is exactly its shown sites rebases by nothing.
+    #[test]
+    fn a_counter_the_world_holds_at_its_shown_sites_rebases_by_nothing() {
+        let graph = gated_counter("charges", 3, 1, true);
+        let slot = slot_named(&graph, "charges");
+        let world = crate::world::test_world::TestWorld::new();
+
+        let dropped =
+            DataLayout::for_group(&graph, &world, 16).dropping_redundant_counters(&graph, &world);
+        assert_eq!(
+            dropped.counter_onces(slot).map(|(_, offset)| offset),
+            Some(0)
         );
     }
 

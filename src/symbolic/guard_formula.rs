@@ -1195,6 +1195,21 @@ impl<'a> GuardCompiler<'a> {
 
         // Tracked: pin the slot's bits against the value.
         if let Some(value) = Self::whole_number(literal) {
+            // A COUNTER THE LAYOUT DROPPED has no bits to pin: its value is how many of some
+            // `once` slots are set, and those slots are still carried. This has to come before
+            // every path below, all of which read bits that are no longer there - and a
+            // comparison against a slot the layout does not carry reads as undecided, which is
+            // the permissive answer and would let the gate through. See
+            // `DataLayout::dropping_redundant_counters`.
+            if let Some(slot) = self.vars.slot_of(name)
+                && self.vars.layout().counter_onces(slot).is_some()
+            {
+                return match self.counted(slot, op, value as i64) {
+                    Some(holds) => self.decided(holds),
+                    None => self.no_room(Self::rendered(op, name, literal)),
+                };
+            }
+
             // A REBASED SLOT holds the distance the search has travelled rather than the
             // value the guard is written about, so the comparison is rewritten around the
             // value the search started at. This has to come first: the paths below read the
@@ -1350,6 +1365,83 @@ impl<'a> GuardCompiler<'a> {
             return Rebase::NoRoom;
         };
         Rebase::Formula(holds)
+    }
+
+    /// `counter op constant`, where the counter is how many of some `once` slots are set.
+    ///
+    /// ## What the rebase here is, and what it is not
+    ///
+    /// A delta slot holds how far the SEARCH has moved a variable, so the save's whole value
+    /// folds into the constant. This rebases by less than that. The `once` slots are seeded
+    /// from the world by `state::seed_state`, so a site that fired before the save was written
+    /// arrives with its slot already set, and the count covers this group's own history without
+    /// help. What it cannot cover is a writer in some OTHER conversation - these are global
+    /// variables - so the layout records what the save holds beyond the sites it marks as
+    /// shown, and that offset, and only it, comes off the constant:
+    ///
+    /// ```text
+    /// counter op k   is   (offset + set count) op k   is   set count op (k - offset)
+    /// ```
+    ///
+    /// A threshold at or below zero is then met by every state, which is the right answer and
+    /// not a degenerate one: the outside writes alone already satisfy the gate.
+    fn counted(&mut self, slot: usize, op: &str, constant: i64) -> Option<BDDFunction> {
+        let (onces, offset) = self.vars.layout().counter_onces(slot)?;
+        let onces = onces.to_vec();
+        let constant = constant - offset as i64;
+
+        let at_least = |compiler: &Self, wanted: i64| -> Option<BDDFunction> {
+            if wanted <= 0 {
+                return Some(compiler.top());
+            }
+            compiler.at_least_set(&onces, wanted as usize)
+        };
+
+        match op {
+            ">=" => at_least(self, constant),
+            ">" => at_least(self, constant + 1),
+            "<" => at_least(self, constant).and_then(|held| held.not().ok()),
+            "<=" => at_least(self, constant + 1).and_then(|held| held.not().ok()),
+            "==" | "~=" => {
+                let reached = at_least(self, constant)?;
+                let beyond = at_least(self, constant + 1)?;
+                let exactly = reached.and(&beyond.not().ok()?).ok()?;
+                if op == "==" {
+                    Some(exactly)
+                } else {
+                    exactly.not().ok()
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// "At least `wanted` of `slots` are set", counted rather than enumerated.
+    ///
+    /// ONE PASS PER SLOT, carrying `wanted + 1` formulas: after each slot, entry `j` holds "at
+    /// least j of the slots so far". Taking the slot advances by one and skipping it does not,
+    /// which is the whole recurrence. That is `slots * wanted` diagram operations, where
+    /// enumerating the subsets would be `slots choose wanted` - thirty slots and a threshold of
+    /// three is ninety operations against four thousand terms.
+    fn at_least_set(&self, slots: &[usize], wanted: usize) -> Option<BDDFunction> {
+        if wanted > slots.len() {
+            return Some(self.bottom());
+        }
+        let mut reached = vec![self.top()];
+        reached.extend(std::iter::repeat_n(self.bottom(), wanted));
+
+        for &slot in slots {
+            let set = self.vars.slot_is_set(slot)?;
+            let clear = set.not().ok()?;
+            let mut next = vec![self.top()];
+            for count in 1..=wanted {
+                let taking = set.and(&reached[count - 1]).ok()?;
+                let skipping = clear.and(&reached[count]).ok()?;
+                next.push(taking.or(&skipping).ok()?);
+            }
+            reached = next;
+        }
+        reached.pop()
     }
 
     /// Where a rebased slot's variable starts: what `seed_state` would have put in the slot,
