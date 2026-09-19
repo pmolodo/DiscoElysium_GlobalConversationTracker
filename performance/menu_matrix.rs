@@ -50,6 +50,16 @@
 //! `setup ms` is how much of it was building the layout, the manager, the compiled guards
 //! and the seed rather than searching, so the searching is the difference.
 //!
+//! `prep ms` is what came BEFORE either of those: building the group's graph and walking its
+//! profile. Every group pays it, whether or not a menu is ever measured, so it is its own
+//! column rather than a second meaning for `setup ms` - a column that means two things cannot
+//! be totalled, and these two can.
+//!
+//! That is what makes a row saying NO-MENU cost anything at all. Such a row holds the word in
+//! `menu ms`, a `setup ms` of zero because no layout or manager is ever built for it, and a
+//! `prep ms` of whatever the graph build and the walk took. A quarter of a whole-game run's
+//! rows are NO-MENU and what they spent was otherwise unwritten. See de-ealo.
+//!
 //! `asked` is passes run across the whole menu: one worklist pass per round to ask whether
 //! anything is still reachable, and one single-target pass per target the branch and bound
 //! did not skip. The default adds the sibling-cut passes the onward question asks first.
@@ -182,9 +192,9 @@ use seen_profile::candidates;
 ///
 /// A DRIVER ASKS FOR THESE rather than parsing them off a row, so that a file assembled from
 /// many processes cannot get a header that disagrees with its rows.
-const COLUMNS: [&str; 13] = [
-    "conv", "entries", "options", "offered", "menu_ms", "setup_ms", "asked", "rounds", "settled",
-    "partly", "nodes", "starred", "exact",
+const COLUMNS: [&str; 14] = [
+    "conv", "entries", "options", "offered", "menu_ms", "setup_ms", "prep_ms", "asked", "rounds",
+    "settled", "partly", "nodes", "starred", "exact",
 ];
 
 /// The groups to measure when nothing is named: the heavy list the matrix has always meant.
@@ -600,6 +610,9 @@ fn main() {
     let unseen_wanted = from_env("UNSEEN", UNSEEN);
 
     for conversation in numbers("CONVERSATION", &CONVERSATIONS) {
+        // FROM BEFORE THE GRAPH BUILD, because that is the cost a row which never measures
+        // anything is made of - see `row`'s `spent`.
+        let started = Instant::now();
         let Ok((graph, _)) = build_group_graph(&index, conversation) else {
             eprintln!("conversation {conversation}: no group builds from it; skipping.");
             continue;
@@ -621,7 +634,7 @@ fn main() {
             match MenuProfile::of(&graph, root, unseen_wanted, starts_wanted) {
                 Some(found) => (found.on_a_fresh_save(), None),
                 None => {
-                    row(conversation, &graph, 0, NO_MENU, None);
+                    row(conversation, &graph, 0, NO_MENU, started.elapsed(), None);
                     continue;
                 }
             }
@@ -668,7 +681,7 @@ fn main() {
                     )
                 }
                 None => {
-                    row(conversation, &graph, 0, NO_MENU, None);
+                    row(conversation, &graph, 0, NO_MENU, started.elapsed(), None);
                     continue;
                 }
             }
@@ -725,7 +738,7 @@ fn main() {
                     )
                 }
                 None => {
-                    row(conversation, &graph, 0, NO_MENU, None);
+                    row(conversation, &graph, 0, NO_MENU, started.elapsed(), None);
                     continue;
                 }
             }
@@ -733,11 +746,15 @@ fn main() {
             match MenuProfile::of(&graph, root, unseen_wanted, starts_wanted) {
                 Some(found) => (found, None),
                 None => {
-                    row(conversation, &graph, 0, NO_MENU, None);
+                    row(conversation, &graph, 0, NO_MENU, started.elapsed(), None);
                     continue;
                 }
             }
         };
+
+        // THE GRAPH AND THE WALK ARE BEHIND US, and nothing a menu costs is. Taken here rather
+        // than where the row is written, or a measured row's prep would swallow its search.
+        let prep = started.elapsed();
 
         // WHAT THE PLAYER HAS SEEN, AT BOTH SCOPES, counted rather than described. A scenario is
         // a claim about the novelty distribution, and the row cannot say which claim it made -
@@ -774,6 +791,7 @@ fn main() {
                 &graph,
                 profile.starts.len(),
                 "",
+                prep,
                 Some(&measured),
             ),
             // THE MACHINE COULD NOT SUPPLY THE BUDGET, which is not a finding about the
@@ -784,6 +802,7 @@ fn main() {
                 &graph,
                 profile.starts.len(),
                 NOT_MEASURED,
+                prep,
                 None,
             ),
         }
@@ -1082,11 +1101,17 @@ where
 /// `why` is a word for a row that was not measured, and empty for one that was. It goes in
 /// the `menu_ms` column rather than in a column of its own, so a row that says nothing says
 /// so where a reader is already looking.
+///
+/// `prep` is the graph build and the profile's walk, which EVERY group pays whether or not a
+/// menu is measured - so it is reported for every row, and a row that was not measured reports
+/// a `setup_ms` of zero beside it rather than borrowing that column to mean something else.
+/// See de-ealo.
 fn row(
     conversation: i32,
     graph: &LookAheadGraph,
     offered: usize,
     why: &str,
+    prep: Duration,
     measured: Option<&Menu>,
 ) {
     let cells: Vec<String> = match measured {
@@ -1097,6 +1122,7 @@ fn row(
             offered.to_string(),
             format!("{:.0}", ms(m.took)),
             format!("{:.0}", ms(m.setup)),
+            format!("{:.0}", ms(prep)),
             m.asked.to_string(),
             m.rounds.to_string(),
             m.settled.to_string(),
@@ -1118,8 +1144,13 @@ fn row(
                 "0".to_string(),
                 offered.to_string(),
                 why.to_string(),
+                // NOTHING WAS SET UP: no layout, no manager, no compiled guards. Zero rather
+                // than "?", because it is known and it is none.
+                "0".to_string(),
+                format!("{:.0}", ms(prep)),
             ];
-            cells.extend(COLUMNS.iter().skip(5).map(|_| "?".to_string()));
+            // The rest are answers a measurement would have given, and there was none.
+            cells.extend(COLUMNS.iter().skip(7).map(|_| "?".to_string()));
             cells
         }
     };
