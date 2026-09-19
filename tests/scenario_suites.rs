@@ -136,9 +136,13 @@ impl Staged {
     ) -> Result<Walkthrough, String> {
         let mut snapshot = self.request.world.clone();
         snapshot.resolve(&self.questions)?;
+        // WITH THE DECLARED TABLE, as the game has it. Without one, a variable the save does
+        // not hold answers UNKNOWN, which is permissive - and the game answers it the way
+        // `SnapshotWorld::get_variable` does with a table: the declared initial, or false for
+        // a name nothing declares. A walk taken without it goes where the game will not.
         walk_inputs(
             &self.graph,
-            &SnapshotWorld::new(snapshot),
+            &SnapshotWorld::declaring(snapshot, common::variable_table()),
             conversation,
             inputs,
         )
