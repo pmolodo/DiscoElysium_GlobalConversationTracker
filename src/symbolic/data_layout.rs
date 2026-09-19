@@ -34,6 +34,7 @@ use crate::core::state::{
 use crate::core::types::DialogueNodeId;
 use crate::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
+use crate::symbolic::var_order::Ordering;
 use crate::world::MONEY_QUERY;
 
 /// Minutes in a day; the clock is wrapped into `0..MINUTES_IN_DAY`.
@@ -212,6 +213,12 @@ pub struct DataLayout {
     /// The counters held as their value that saturate at their own ceiling rather than at the
     /// counter cap, because they cannot loop. See [`Self::lay_out_counters`].
     unsaturated: HashSet<usize>,
+    /// The sequence [`Self::renumber`] hands out variables in, which IS the variable order.
+    ///
+    /// A permutation of the slot indices, `0..slots.len()` unless
+    /// [`Self::in_variable_order`] put the slots in another one. See
+    /// [`crate::symbolic::var_order`] for what else it could be and why it matters.
+    order: Vec<usize>,
 }
 
 impl DataLayout {
@@ -294,6 +301,7 @@ impl DataLayout {
         };
 
         Self {
+            order: (0..slots.len()).collect(),
             slots,
             money,
             clock,
@@ -615,6 +623,7 @@ impl DataLayout {
         )
         .keeping_only_read(graph.symbols(), &reads)
         .dropping_redundant_counters(graph, world)
+        .in_variable_order(graph, Ordering::asked_for())
     }
 
     /// Every entry reachable by links from any entry of `conversations`, those included.
@@ -773,6 +782,25 @@ impl DataLayout {
         self
     }
 
+    /// The same layout with the slots put in `ordering`'s sequence.
+    ///
+    /// THE LAST STEP, because it is the only one that cares where a slot ends up rather than
+    /// how wide it is - and because an order chosen before the counters were dropped would be
+    /// placing slots that are no longer there.
+    ///
+    /// An ordering cannot change an answer, only how much room reaching it takes. See
+    /// [`crate::symbolic::var_order`].
+    pub fn in_variable_order(mut self, graph: &LookAheadGraph, ordering: Ordering) -> Self {
+        self.order = ordering.of(graph, self.slots.len());
+        self.renumber();
+        self
+    }
+
+    /// The order the slots take their variables in - see [`Self::in_variable_order`].
+    pub fn variable_order(&self) -> &[usize] {
+        &self.order
+    }
+
     /// The `once` slots a dropped counter's value counts, and what the value holds on top of
     /// them - `None` for a slot the layout still carries.
     ///
@@ -816,7 +844,11 @@ impl DataLayout {
     /// so the diagram keeps exactly the depth the dropping was meant to remove.
     fn renumber(&mut self) {
         let mut next = 0u32;
-        for (base, bits) in &mut self.slots {
+        // IN THE CHOSEN ORDER, which is what makes this the variable order and not just a
+        // numbering: `DataVars` adds the manager's variables in layout order, so a slot's
+        // place in this sequence is its level in every diagram built over it.
+        for slot in &self.order {
+            let (base, bits) = &mut self.slots[*slot];
             *base = next;
             next += *bits as u32;
         }

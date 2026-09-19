@@ -42,6 +42,7 @@ pub mod reachability;
 pub mod register;
 pub mod search;
 pub mod trim;
+pub mod var_order;
 pub mod vars;
 
 use std::collections::HashMap;
