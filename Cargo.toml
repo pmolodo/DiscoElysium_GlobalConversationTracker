@@ -202,3 +202,9 @@ path = "performance/group_list.rs"
 [[example]]
 name = "onward_or_back"
 path = "performance/onward_or_back.rs"
+
+# What proving ONE shut target costs, which is the case a walk settles in 18 ms and the
+# backward fixed point does not. See de-y04p.
+[[example]]
+name = "target_cost"
+path = "performance/target_cost.rs"
