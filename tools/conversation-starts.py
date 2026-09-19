@@ -21,8 +21,10 @@ found anyway, and the report names the field it was found in.
 
 CODE, for names that are not on any component: `HardcodedDialogues.LIST` - a static table the
 dreams, wakeups and cutscene situations read - plus the three string literals elsewhere in the
-game. The Final Cut export drops the table's contents; the Cpp2IL ISIL dump holds them and
-agrees with the pre-Final-Cut export, so the sixteen strings are transcribed here.
+game, plus `ReputationAlterant.orbDialogues`, which names one conversation per reputation and
+is how the political thoughts arrive. The Final Cut export drops both tables' contents; the
+Cpp2IL ISIL dump holds them and agrees with the pre-Final-Cut export, so the strings are
+transcribed here.
 
 ITEMS, from the dialogue database's own items table, which names conversations in its
 `conversation`, `equipOrb` and `alternativeEquipOrb` fields.
@@ -91,6 +93,36 @@ HARDCODED = (
 
 #: The only conversation names written as string literals anywhere else in the game's code.
 LITERALS = ("ICE / KIM RACISM FINAL TALK", "Stage directions test dialogue")
+
+#: `ReputationAlterant.orbDialogues`, one title per reputation. Crossing a reputation's
+#: threshold adds an ORB rather than starting a conversation directly -
+#: `GlobalOrbManager.AddObsession(orbDialogues[(int)rep])` - and the orb's conversation is
+#: what the player then reaches, which is why these are starts and not links.
+#:
+#: WHAT AWARDS THEM IS THE TALLY. The political thoughts have no Lua call and no component
+#: field, because they are earned by counting dialogue choices in C#; this array is where that
+#: counting names its conversations.
+#:
+#: The Final Cut export declares the array and strips its initialiser, exactly as it does
+#: `HardcodedDialogues.LIST`, so these are transcribed from the pre-Final-Cut export whose
+#: bodies decompile. Confirm against the ISIL dump before treating the list as exact.
+ORB_DIALOGUES = (
+    "THOUGHT / APOCALYPSE COP",
+    "THOUGHT / BORING COP",
+    "THOUGHT / SUPERSTAR COP",
+    "THOUGHT / SORRY COP",
+    "THOUGHT / WORLD REPUBLIC",
+    "THOUGHT / REVACHOLIAN NATIONHOOD",
+    "THOUGHT / GOSSAMER STATE",
+    "THOUGHT / KINGDOM OF CONSCIENCE",
+    "THOUGHT / HONOUR",
+    "THOUGHT / THE DESTROYER",
+    "THOUGHT / TORQUE DORK",
+    "THOUGHT / COACH PHYSICAL INSTRUMENT",
+    "THOUGHT / ART COP",
+    "THOUGHT / REMOTE VIEWER",
+    "THOUGHT / SUICIDE COP",
+)
 
 
 def load_index(path):
@@ -313,7 +345,7 @@ def build(export=EXPORT, index_path=INDEX, database=DATABASE, corpus=CORPUS, out
     print(f"linked into from elsewhere   {len(links)}")
     print(f"saves scanned                {files}")
 
-    counts = write_dataset(index, titles, (component, HARDCODED + LITERALS, item, links, saves), out)
+    counts = write_dataset(index, titles, (component, HARDCODED + LITERALS + ORB_DIALOGUES, item, links, saves), out)
     print(f"\nstartable                    {counts['startable']}")
     print(f"reachable (starts + links)   {counts['reachable']}")
     print(f"residue                      {counts['residue']}")
