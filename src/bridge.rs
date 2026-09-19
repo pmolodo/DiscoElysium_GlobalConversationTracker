@@ -51,7 +51,7 @@ use crate::core::inventory_tabs;
 use crate::core::item_group;
 use crate::core::state::{ITEM_PREFIX, THOUGHT_PREFIX, VariableRef};
 use crate::core::types::StartBranch;
-use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, Ternary};
+use crate::core::types::{DialogueCheckKind, DialogueNodeId, SeenState, Ternary};
 use crate::formats::runs;
 use crate::graph::LookAheadGraph;
 use crate::index::{Index, VariableTable, build_group_graph};
@@ -61,8 +61,8 @@ use crate::symbolic::data_layout::DataLayout;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::isolated;
 use crate::symbolic::known::GroupShape;
-use crate::symbolic::novelty_search;
 use crate::symbolic::reachability::seed_of;
+use crate::symbolic::seen_state_search;
 use crate::symbolic::vars::DataVars;
 use crate::world::ILookAheadWorld;
 use oxidd::bdd::BDDFunction;
@@ -1352,10 +1352,10 @@ pub struct LookAheadAnswer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
 
-    /// The best novelty already known about this start, before any search.
+    /// The best seen state already known about this start, before any search.
     ///
     /// THE SAME QUANTITY IN BOTH CASES, which is the point of flattening: for an ordinary
-    /// option it is the option's own novelty, and for an outcome it is the best novelty
+    /// option it is the option's own seen state, and for an outcome it is the best seen state
     /// among the entries that outcome leads to DIRECTLY. Either way it is the baseline a
     /// search has to beat to be worth running, and the thing the mod colours the word by.
     #[serde(default)]
@@ -1797,7 +1797,7 @@ pub fn answer(
     // THE ONE RULE, asked of the world and of what the global tracking holds - see
     // `world::seen_state`.
     let seen_any_game = |id: DialogueNodeId| request.seen_any_game.contains(&NodeRef::from(id));
-    let novelty = crate::world::seen_states(&world, seen_any_game);
+    let seen_state = crate::world::seen_states(&world, seen_any_game);
 
     // ON A THREAD OF ITS OWN, and everything the diagram manager owns is built inside it
     // and dropped inside it - see `symbolic::isolated`. Releasing a large diagram walks it
@@ -1826,7 +1826,7 @@ pub fn answer(
     // IT DOES NOT COVER THE FAULT THE THREAD IS FOR. A stack overflow is not a panic and
     // cannot be caught - see `symbolic::isolated`.
     let answers =
-        isolated::on_its_own_thread_caught(|| answer_within(&graph, &world, request, &novelty));
+        isolated::on_its_own_thread_caught(|| answer_within(&graph, &world, request, &seen_state));
 
     match answers {
         Ok(Some(answers)) => LookAheadResponse {
@@ -1889,10 +1889,10 @@ fn answer_within<F>(
     graph: &LookAheadGraph,
     world: &dyn ILookAheadWorld,
     request: &LookAheadRequest,
-    novelty: &F,
+    seen_state: &F,
 ) -> Option<Vec<LookAheadAnswer>>
 where
-    F: Fn(DialogueNodeId) -> Novelty,
+    F: Fn(DialogueNodeId) -> SeenState,
 {
     let symbols = graph.symbols().clone();
     // NARROWED TO WHAT THE REQUEST'S CONVERSATION CAN REACH - de-3x76.8. The group is much
@@ -1910,13 +1910,13 @@ where
         graph,
         world,
         request,
-        novelty,
+        seen_state,
         &mut compiler,
         &seed,
     ))
 }
 
-/// The group as one menu can walk it, with the shape and the novelty that go with it.
+/// The group as one menu can walk it, with the shape and the seen state that go with it.
 ///
 /// THE ONE PLACE A MENU'S GRAPH IS TRIMMED, for [`answer_starts`] and the menu measurement
 /// alike - see [`crate::symbolic::trim`].
@@ -1961,11 +1961,11 @@ pub fn walkable_menu(
 /// survived until an in-game run found them. See de-0jsf.21.
 ///
 /// A separate position and baseline is retained for each roll, so a check is two contestants.
-pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
+pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> SeenState>(
     group: &LookAheadGraph,
     world: &dyn ILookAheadWorld,
     request: &LookAheadRequest,
-    novelty: &F,
+    seen_state: &F,
     compiler: &mut GuardCompiler<'a>,
     seed: &BDDFunction,
 ) -> Vec<LookAheadAnswer> {
@@ -1973,12 +1973,12 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
     use crate::symbolic::search::Search;
     let began = std::time::Instant::now();
     // THE GROUP AS THIS MENU CAN WALK IT, and what there is to find in it - see
-    // [`walkable_menu`]. Every search below sees the trimmed links and the trimmed novelty.
+    // [`walkable_menu`]. Every search below sees the trimmed links and the trimmed seen state.
     let (trimmed, shape) = walkable_menu(group, compiler, &starts_of(request));
     let graph = &trimmed.graph;
     let shape = &shape;
-    let reachable_novelty = trimmed.novelty(novelty);
-    let novelty = &reachable_novelty;
+    let reachable_states = trimmed.seen_state(seen_state);
+    let seen_state = &reachable_states;
     let mut answers = Vec::new();
     let mut contestants = Vec::new();
     let mut indices = Vec::new();
@@ -2047,7 +2047,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
                 }
                 None => seed,
             };
-            let mut from = novelty_search::Where::of(
+            let mut from = seen_state_search::Where::of(
                 graph,
                 id,
                 branch,
@@ -2063,9 +2063,9 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
             };
             let baseline = destinations
                 .iter()
-                .map(|id| novelty(*id))
+                .map(|id| seen_state(*id))
                 .max()
-                .unwrap_or(Novelty::SeenThisGame);
+                .unwrap_or(SeenState::SeenThisGame);
             let mut result = unanswered(start, "none");
             result.branch = if branch == StartBranch::Either {
                 None
@@ -2115,7 +2115,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
             world,
             counter_cap: COUNTER_CAP as u32,
         },
-        novelty,
+        seen_state,
         &contestants,
         &menu::Budget {
             wall: wall.saturating_sub(began.elapsed()),
@@ -2142,7 +2142,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
     // THE ONWARD STARS, which name no entry: the onward question only establishes that an
     // option leads somewhere, so there is no witness to block. Each is kept with the class it
     // was starred for, since a star claims nothing of a class it was not hunting.
-    let onward: Vec<(usize, Novelty)> = found
+    let onward: Vec<(usize, SeenState)> = found
         .marks
         .iter()
         .enumerate()
@@ -2176,7 +2176,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
                     world: &lifted,
                     counter_cap: COUNTER_CAP as u32,
                 },
-                novelty,
+                seen_state,
                 std::slice::from_ref(&contestant),
                 &menu::Budget {
                     wall: wall.saturating_sub(began.elapsed()),
@@ -2195,7 +2195,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
             let Some(witness) = alone.marks[0].witness else {
                 break alone;
             };
-            let class = novelty(witness);
+            let class = seen_state(witness);
             let rivals: Vec<usize> = onward
                 .iter()
                 .filter(|(_, best)| *best == class)
@@ -2279,11 +2279,11 @@ pub fn spent_since_hub<F>(
     graph: &LookAheadGraph,
     shape: &GroupShape,
     world: &dyn crate::world::ILookAheadWorld,
-    novelty: &F,
+    seen_state: &F,
     encountered: &[DialogueNodeId],
 ) -> HashSet<DialogueNodeId>
 where
-    F: Fn(DialogueNodeId) -> Novelty,
+    F: Fn(DialogueNodeId) -> SeenState,
 {
     if encountered.is_empty() {
         return HashSet::new();
@@ -2298,8 +2298,8 @@ where
             order,
             hub,
             &seen,
-            novelty,
-            Novelty::UnseenThisGame,
+            seen_state,
+            SeenState::UnseenThisGame,
         ));
     }
     spent
@@ -2335,9 +2335,9 @@ pub fn passed_since_hub(
 /// `encountered` is the WALK - where the player has been - and the cut is read off it here: what
 /// they have passed since the hubs they are inside, which step 1 cuts beside the siblings. Empty
 /// for a caller that does not know where the player is, which cuts nothing and marks the same.
-pub fn mark_menu_as_shipped<F: Fn(DialogueNodeId) -> Novelty>(
+pub fn mark_menu_as_shipped<F: Fn(DialogueNodeId) -> SeenState>(
     search: crate::symbolic::search::Search<'_, '_>,
-    novelty: &F,
+    seen_state: &F,
     contestants: &[crate::symbolic::menu::Contestant],
     budget: &crate::symbolic::menu::Budget,
     shape: &GroupShape,
@@ -2350,7 +2350,7 @@ pub fn mark_menu_as_shipped<F: Fn(DialogueNodeId) -> Novelty>(
 
     crate::symbolic::menu::mark_menu_hybrid(
         search,
-        novelty,
+        seen_state,
         contestants,
         budget,
         shape,
@@ -2379,8 +2379,8 @@ fn unanswered(start: NodeRef, stopped_by: &str) -> LookAheadAnswer {
     LookAheadAnswer {
         start,
         branch: None,
-        destination: Novelty::SeenThisGame as i32,
-        best: Novelty::SeenThisGame as i32,
+        destination: SeenState::SeenThisGame as i32,
+        best: SeenState::SeenThisGame as i32,
         witness: None,
         complete: false,
         elapsed_ms: 0,
@@ -2396,18 +2396,18 @@ fn unanswered(start: NodeRef, stopped_by: &str) -> LookAheadAnswer {
 /// and what they MEAN has not changed: a ration ran out, and which one decides whether a
 /// player can do anything about it. What has changed is which rations exist - a set-based
 /// search has candidates and a clock where a state-at-a-time one would have states and bytes.
-fn stopped_name(stopped: novelty_search::StoppedBy) -> &'static str {
+fn stopped_name(stopped: seen_state_search::StoppedBy) -> &'static str {
     match stopped {
-        novelty_search::StoppedBy::Nothing => "none",
+        seen_state_search::StoppedBy::Nothing => "none",
         // A CENSUS HAVING WHAT IT CAME FOR, which is the only thing that sets this and is
         // not something the bridge ever runs. The arm is here because the match is total,
         // and "states" is the wire's nearest word for a caller's appetite running out.
-        novelty_search::StoppedBy::Targets => "states",
-        novelty_search::StoppedBy::Time => "time",
+        seen_state_search::StoppedBy::Targets => "states",
+        seen_state_search::StoppedBy::Time => "time",
         // A pass that could not finish, which is either its own clock or the diagram
         // running out of nodes. `out_of_nodes` tells them apart, and the wire has one word
         // for the pair until something reads them apart.
-        novelty_search::StoppedBy::Incomplete => "memory",
+        seen_state_search::StoppedBy::Incomplete => "memory",
     }
 }
 
@@ -2425,7 +2425,7 @@ fn stopped_name(stopped: novelty_search::StoppedBy) -> &'static str {
 ///
 /// THE ONE PLACE THE QUESTION IS ASKED, for an ordinary option and for each outcome of a
 /// rolled check alike. A search exists to find something that OUTRANKS a baseline: the
-/// option's own novelty for an ordinary option, and where the outcome LANDS for a branch.
+/// option's own seen state for an ordinary option, and where the outcome LANDS for a branch.
 /// Both cases refuse for the same two reasons, in the same order, so neither can drift
 /// from the other and a rule added here reaches all three paths at once.
 ///
@@ -2457,21 +2457,21 @@ fn stopped_name(stopped: novelty_search::StoppedBy) -> &'static str {
 pub fn class_worth_hunting<F>(
     graph: &LookAheadGraph,
     starts: &[DialogueNodeId],
-    baseline: Novelty,
-    novelty: F,
-) -> Option<Novelty>
+    baseline: SeenState,
+    seen_state: F,
+) -> Option<SeenState>
 where
-    F: Fn(DialogueNodeId) -> Novelty,
+    F: Fn(DialogueNodeId) -> SeenState,
 {
     // The cheap half first: nothing outranks the top rung, so a baseline there is settled
     // without walking anything at all.
-    if baseline >= Novelty::UnseenAnyGame {
+    if baseline >= SeenState::UnseenAnyGame {
         return None;
     }
 
     starts
         .iter()
-        .filter_map(|start| graph.best_linked_class(*start, &novelty))
+        .filter_map(|start| graph.best_linked_class(*start, &seen_state))
         .max()
         .filter(|best| *best > baseline)
 }
@@ -2496,12 +2496,12 @@ mod branch_wire_tests {
         world: &TestWorld,
         start: DialogueNodeId,
         branch: StartBranch,
-        novelty: F,
+        seen_state: F,
     ) -> LookAheadAnswer
     where
-        F: Fn(DialogueNodeId) -> Novelty,
+        F: Fn(DialogueNodeId) -> SeenState,
     {
-        answer_menu(graph, world, &[start], novelty)
+        answer_menu(graph, world, &[start], seen_state)
             .into_iter()
             .find(|answer| answer.branch == branch_name(branch))
             .expect("the outcome asked about comes back")
@@ -2513,10 +2513,10 @@ mod branch_wire_tests {
         graph: &LookAheadGraph,
         world: &TestWorld,
         starts: &[DialogueNodeId],
-        novelty: F,
+        seen_state: F,
     ) -> Vec<LookAheadAnswer>
     where
-        F: Fn(DialogueNodeId) -> Novelty,
+        F: Fn(DialogueNodeId) -> SeenState,
     {
         let symbols = graph.symbols().clone();
         let layout = DataLayout::for_graph(
@@ -2534,7 +2534,7 @@ mod branch_wire_tests {
             starts: starts.iter().map(|start| NodeRef::from(*start)).collect(),
             ..Default::default()
         };
-        answer_starts(graph, world, &request, &novelty, &mut compiler, &seed)
+        answer_starts(graph, world, &request, &seen_state, &mut compiler, &seed)
     }
 
     /// What the wire calls an outcome, so a test can find the answer it wanted.
@@ -2583,37 +2583,37 @@ mod branch_wire_tests {
         let world = TestWorld::new();
 
         // 1 is read; everything else is unseen this game. Nothing is unseen anywhere.
-        let novelty = |id: DialogueNodeId| {
+        let seen_state = |id: DialogueNodeId| {
             if id == node(1) {
-                Novelty::SeenThisGame
+                SeenState::SeenThisGame
             } else {
-                Novelty::UnseenThisGame
+                SeenState::UnseenThisGame
             }
         };
 
         assert!(
-            class_worth_hunting(&graph, &[node(0)], novelty(node(0)), novelty).is_none(),
+            class_worth_hunting(&graph, &[node(0)], seen_state(node(0)), seen_state).is_none(),
             "the option should be refused: nothing outranks unseen-this-game here",
         );
 
-        let pass = score_one(&graph, &world, node(0), StartBranch::Pass, novelty);
+        let pass = score_one(&graph, &world, node(0), StartBranch::Pass, seen_state);
         assert_eq!(pass.branch.as_deref(), Some(PASS));
         assert_eq!(
             pass.destination,
-            Novelty::SeenThisGame as i32,
+            SeenState::SeenThisGame as i32,
             "passing opens 1"
         );
         assert_eq!(
             pass.best,
-            Novelty::UnseenThisGame as i32,
+            SeenState::UnseenThisGame as i32,
             "the unread entry past 1 outranks where passing lands, and should be reported",
         );
 
-        let fail = score_one(&graph, &world, node(0), StartBranch::Fail, novelty);
+        let fail = score_one(&graph, &world, node(0), StartBranch::Fail, seen_state);
         assert_eq!(fail.branch.as_deref(), Some(FAIL));
         assert_eq!(
             fail.destination,
-            Novelty::UnseenThisGame as i32,
+            SeenState::UnseenThisGame as i32,
             "failing opens 3"
         );
         assert_eq!(fail.best, fail.destination, "and nothing past 3 beats it");
@@ -2629,17 +2629,17 @@ mod branch_wire_tests {
         let graph = check_landing_on_something_read();
 
         // Everything unseen anywhere, which is what a fresh profile looks like.
-        let novelty = |_: DialogueNodeId| Novelty::UnseenAnyGame;
+        let seen_state = |_: DialogueNodeId| SeenState::UnseenAnyGame;
 
         assert!(
-            class_worth_hunting(&graph, &[node(0)], Novelty::UnseenAnyGame, novelty).is_none(),
+            class_worth_hunting(&graph, &[node(0)], SeenState::UnseenAnyGame, seen_state).is_none(),
             "nothing outranks the top rung, so there is nothing to search for",
         );
     }
 
     /// THE REFUSAL KNOWS WHICH CLASS IT SAW, and that is what the search after it needs.
     ///
-    /// Same graph, same baseline, two novelty functions that differ only in the class the
+    /// Same graph, same baseline, two seen state functions that differ only in the class the
     /// reachable entry carries. A walk that stopped at the first entry beating the baseline
     /// would answer both the same way and name neither class - see `symbolic::answer`
     /// for what the class is for.
@@ -2648,9 +2648,9 @@ mod branch_wire_tests {
         let graph = check_landing_on_something_read();
 
         // Unseen-here everywhere: nothing outranks an unseen-here baseline.
-        let here_only = |_: DialogueNodeId| Novelty::UnseenThisGame;
+        let here_only = |_: DialogueNodeId| SeenState::UnseenThisGame;
         assert_eq!(
-            class_worth_hunting(&graph, &[node(0)], Novelty::UnseenThisGame, here_only),
+            class_worth_hunting(&graph, &[node(0)], SeenState::UnseenThisGame, here_only),
             None,
             "reachable, but not better than the baseline, so there is nothing to hunt",
         );
@@ -2658,14 +2658,14 @@ mod branch_wire_tests {
         // One entry past the check is unseen ANYWHERE, and that outranks the same baseline.
         let one_top_rung = |id: DialogueNodeId| {
             if id == node(2) {
-                Novelty::UnseenAnyGame
+                SeenState::UnseenAnyGame
             } else {
-                Novelty::UnseenThisGame
+                SeenState::UnseenThisGame
             }
         };
         assert_eq!(
-            class_worth_hunting(&graph, &[node(0)], Novelty::UnseenThisGame, one_top_rung),
-            Some(Novelty::UnseenAnyGame),
+            class_worth_hunting(&graph, &[node(0)], SeenState::UnseenThisGame, one_top_rung),
+            Some(SeenState::UnseenAnyGame),
             "and the class it names is what the search is sent hunting",
         );
     }
@@ -2684,25 +2684,25 @@ mod branch_wire_tests {
         let graph = check_landing_on_something_read();
 
         // The check is unseen anywhere; everything it opens has been read here.
-        let novelty = |id: DialogueNodeId| {
+        let seen_state = |id: DialogueNodeId| {
             if id == node(0) {
-                Novelty::UnseenAnyGame
+                SeenState::UnseenAnyGame
             } else {
-                Novelty::SeenThisGame
+                SeenState::SeenThisGame
             }
         };
 
         // Passing opens 1. From there, nothing outranks the floor - 2 is read as well.
         assert_eq!(
-            class_worth_hunting(&graph, &[node(1)], Novelty::SeenThisGame, novelty),
+            class_worth_hunting(&graph, &[node(1)], SeenState::SeenThisGame, seen_state),
             None,
             "the check's own class is not something passing leads to",
         );
 
         // And walking from the check would have said otherwise, which is the bug.
         assert_eq!(
-            class_worth_hunting(&graph, &[node(0)], Novelty::SeenThisGame, novelty),
-            Some(Novelty::UnseenAnyGame),
+            class_worth_hunting(&graph, &[node(0)], SeenState::SeenThisGame, seen_state),
+            Some(SeenState::UnseenAnyGame),
         );
     }
 
@@ -2712,17 +2712,17 @@ mod branch_wire_tests {
         let graph = check_landing_on_something_read();
 
         // Passing opens 1, which is read; 2 lies past it and no save has read that.
-        let novelty = |id: DialogueNodeId| {
+        let seen_state = |id: DialogueNodeId| {
             if id == node(2) {
-                Novelty::UnseenAnyGame
+                SeenState::UnseenAnyGame
             } else {
-                Novelty::SeenThisGame
+                SeenState::SeenThisGame
             }
         };
 
         assert_eq!(
-            class_worth_hunting(&graph, &[node(1)], Novelty::SeenThisGame, novelty),
-            Some(Novelty::UnseenAnyGame),
+            class_worth_hunting(&graph, &[node(1)], SeenState::SeenThisGame, seen_state),
+            Some(SeenState::UnseenAnyGame),
         );
     }
 
@@ -2730,11 +2730,11 @@ mod branch_wire_tests {
     #[test]
     fn a_group_with_nothing_unseen_is_refused() {
         let graph = check_landing_on_something_read();
-        let read = |_: DialogueNodeId| Novelty::SeenThisGame;
+        let read = |_: DialogueNodeId| SeenState::SeenThisGame;
 
         assert_eq!(graph.best_linked_class(node(0), read), None);
         assert_eq!(
-            class_worth_hunting(&graph, &[node(0)], Novelty::SeenThisGame, read),
+            class_worth_hunting(&graph, &[node(0)], SeenState::SeenThisGame, read),
             None
         );
     }
@@ -2821,11 +2821,11 @@ mod branch_wire_tests {
         let _ = index;
 
         let world = TestWorld::new();
-        let novelty = |_: DialogueNodeId| Novelty::UnseenThisGame;
+        let seen_state = |_: DialogueNodeId| SeenState::UnseenThisGame;
 
         let outcomes: Vec<LookAheadAnswer> = [StartBranch::Pass, StartBranch::Fail]
             .into_iter()
-            .map(|branch| score_one(&graph, &world, node(0), branch, novelty))
+            .map(|branch| score_one(&graph, &world, node(0), branch, seen_state))
             .collect();
 
         assert_eq!(outcomes.len(), 2);
@@ -2833,7 +2833,7 @@ mod branch_wire_tests {
         assert_eq!(outcomes[1].branch.as_deref(), Some(FAIL));
 
         // 2 rolls nothing, so it is one start and names no outcome.
-        let plain = score_one(&graph, &world, node(2), StartBranch::Either, novelty);
+        let plain = score_one(&graph, &world, node(2), StartBranch::Either, seen_state);
         assert_eq!(plain.branch, None);
     }
 
@@ -2841,11 +2841,11 @@ mod branch_wire_tests {
     const PRICE: i32 = 10;
 
     /// What an entry is worth to the tests below: 2 has never been read, everything else has.
-    fn only_two_is_unread(id: DialogueNodeId) -> Novelty {
+    fn only_two_is_unread(id: DialogueNodeId) -> SeenState {
         if id == node(2) {
-            Novelty::UnseenAnyGame
+            SeenState::UnseenAnyGame
         } else {
-            Novelty::SeenThisGame
+            SeenState::SeenThisGame
         }
     }
 
@@ -2872,7 +2872,7 @@ mod branch_wire_tests {
         );
         assert_eq!(
             answer.best,
-            Novelty::UnseenAnyGame as i32,
+            SeenState::UnseenAnyGame as i32,
             "buying 0 opens 2, which nobody has read"
         );
     }
@@ -2901,12 +2901,12 @@ mod branch_wire_tests {
 
         assert_eq!(
             best_of(node(1)),
-            Novelty::UnseenAnyGame as i32,
+            SeenState::UnseenAnyGame as i32,
             "the free option reaches 2"
         );
         assert_eq!(
             best_of(node(0)),
-            Novelty::SeenThisGame as i32,
+            SeenState::SeenThisGame as i32,
             "the unaffordable one would reach only what the free one already does"
         );
     }
@@ -2927,9 +2927,9 @@ mod branch_wire_tests {
         let world = TestWorld::new().with_money(PRICE - 1);
         let two_and_three_are_unread = |id: DialogueNodeId| {
             if id == node(2) || id == node(3) {
-                Novelty::UnseenAnyGame
+                SeenState::UnseenAnyGame
             } else {
-                Novelty::SeenThisGame
+                SeenState::SeenThisGame
             }
         };
 
@@ -2949,12 +2949,12 @@ mod branch_wire_tests {
 
         assert_eq!(
             best_of(node(1)),
-            Novelty::UnseenAnyGame as i32,
+            SeenState::UnseenAnyGame as i32,
             "the free option reaches 3"
         );
         assert_eq!(
             best_of(node(0)),
-            Novelty::UnseenAnyGame as i32,
+            SeenState::UnseenAnyGame as i32,
             "buying 0 opens 2, which the free option does not reach"
         );
     }
@@ -3012,9 +3012,9 @@ mod branch_wire_tests {
         let world = TestWorld::new().with_red_checks_failing(true);
         let only_one_is_unread = |id: DialogueNodeId| {
             if id == node(1) {
-                Novelty::UnseenAnyGame
+                SeenState::UnseenAnyGame
             } else {
-                Novelty::SeenThisGame
+                SeenState::SeenThisGame
             }
         };
 
@@ -3031,17 +3031,17 @@ mod branch_wire_tests {
 
         assert_eq!(
             best_of(node(0), StartBranch::Pass),
-            Novelty::UnseenAnyGame as i32,
+            SeenState::UnseenAnyGame as i32,
             "passing would open 1"
         );
         assert_eq!(
             best_of(node(0), StartBranch::Fail),
-            Novelty::SeenThisGame as i32,
+            SeenState::SeenThisGame as i32,
             "failing opens only 2"
         );
         assert_eq!(
             best_of(node(3), StartBranch::Either),
-            Novelty::SeenThisGame as i32,
+            SeenState::SeenThisGame as i32,
             "the sibling cannot pass the check to reach 1"
         );
     }

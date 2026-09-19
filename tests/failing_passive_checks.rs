@@ -50,7 +50,7 @@ const SEEN_THIS_GAME: i32 = 0;
 const UNSEEN_THIS_GAME: i32 = 1;
 const UNSEEN_ANY_GAME: i32 = 2;
 
-/// What the mod would draw, given the option's own novelty and what the search found.
+/// What the mod would draw, given the option's own seen state and what the search found.
 fn drawn(own: i32, answer: &LookAheadAnswer) -> &'static str {
     if own == UNSEEN_ANY_GAME {
         return "none";
@@ -80,7 +80,7 @@ fn menu_markers(consult_the_sheet: bool) -> Option<Vec<(i32, String)>> {
     let recorded = fixtures::recorded_elsewhere_in_group(STATE, &group);
     let read_here = fixtures::read_in_save_group(SAVE, &group);
 
-    let novelty_of = |node: NodeRef| -> i32 {
+    let seen_state_of = |node: NodeRef| -> i32 {
         let key = (node.conversation, node.entry);
         if read_here.contains(&key) {
             SEEN_THIS_GAME
@@ -96,7 +96,7 @@ fn menu_markers(consult_the_sheet: bool) -> Option<Vec<(i32, String)>> {
         everything
             .iter()
             .copied()
-            .filter(|node| novelty_of(*node) == wanted)
+            .filter(|node| seen_state_of(*node) == wanted)
             .collect()
     };
 
@@ -149,7 +149,7 @@ fn menu_markers(consult_the_sheet: bool) -> Option<Vec<(i32, String)>> {
             .map(|reply| {
                 (
                     reply.start.entry,
-                    drawn(novelty_of(reply.start), reply).to_string(),
+                    drawn(seen_state_of(reply.start), reply).to_string(),
                 )
             })
             .collect(),
@@ -207,7 +207,7 @@ const PRIMER: i32 = 1123;
 const ORDINARY: (i32, i32) = (TRASH_CAN, 9);
 const INVERTED: (i32, i32) = (PRIMER, 11);
 
-/// The best novelty an option can reach, with one entry the only thing worth reaching.
+/// The best seen state an option can reach, with one entry the only thing worth reaching.
 ///
 /// Narrowed to one candidate on purpose. The answer is then about that entry and nothing
 /// else, which is what makes it a statement about the check rather than about whatever the

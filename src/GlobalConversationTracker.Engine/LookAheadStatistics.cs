@@ -170,12 +170,12 @@ namespace GlobalConversationTracker.Engine
                 }
             }
 
-            switch ((Novelty)result.Best)
+            switch ((SeenState)result.Best)
             {
-                case Novelty.UnseenAnyGame:
+                case SeenState.UnseenAnyGame:
                     FoundUnseenAnyGame++;
                     break;
-                case Novelty.UnseenThisGame:
+                case SeenState.UnseenThisGame:
                     FoundUnseenThisGame++;
                     break;
                 default:

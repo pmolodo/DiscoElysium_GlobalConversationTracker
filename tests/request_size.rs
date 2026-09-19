@@ -108,7 +108,7 @@ fn a_request_is_measured_and_the_entry_sets_have_a_shape() {
     }
 
     // And the whole request, as it actually travels: every question answered, and the
-    // novelty of every entry decided.
+    // seen state of every entry decided.
     let mut world = WorldSnapshot {
         money: 250,
         day_minutes: 12 * 60,

@@ -198,7 +198,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
             sent.Answers.Add(new Wire.LookAheadAnswer
             {
                 Start = WireConvert.Write(new NodeRef(631, 4)),
-                Best = Wire.Novelty.UnseenAnyGame,
+                Best = Wire.SeenState.UnseenAnyGame,
                 Complete = true,
                 ElapsedMs = 7,
             });

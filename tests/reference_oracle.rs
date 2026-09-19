@@ -36,7 +36,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use lookahead_engine::bridge::{LookAheadRequest, NodeRef, answer_starts};
-use lookahead_engine::core::types::{DialogueNodeId, Novelty};
+use lookahead_engine::core::types::{DialogueNodeId, SeenState};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::oracle::{self, Walk};
@@ -278,7 +278,7 @@ fn the_backward_search_finds_what_the_reference_walk_reaches() {
 /// ## The question is asked the hard way round
 ///
 /// Against a fresh save everything is unseen, the first entry reached answers it, and both
-/// sides return instantly having proved nothing. So the novelty function here says almost
+/// sides return instantly having proved nothing. So the seen state function here says almost
 /// everything is SEEN, leaving a handful of entries deep in the group unseen - which is the
 /// shape that costs.
 ///
@@ -319,15 +319,15 @@ fn the_driver_and_the_shipped_call_find_what_the_reference_walk_finds() {
         });
         let unseen: HashSet<DialogueNodeId> = by_depth.iter().take(3).map(|(_, id)| *id).collect();
 
-        let novelty = |id: DialogueNodeId| {
+        let seen_state = |id: DialogueNodeId| {
             if unseen.contains(&id) {
-                Novelty::UnseenAnyGame
+                SeenState::UnseenAnyGame
             } else {
-                Novelty::SeenThisGame
+                SeenState::SeenThisGame
             }
         };
 
-        let expected = walk.best_novelty(novelty);
+        let expected = walk.best_novelty(seen_state);
         // THE PRODUCT'S OWN LAYOUT, money included where the group reads it. A comparison
         // against a layout nothing ships would check an engine nobody runs.
         let layout = DataLayout::for_group(&graph, &world, COUNTER_CAP);
@@ -355,7 +355,8 @@ fn the_driver_and_the_shipped_call_find_what_the_reference_walk_finds() {
                 starts: vec![NodeRef::from(start)],
                 ..Default::default()
             };
-            let answers = answer_starts(&graph, &world, &request, &novelty, &mut compiler, &seed);
+            let answers =
+                answer_starts(&graph, &world, &request, &seen_state, &mut compiler, &seed);
             let answer = answers.into_iter().next().expect("one start, one answer");
 
             (answer.best, answer, began.elapsed().as_millis())

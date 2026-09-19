@@ -20,7 +20,7 @@
 //!
 //! - An option that is itself UNSEEN ANYWHERE is never marked. Nothing outranks the top
 //!   rung, so there is nothing a marker could report.
-//! - A best AT OR BELOW the option's own novelty draws nothing if the search finished, and
+//! - A best AT OR BELOW the option's own seen state draws nothing if the search finished, and
 //!   the uncertain marker if it did not. Not finding something is provisional; the search
 //!   that ran out has not established that nothing is there.
 //! - A best ABOVE it draws the colour of what was found. That is definite even under a
@@ -48,7 +48,7 @@ use lookahead_engine::bridge::{
     DataKind, LookAheadAnswer, LookAheadRequest, NodeRef, Questions, SnapshotWorld, WorldSnapshot,
     answer,
 };
-use lookahead_engine::core::types::{DialogueNodeId, Novelty};
+use lookahead_engine::core::types::{DialogueNodeId, SeenState};
 use lookahead_engine::index::{Index, build_group_graph, read_index};
 use lookahead_engine::walkthrough::{Walkthrough, walk_inputs};
 
@@ -62,7 +62,7 @@ const SEEN_THIS_GAME: i32 = 0;
 const UNSEEN_THIS_GAME: i32 = 1;
 const UNSEEN_ANY_GAME: i32 = 2;
 
-/// What the mod would draw on an option, given its own novelty and what the search found.
+/// What the mod would draw on an option, given its own seen state and what the search found.
 ///
 /// Spelled as the definition spells it, so a failure reads in the same words the row does.
 fn drawn(own: i32, answer: &LookAheadAnswer) -> &'static str {
@@ -101,7 +101,7 @@ impl Staged {
     /// READ HERE WINS. An entry recorded in the global state AND read in this save is on
     /// the bottom rung, not the middle one - the state records what some save has
     /// displayed, and this save is one of them.
-    fn novelty_of(&self, node: NodeRef) -> i32 {
+    fn seen_state_of(&self, node: NodeRef) -> i32 {
         let key = (node.conversation, node.entry);
         if self.read_here.contains(&key) {
             SEEN_THIS_GAME
@@ -113,11 +113,11 @@ impl Staged {
     }
 
     /// The same, as the engine spells it.
-    fn novelty(&self, id: DialogueNodeId) -> Novelty {
-        match self.novelty_of(NodeRef::from(id)) {
-            UNSEEN_ANY_GAME => Novelty::UnseenAnyGame,
-            UNSEEN_THIS_GAME => Novelty::UnseenThisGame,
-            _ => Novelty::SeenThisGame,
+    fn seen_state(&self, id: DialogueNodeId) -> SeenState {
+        match self.seen_state_of(NodeRef::from(id)) {
+            UNSEEN_ANY_GAME => SeenState::UnseenAnyGame,
+            UNSEEN_THIS_GAME => SeenState::UnseenThisGame,
+            _ => SeenState::SeenThisGame,
         }
     }
 
@@ -271,7 +271,7 @@ fn stage(
                 // where the game draws a marker.
                 variables: fixtures::variables_sent(&scenario.save, &asked),
                 // WHAT THIS SAVE HAS ALREADY SHOWN, which the engine seeds its seen slots from
-                // and which no offline run has ever sent. The same set the novelty rungs are
+                // and which no offline run has ever sent. The same set the seen state rungs are
                 // built out of, put where a guard on having been shown can read it: without it
                 // every once-only entry starts unfired, and a route that is spent in the save
                 // is open to the crawl. Found by diffing against what the game sends - de-v702.
@@ -300,7 +300,7 @@ fn stage(
     staged.request.seen_any_game = everything
         .iter()
         .copied()
-        .filter(|node| staged.novelty_of(*node) != UNSEEN_ANY_GAME)
+        .filter(|node| staged.seen_state_of(*node) != UNSEEN_ANY_GAME)
         .collect();
 
     Some(staged)
@@ -542,7 +542,7 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
                         continue;
                     };
 
-                    let own = staged.novelty_of(start);
+                    let own = staged.seen_state_of(start);
                     let got = drawn(own, reply);
                     checked += 1;
 
@@ -708,7 +708,7 @@ fn every_offline_claim_holds_over_the_whole_group() {
                 .map(|node| NodeRef::from(node.id))
                 .filter(|node| {
                     claim.claim == "nothingIsWorthCrawling"
-                        || staged.novelty_of(*node) == UNSEEN_ANY_GAME
+                        || staged.seen_state_of(*node) == UNSEEN_ANY_GAME
                 })
                 .collect();
 
@@ -727,7 +727,7 @@ fn every_offline_claim_holds_over_the_whole_group() {
             let refused = match claim.claim.as_str() {
                 // THROUGH THE BRIDGE, because the claim is about what the mod DRAWS as
                 // well as about what it spends, and because deciding it from the option's
-                // own novelty here would be restating the rule rather than testing it.
+                // own seen state here would be restating the rule rather than testing it.
                 // Affordable at this size: an empty global state puts nearly every entry
                 // on the top rung, so the searches that would be expensive are the ones
                 // being refused.
@@ -750,14 +750,14 @@ fn every_offline_claim_holds_over_the_whole_group() {
                         .iter()
                         .filter(|reply| {
                             reply.states_explored > 0
-                                || drawn(staged.novelty_of(reply.start), reply) != "none"
+                                || drawn(staged.seen_state_of(reply.start), reply) != "none"
                         })
                         .map(|reply| {
                             format!(
                                 "{}:{} drew {} over {} states",
                                 reply.start.conversation,
                                 reply.start.entry,
-                                drawn(staged.novelty_of(reply.start), reply),
+                                drawn(staged.seen_state_of(reply.start), reply),
                                 reply.states_explored,
                             )
                         })
@@ -777,11 +777,11 @@ fn every_offline_claim_holds_over_the_whole_group() {
                     .iter()
                     .filter(|node| {
                         let id = DialogueNodeId::from(**node);
-                        let own = staged.novelty(id);
-                        own < Novelty::UnseenAnyGame
+                        let own = staged.seen_state(id);
+                        own < SeenState::UnseenAnyGame
                             && staged
                                 .graph
-                                .best_linked_class(id, |id| staged.novelty(id))
+                                .best_linked_class(id, |id| staged.seen_state(id))
                                 .is_some_and(|best| best > own)
                     })
                     .map(|node| {

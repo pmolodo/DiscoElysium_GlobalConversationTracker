@@ -257,7 +257,7 @@ fn a_red_check_and_a_white_check_both_answer() {
 /// THE RULE THE WHOLE FEATURE RESTS ON, at branch level: a search exists to find something
 /// that OUTRANKS what is already known, and nothing outranks the top rung. The option-level
 /// form of this is older - a search is refused before any state is built when nothing
-/// reachable can beat the option's own novelty - and this is the case it cannot cover, an
+/// reachable can beat the option's own seen state - and this is the case it cannot cover, an
 /// option worth searching for one outcome but not the other.
 ///
 /// Measured as STATES rather than as time: zero states is the only evidence that survives

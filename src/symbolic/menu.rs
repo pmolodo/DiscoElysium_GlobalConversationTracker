@@ -48,23 +48,23 @@ fn pooled_rounds() -> bool {
 }
 
 use super::known::GroupShape;
-use super::novelty_search::{StoppedBy, choice_bounds};
 use super::search::Search;
-use crate::core::types::{DialogueNodeId, Novelty};
+use super::seen_state_search::{StoppedBy, choice_bounds};
+use crate::core::types::{DialogueNodeId, SeenState};
 use crate::graph::LookAheadGraph;
 
 pub struct Contestant {
     pub position: Position,
-    pub baseline: Novelty,
+    pub baseline: SeenState,
     /// What choosing it lands on directly: the option itself for an ordinary option, the
     /// first entries an outcome opens for one half of a rolled check. `baseline` is the best
-    /// novelty among these.
+    /// seen state among these.
     pub landing: Vec<DialogueNodeId>,
 }
 
 #[derive(Debug)]
 pub struct Marked {
-    pub best: Novelty,
+    pub best: SeenState,
     pub distance: Option<usize>,
     /// The round that claimed this option, starting at one.
     pub round: Option<usize>,
@@ -182,9 +182,9 @@ pub struct Budget {
 ///
 /// Step 1 lives in [`mark_step_one`] so that a measurement can ask it WITHOUT paying for step
 /// 2. See that function on why it is not written twice.
-pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> Novelty>(
+pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> SeenState>(
     mut search: Search<'_, '_>,
-    novelty: &F,
+    seen_state: &F,
     contestants: &[Contestant],
     budget: &Budget,
     shape: &GroupShape,
@@ -193,7 +193,7 @@ pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> Novelty>(
 ) -> MenuAnswer {
     let onward = mark_step_one(
         search.reborrow(),
-        novelty,
+        seen_state,
         contestants,
         budget,
         shape,
@@ -211,7 +211,7 @@ pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> Novelty>(
     // THE INERT ENTRIES ARE BLOCKED HERE AND ONLY HERE. `mark_menu_blocking` takes them as
     // entries neither walkable nor claimable, which is what an inert loop wants: it holds
     // nothing unread to claim, and a route through it arrives where it started.
-    let mut exact = mark_menu_blocking(search, novelty, contestants, budget, shape, inert);
+    let mut exact = mark_menu_blocking(search, seen_state, contestants, budget, shape, inert);
     exact.passes += passes;
     exact.fell_through = true;
     exact
@@ -234,9 +234,9 @@ pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> Novelty>(
 /// That is not hypothetical here. de-wi02's arm reimplemented where a cut belonged, put it one
 /// step out, and its measurement found nothing for that reason alone - so the one thing this
 /// module should not have is a second copy of which question gets asked with what.
-pub fn mark_step_one<F: Fn(DialogueNodeId) -> Novelty>(
+pub fn mark_step_one<F: Fn(DialogueNodeId) -> SeenState>(
     search: Search<'_, '_>,
-    novelty: &F,
+    seen_state: &F,
     contestants: &[Contestant],
     budget: &Budget,
     shape: &GroupShape,
@@ -250,7 +250,7 @@ pub fn mark_step_one<F: Fn(DialogueNodeId) -> Novelty>(
         .iter()
         .any(|id| !contestants.iter().any(|c| c.position.option == *id));
     let cut = if walk_cuts { returned } else { &nothing };
-    mark_onward(search, novelty, contestants, budget, shape, cut)
+    mark_onward(search, seen_state, contestants, budget, shape, cut)
 }
 
 /// Marks every option that reaches unread content without returning through the menu.
@@ -263,9 +263,9 @@ pub fn mark_step_one<F: Fn(DialogueNodeId) -> Novelty>(
 /// [`crate::symbolic::hub::since_current_hub`]. It is cut beside the siblings, so a route back
 /// out through a menu the player already left counts as returning too. An option of this
 /// menu is never cut on its account.
-pub fn mark_onward<F: Fn(DialogueNodeId) -> Novelty>(
+pub fn mark_onward<F: Fn(DialogueNodeId) -> SeenState>(
     mut search: Search<'_, '_>,
-    novelty: &F,
+    seen_state: &F,
     contestants: &[Contestant],
     budget: &Budget,
     shape: &GroupShape,
@@ -279,10 +279,10 @@ pub fn mark_onward<F: Fn(DialogueNodeId) -> Novelty>(
     let mut marked = HashSet::new();
     let mut failure = None;
 
-    'classes: for class in [Novelty::UnseenAnyGame, Novelty::UnseenThisGame] {
+    'classes: for class in [SeenState::UnseenAnyGame, SeenState::UnseenThisGame] {
         let hunting: Vec<_> = (0..contestants.len())
             .filter(|i| {
-                !marked.contains(i) && worth_hunting(graph, &contestants[*i], novelty, class)
+                !marked.contains(i) && worth_hunting(graph, &contestants[*i], seen_state, class)
             })
             .collect();
         if hunting.is_empty() {
@@ -311,7 +311,7 @@ pub fn mark_onward<F: Fn(DialogueNodeId) -> Novelty>(
             .nodes()
             .filter(|n| {
                 !n.is_group
-                    && novelty(n.id) == class
+                    && seen_state(n.id) == class
                     && !options.contains(&n.id)
                     && reached_by_menu.contains(&n.id)
             })
@@ -424,9 +424,9 @@ pub fn mark_onward<F: Fn(DialogueNodeId) -> Novelty>(
             // could improve was settled before a diagram was touched, and a budget that ran
             // out somewhere else does not unsettle it - see `worth_hunting`. Reporting it
             // unfinished draws the uncertain marker over "there is nothing down there".
-            let hunted = [Novelty::UnseenAnyGame, Novelty::UnseenThisGame]
+            let hunted = [SeenState::UnseenAnyGame, SeenState::UnseenThisGame]
                 .into_iter()
-                .any(|class| worth_hunting(graph, &contestants[index], novelty, class));
+                .any(|class| worth_hunting(graph, &contestants[index], seen_state, class));
             if !marked.contains(&index) && hunted {
                 mark.complete = false;
                 mark.stopped_by = reason;
@@ -527,15 +527,15 @@ fn returned_outside(
 ///
 /// `graph.best_linked_class` is the same walk `bridge::class_worth_hunting` makes for an
 /// option asked on its own, so a menu and a single option refuse on the same grounds.
-fn worth_hunting<F: Fn(DialogueNodeId) -> Novelty>(
+fn worth_hunting<F: Fn(DialogueNodeId) -> SeenState>(
     graph: &LookAheadGraph,
     contestant: &Contestant,
-    novelty: &F,
-    class: Novelty,
+    seen_state: &F,
+    class: SeenState,
 ) -> bool {
     contestant.baseline < class
         && graph
-            .best_linked_class(contestant.position.option, novelty)
+            .best_linked_class(contestant.position.option, seen_state)
             .is_some_and(|reachable| reachable >= class)
 }
 
@@ -564,14 +564,21 @@ fn blank(contestants: &[Contestant]) -> MenuAnswer {
 
 /// The exact marking: each round a branch and bound over single targets. See the module
 /// documentation's section on the bound, and [`Backward::nearest`].
-pub fn mark_menu<F: Fn(DialogueNodeId) -> Novelty>(
+pub fn mark_menu<F: Fn(DialogueNodeId) -> SeenState>(
     search: Search<'_, '_>,
-    novelty: &F,
+    seen_state: &F,
     contestants: &[Contestant],
     budget: &Budget,
     shape: &GroupShape,
 ) -> MenuAnswer {
-    mark_menu_blocking(search, novelty, contestants, budget, shape, &HashSet::new())
+    mark_menu_blocking(
+        search,
+        seen_state,
+        contestants,
+        budget,
+        shape,
+        &HashSet::new(),
+    )
 }
 
 /// [`mark_menu`], with `blocked` entries neither walkable nor claimable.
@@ -580,9 +587,9 @@ pub fn mark_menu<F: Fn(DialogueNodeId) -> Novelty>(
 /// ordinary star is settled, with the menu's options and every entry those stars claimed
 /// blocked, so a half is starred only for content no other option reaches and without
 /// cycling back through the menu. See `bridge::answer_starts`.
-pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> Novelty>(
+pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
     mut search: Search<'_, '_>,
-    novelty: &F,
+    seen_state: &F,
     contestants: &[Contestant],
     budget: &Budget,
     shape: &GroupShape,
@@ -601,7 +608,7 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> Novelty>(
     // see the module documentation - and a target found unreachable stays so.
     let mut proven = HashMap::<DialogueNodeId, usize>::new();
     let mut unreachable = HashSet::new();
-    'classes: for class in [Novelty::UnseenAnyGame, Novelty::UnseenThisGame] {
+    'classes: for class in [SeenState::UnseenAnyGame, SeenState::UnseenThisGame] {
         // WHAT AN OPTION ALREADY LANDS ON IS ITS OWN. A contestant whose landing reaches this
         // class is the nearest route there is to it - choosing it is zero steps away - so it
         // claims those entries before any round runs, and its option is cut as a winner's is.
@@ -617,12 +624,12 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> Novelty>(
                     .landing
                     .iter()
                     .copied()
-                    .filter(|id| novelty(*id) == class),
+                    .filter(|id| seen_state(*id) == class),
             );
         }
         let mut hunting: Vec<_> = (0..contestants.len())
             .filter(|i| {
-                !marked.contains(i) && worth_hunting(graph, &contestants[*i], novelty, class)
+                !marked.contains(i) && worth_hunting(graph, &contestants[*i], seen_state, class)
             })
             .collect();
         let mut cut: HashSet<_> = options
@@ -638,7 +645,7 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> Novelty>(
         cut.extend(landed.iter().map(|i| contestants[*i].position.option));
         let mut in_play: Vec<_> = graph
             .nodes()
-            .filter(|n| !n.is_group && novelty(n.id) == class && !claimed.contains(&n.id))
+            .filter(|n| !n.is_group && seen_state(n.id) == class && !claimed.contains(&n.id))
             .map(|n| n.id)
             .collect();
         while !hunting.is_empty() && !in_play.is_empty() {
@@ -813,9 +820,9 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> Novelty>(
             // could improve was settled before a diagram was touched, and a budget that ran
             // out somewhere else does not unsettle it - see `worth_hunting`. Reporting it
             // unfinished draws the uncertain marker over "there is nothing down there".
-            let hunted = [Novelty::UnseenAnyGame, Novelty::UnseenThisGame]
+            let hunted = [SeenState::UnseenAnyGame, SeenState::UnseenThisGame]
                 .into_iter()
-                .any(|class| worth_hunting(graph, &contestants[index], novelty, class));
+                .any(|class| worth_hunting(graph, &contestants[index], seen_state, class));
             if !marked.contains(&index) && hunted {
                 mark.complete = false;
                 mark.stopped_by = reason;
@@ -834,8 +841,8 @@ mod tests {
     use crate::symbolic::budget::DiagramBudget;
     use crate::symbolic::data_layout::DataLayout;
     use crate::symbolic::guard_formula::GuardCompiler;
-    use crate::symbolic::novelty_search::Where;
     use crate::symbolic::reachability::seed_of;
+    use crate::symbolic::seen_state_search::Where;
     use crate::symbolic::vars::DataVars;
     use crate::test_graph::{Entry, GraphBuilder, node};
     use crate::world::test_world::TestWorld;
@@ -843,7 +850,7 @@ mod tests {
     /// Which of the markings to run.
     ///
     /// AN ENUM RATHER THAN A FUNCTION POINTER. The markings differ only in which one is
-    /// called, but `novelty` is a closure and writing the pointer type for it is more
+    /// called, but `seen_state` is a closure and writing the pointer type for it is more
     /// machinery than the thing it parameterises.
     #[derive(Clone, Copy)]
     enum Which {
@@ -884,7 +891,7 @@ mod tests {
                     16,
                 )
                 .position(node(*id)),
-                baseline: Novelty::SeenThisGame,
+                baseline: SeenState::SeenThisGame,
                 landing: vec![node(*id)],
             })
             .collect();
@@ -1048,11 +1055,11 @@ mod tests {
         returned: &HashSet<DialogueNodeId>,
     ) -> MenuAnswer {
         with_menu(graph, options, |compiler, world, contestants| {
-            let novelty = |id: DialogueNodeId| {
+            let seen_state = |id: DialogueNodeId| {
                 if unread.contains(&id.entry_id) {
-                    Novelty::UnseenAnyGame
+                    SeenState::UnseenAnyGame
                 } else {
-                    Novelty::SeenThisGame
+                    SeenState::SeenThisGame
                 }
             };
             let budget = Budget {
@@ -1067,13 +1074,13 @@ mod tests {
                 counter_cap: 16,
             };
             match which {
-                Which::Exact => mark_menu(search, &novelty, contestants, &budget, &shape),
+                Which::Exact => mark_menu(search, &seen_state, contestants, &budget, &shape),
                 Which::Onward => {
-                    mark_onward(search, &novelty, contestants, &budget, &shape, returned)
+                    mark_onward(search, &seen_state, contestants, &budget, &shape, returned)
                 }
                 Which::Hybrid => mark_menu_hybrid(
                     search,
-                    &novelty,
+                    &seen_state,
                     contestants,
                     &budget,
                     &shape,

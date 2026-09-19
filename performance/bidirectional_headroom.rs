@@ -20,7 +20,7 @@
 //!
 //! ## What the walk is
 //!
-//! The same unit and the same charge as `novelty_search::choice_bounds`: leaving a choice
+//! The same unit and the same charge as `seen_state_search::choice_bounds`: leaving a choice
 //! that is not the option itself costs one, so every
 //! route out of it belongs to the next layer, and the option the player stands on is free.
 //!
@@ -141,8 +141,8 @@ use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
-use lookahead_engine::symbolic::novelty_search::Where;
 use lookahead_engine::symbolic::reachability::{Reachability, seed_of};
+use lookahead_engine::symbolic::seen_state_search::Where;
 use lookahead_engine::symbolic::vars::DataVars;
 use oxidd::BooleanFunction;
 use oxidd::bdd::BDDFunction;

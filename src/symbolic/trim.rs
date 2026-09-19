@@ -8,7 +8,7 @@
 //! refused by every search already. What does not refuse it is everything that walks the
 //! LINKS and ignores guards to stay cheap: the parent map and iteration order in
 //! [`super::known::GroupShape`], the hub candidates and the "can get back" components in
-//! [`super::hub`], the choice-distance bound in [`super::novelty_search::choice_bounds`], the
+//! [`super::hub`], the choice-distance bound in [`super::seen_state_search::choice_bounds`], the
 //! link walk that settles options before a pass in [`crate::graph::LookAheadGraph::best_linked_class`],
 //! and the dominator tree. Each is sound because ignoring guards only ever keeps routes, and
 //! each is loose for the same reason: a route through a door the world keeps shut still counts.
@@ -49,7 +49,7 @@ use std::collections::{HashSet, VecDeque};
 use oxidd::BooleanFunction;
 
 use super::guard_formula::GuardCompiler;
-use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty};
+use crate::core::types::{DialogueCheckKind, DialogueNodeId, SeenState};
 use crate::graph::LookAheadGraph;
 
 /// A request's view of its group.
@@ -59,8 +59,8 @@ pub struct Trimmed {
     /// Every entry the starts can still reach, closed entries not among them.
     ///
     /// WHAT THERE IS TO FIND. An unread entry outside it is not a target: nothing the request
-    /// can do arrives there, so a novelty that counted it would hand every link walk a class
-    /// no search can meet. See [`Self::novelty`].
+    /// can do arrives there, so a seen state that counted it would hand every link walk a class
+    /// no search can meet. See [`Self::seen_state`].
     pub reachable: HashSet<DialogueNodeId>,
     /// How many entries were closed by their guard.
     pub closed: usize,
@@ -70,16 +70,16 @@ pub struct Trimmed {
 }
 
 impl Trimmed {
-    /// `novelty`, with every entry the request cannot reach read as already seen.
-    pub fn novelty<'a, F: Fn(DialogueNodeId) -> Novelty + 'a>(
+    /// `seen_state`, with every entry the request cannot reach read as already seen.
+    pub fn seen_state<'a, F: Fn(DialogueNodeId) -> SeenState + 'a>(
         &'a self,
-        novelty: F,
-    ) -> impl Fn(DialogueNodeId) -> Novelty + 'a {
+        seen_state: F,
+    ) -> impl Fn(DialogueNodeId) -> SeenState + 'a {
         move |id| {
             if self.reachable.contains(&id) {
-                novelty(id)
+                seen_state(id)
             } else {
-                Novelty::SeenThisGame
+                SeenState::SeenThisGame
             }
         }
     }
@@ -212,9 +212,9 @@ mod tests {
         assert_eq!(trimmed.cut_off, 1, "3 is reached only through the door");
         assert_eq!(trimmed.graph.get(node(0)).unwrap().links, vec![node(2)]);
         assert!(trimmed.graph.get(node(3)).unwrap().links.is_empty());
-        let novelty = trimmed.novelty(|_| Novelty::UnseenAnyGame);
-        assert_eq!(novelty(node(3)), Novelty::SeenThisGame);
-        assert_eq!(novelty(node(2)), Novelty::UnseenAnyGame);
+        let seen_state = trimmed.seen_state(|_| SeenState::UnseenAnyGame);
+        assert_eq!(seen_state(node(3)), SeenState::SeenThisGame);
+        assert_eq!(seen_state(node(2)), SeenState::UnseenAnyGame);
     }
 
     /// A door something on the way can open is not closed, though the world has it shut.

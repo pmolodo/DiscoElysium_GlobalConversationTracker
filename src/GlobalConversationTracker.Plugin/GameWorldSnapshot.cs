@@ -35,7 +35,7 @@ namespace GlobalConversationTracker
 
         /// <summary>
         /// Builds a request for one conversation group, with the world filled in and every
-        /// entry's novelty decided. The caller adds the options to score.
+        /// entry's seen state decided. The caller adds the options to score.
         /// </summary>
         /// <param name="conversation">Any conversation in the group.</param>
         /// <param name="questions">
@@ -87,7 +87,7 @@ namespace GlobalConversationTracker
             FillChecks(questions.Checks, world);
             FillFailedWhiteChecks(world);
             FillRedChecksFail(world);
-            FillNovelty(questions.Entries, session, world, request);
+            FillSeenState(questions.Entries, session, world, request);
 
             return request;
         }
@@ -554,7 +554,7 @@ namespace GlobalConversationTracker
         /// save. Read once and held constant for the crawl, which is what
         /// <see cref="ILookAheadWorld.IsSeen"/> promises.
         /// </remarks>
-        private static void FillNovelty(
+        private static void FillSeenState(
             IReadOnlyList<NodeRef> entries,
             GlobalStateSession session,
             WorldSnapshot world,

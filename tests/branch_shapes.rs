@@ -41,7 +41,7 @@ use common::fixtures;
 /// The table both sides read.
 const TABLE: &str = "testing/scenarios/branch-shapes.json";
 
-/// A novelty, spelled as the colour the mod paints it.
+/// A seen state, spelled as the colour the mod paints it.
 ///
 /// The mod's own vocabulary rather than the engine's, because that is what a row is
 /// describing - what the player sees - and because a row is read by a person deciding

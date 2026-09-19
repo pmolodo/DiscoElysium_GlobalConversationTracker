@@ -26,7 +26,7 @@
 //! Depth is by EDGE ANALYSIS ALONE - links followed, guards ignored - so it over-approximates
 //! reachability, which makes the quarry at least structurally fair.
 
-// The consumers use different halves - some want the novelty function, some build their own
+// The consumers use different halves - some want the seen state function, some build their own
 // from `unseen` - and a warning on every build of every one of them would hide the ones
 // worth reading. The same reason `seen_profile.rs` carries this.
 #![allow(dead_code)]
@@ -45,7 +45,7 @@ use lookahead_engine::graph::LookAheadGraph;
 /// `world::seen_state` is where the two meet, and it is the only place the three states are
 /// decided.
 pub struct MenuProfile {
-    /// Never seen in ANY game, which is the highest novelty there is. Its complement is the
+    /// Never seen in ANY game, which is the highest seen state there is. Its complement is the
     /// seen-any-game set - see [`MenuProfile::seen_any_game`].
     pub unseen: HashSet<DialogueNodeId>,
     /// Starts that can reach something unseen, shallowest first - which is what an option in a

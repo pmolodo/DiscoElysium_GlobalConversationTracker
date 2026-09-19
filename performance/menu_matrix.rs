@@ -182,7 +182,7 @@
 use std::time::{Duration, Instant};
 
 use lookahead_engine::bridge::{NodeRef, SnapshotWorld, WorldSnapshot};
-use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
+use lookahead_engine::core::types::{DialogueNodeId, SeenState, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
@@ -190,7 +190,7 @@ use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
-use lookahead_engine::symbolic::{menu, novelty_search};
+use lookahead_engine::symbolic::{menu, seen_state_search};
 
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -368,7 +368,7 @@ const WALKED_FLAG: &str = "1";
 /// walk-deepest-X takes a greedy playthrough from the template save, stops it with `DEGCT_UNSEEN`
 /// entries still to come, and measures THAT: the unseen entries are the last ones a nearest-first
 /// play reaches, the seen set is what it displayed, and the variables are what its walk left them
-/// at. There is ONE account of what the player has read - the world - and the novelty function
+/// at. There is ONE account of what the player has read - the world - and the seen state function
 /// agrees with it because it was derived from it.
 ///
 /// link-deepest-X takes the structurally deepest entries by link depth instead, and asserts them
@@ -421,7 +421,7 @@ fn walked_profile() -> Scenario {
 ///
 /// THE GAME HAS TWO SCOPES OF SEEN and these differ in both, so each names both. Global state is
 /// what this player has ever seen; save state is what THIS game has displayed, and is what fires
-/// a `once`. See `menu_profile::MenuProfile::novelty`.
+/// a `once`. See `menu_profile::MenuProfile::seen_state`.
 enum Scenario {
     /// Walk-deepest-X globally unseen, asked in the world the walk stopped in. The walk has
     /// shown a great deal, so most one-time effects have already fired.
@@ -785,9 +785,9 @@ where
             lookahead_engine::bridge::walkable_menu(graph, &mut compiler, starts);
         // THE ONE RULE, off the world just built and the set the profile supplied - see
         // `world::seen_state`.
-        let whole_novelty = lookahead_engine::world::seen_states(&world, seen_any_game);
-        let reachable_novelty = trimmed.novelty(&whole_novelty);
-        let novelty = &reachable_novelty;
+        let whole_states = lookahead_engine::world::seen_states(&world, seen_any_game);
+        let reachable_states = trimmed.seen_state(&whole_states);
+        let seen_state = &reachable_states;
         let graph = &trimmed.graph;
         let setup = began.elapsed();
         let layout = built_layout;
@@ -798,7 +798,7 @@ where
         // marking never sees, so a row could announce ten entries unseen anywhere and hunt none
         // of them. See de-rnrb.
         //
-        // OUT OF REACH IS COUNTED APART FROM READ, because `Trimmed::novelty` reads an entry the
+        // OUT OF REACH IS COUNTED APART FROM READ, because `Trimmed::seen_state` reads an entry the
         // request cannot arrive at as seen-this-game - which is right for the marking and wrong
         // for a reader. Adding the two together would report a save that has read hundreds of
         // entries beside a world whose seen set is empty.
@@ -812,10 +812,10 @@ where
                     out_of_reach += 1;
                     continue;
                 }
-                match novelty(node.id) {
-                    Novelty::UnseenAnyGame => any_game += 1,
-                    Novelty::UnseenThisGame => this_game += 1,
-                    Novelty::SeenThisGame => seen += 1,
+                match seen_state(node.id) {
+                    SeenState::UnseenAnyGame => any_game += 1,
+                    SeenState::UnseenThisGame => this_game += 1,
+                    SeenState::SeenThisGame => seen += 1,
                 }
             }
             eprintln!(
@@ -842,7 +842,7 @@ where
         let contestants: Vec<_> = starts
             .iter()
             .map(|&start| menu::Contestant {
-                position: novelty_search::Where::of(
+                position: seen_state_search::Where::of(
                     graph,
                     start,
                     StartBranch::Either,
@@ -852,7 +852,7 @@ where
                     COUNTER_CAP as u32,
                 )
                 .position(start),
-                baseline: novelty(start),
+                baseline: seen_state(start),
                 landing: vec![start],
             })
             .collect();
@@ -882,7 +882,7 @@ where
             // pays, the deriving included, and cannot drift from the rule by restating it.
             Marking::HybridBranchAndBound => lookahead_engine::bridge::mark_menu_as_shipped(
                 marking_search,
-                novelty,
+                seen_state,
                 &contestants,
                 &marking_budget,
                 &shape,
@@ -899,7 +899,7 @@ where
             Marking::HybridSpent => {
                 let cut = lookahead_engine::bridge::passed_since_hub(graph, &shape, &walk);
                 let spent = lookahead_engine::bridge::spent_since_hub(
-                    graph, &shape, &world, novelty, &walk,
+                    graph, &shape, &world, seen_state, &walk,
                 );
                 // ON STDERR, because a cut that finds nothing and a cut that is not running
                 // produce the same row, and only one of those is a finding. What matters here
@@ -926,7 +926,7 @@ where
                 );
                 menu::mark_menu_hybrid(
                     marking_search,
-                    novelty,
+                    seen_state,
                     &contestants,
                     &marking_budget,
                     &shape,
@@ -939,7 +939,7 @@ where
             // would be free to drift from the rule it is supposed to be selecting against.
             Marking::Onward => menu::mark_step_one(
                 marking_search,
-                novelty,
+                seen_state,
                 &contestants,
                 &marking_budget,
                 &shape,

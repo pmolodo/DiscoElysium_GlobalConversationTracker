@@ -92,7 +92,7 @@ use std::time::{Duration, Instant};
 use lookahead_engine::bridge::{
     LookAheadRequest, NodeRef, SnapshotWorld, WorldSnapshot, answer_starts,
 };
-use lookahead_engine::core::types::{DialogueNodeId, Novelty};
+use lookahead_engine::core::types::{DialogueNodeId, SeenState};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::budget::DiagramBudget;
@@ -237,7 +237,7 @@ where
             },
             None,
         );
-        let novelty = &lookahead_engine::world::seen_states(&world, seen_any_game);
+        let seen_state = &lookahead_engine::world::seen_states(&world, seen_any_game);
         let layout = DataLayout::for_group(graph, &world, COUNTER_CAP);
         let vars = DataVars::try_new(&layout, &symbols, budget)?;
         let mut compiler = GuardCompiler::new(&vars)
@@ -261,10 +261,10 @@ where
             ..Default::default()
         };
         let began = Instant::now();
-        let answers = answer_starts(graph, &world, &request, novelty, &mut compiler, &seed);
+        let answers = answer_starts(graph, &world, &request, seen_state, &mut compiler, &seed);
         let found = answers
             .iter()
-            .filter(|answer| answer.best > Novelty::SeenThisGame as i32)
+            .filter(|answer| answer.best > SeenState::SeenThisGame as i32)
             .count();
 
         Some((began.elapsed(), found))

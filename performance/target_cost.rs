@@ -64,9 +64,9 @@ use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
 use lookahead_engine::symbolic::known::GroupShape;
-use lookahead_engine::symbolic::novelty_search::Where;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::search::Search;
+use lookahead_engine::symbolic::seen_state_search::Where;
 use lookahead_engine::symbolic::vars::DataVars;
 
 #[path = "../tests/common/mod.rs"]

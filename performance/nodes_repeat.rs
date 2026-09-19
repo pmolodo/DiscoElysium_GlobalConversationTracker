@@ -39,7 +39,7 @@
 use std::collections::HashSet;
 
 use lookahead_engine::bridge::{LookAheadRequest, NodeRef, answer_starts};
-use lookahead_engine::core::types::{DialogueNodeId, Novelty};
+use lookahead_engine::core::types::{DialogueNodeId, SeenState};
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
@@ -106,11 +106,11 @@ fn main() {
 
     let deepest = candidates(&graph, start);
     let unseen: HashSet<DialogueNodeId> = deepest.iter().take(unseen_wanted).copied().collect();
-    let novelty = |id: DialogueNodeId| {
+    let seen_state = |id: DialogueNodeId| {
         if unseen.contains(&id) {
-            Novelty::UnseenAnyGame
+            SeenState::UnseenAnyGame
         } else {
-            Novelty::SeenThisGame
+            SeenState::SeenThisGame
         }
     };
 
@@ -169,7 +169,7 @@ fn main() {
                     };
                     let began = std::time::Instant::now();
                     let answers =
-                        answer_starts(&graph, &world, &request, &novelty, &mut compiler, &seed);
+                        answer_starts(&graph, &world, &request, &seen_state, &mut compiler, &seed);
                     let took = began.elapsed();
                     let answer = answers.into_iter().next().expect("one start, one answer");
                     (

@@ -3,7 +3,7 @@
 //!
 //! The obvious way to answer a look-ahead is to work out everything a start can reach and
 //! read the answer off it. The question actually asked is smaller - `LookAheadResult::best`
-//! is a maximum over the novelty of entries a start can reach, and the plugin displays that
+//! is a maximum over the seen state of entries a start can reach, and the plugin displays that
 //! and nothing else - so the whole reachable set is a means, and an expensive one.
 //!
 //! Run the fixed point the other way and the question becomes: for each entry, from which
@@ -68,7 +68,7 @@
 //! ## What it does not do, and what does it instead
 //!
 //! ONE TARGET PER PASS, deliberately. Ordering candidates and stopping at the first
-//! witness is [`crate::symbolic::novelty_search`]'s job - de-sze.14.3 - and it is the
+//! witness is [`crate::symbolic::seen_state_search`]'s job - de-sze.14.3 - and it is the
 //! thing that turns this into an answer to the question the look-ahead actually asks.
 //! Nothing else should call this in a loop of its own.
 //!
@@ -877,7 +877,7 @@ impl<'a> Backward<'a> {
     /// THIS USED TO COMPILE ON EVERY VISIT. A pass revisits an entry each time its set
     /// grows, and the guard does not change between visits. `compile_for` is the map that
     /// stops it, and it lives in the COMPILER so that it also outlives a single pass:
-    /// `novelty_search` asks about one candidate after another over the same compiler, so
+    /// `seen_state_search` asks about one candidate after another over the same compiler, so
     /// the second candidate's pass inherits every guard the first one compiled.
     fn guard_of(
         &mut self,

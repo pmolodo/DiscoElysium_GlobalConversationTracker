@@ -422,9 +422,9 @@ fn own(opening: Opening, inbox: Receiver<Job>, ready: Sender<bool>) {
                 .seen_any_game
                 .contains(&crate::bridge::NodeRef::from(id))
         };
-        let novelty = crate::world::seen_states(&world, seen_any_game);
+        let seen_state = crate::world::seen_states(&world, seen_any_game);
 
-        let answers = answer_starts(&graph, &world, request, &novelty, &mut compiler, &seed);
+        let answers = answer_starts(&graph, &world, request, &seen_state, &mut compiler, &seed);
 
         // A caller that has gone away is not an error - it means the request was abandoned,
         // and the next one is already waiting.

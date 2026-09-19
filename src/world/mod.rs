@@ -8,7 +8,7 @@ use crate::core::guard_value::GuardValue;
 use crate::core::state::LookAheadState;
 use crate::core::state::{ITEM_PREFIX, THOUGHT_PREFIX};
 use crate::core::state::{StateSymbols, VariableRef};
-use crate::core::types::{DialogueNodeId, Novelty, Ternary};
+use crate::core::types::{DialogueNodeId, SeenState, Ternary};
 
 /// What seen state an entry is in, from the only two facts that decide it.
 ///
@@ -30,13 +30,13 @@ pub fn seen_state(
     world: &dyn ILookAheadWorld,
     seen_any_game: impl Fn(DialogueNodeId) -> bool,
     node: DialogueNodeId,
-) -> Novelty {
+) -> SeenState {
     if world.is_seen(node) {
-        Novelty::SeenThisGame
+        SeenState::SeenThisGame
     } else if seen_any_game(node) {
-        Novelty::UnseenThisGame
+        SeenState::UnseenThisGame
     } else {
-        Novelty::UnseenAnyGame
+        SeenState::UnseenAnyGame
     }
 }
 
@@ -44,7 +44,7 @@ pub fn seen_state(
 pub fn seen_states<'a>(
     world: &'a dyn ILookAheadWorld,
     seen_any_game: impl Fn(DialogueNodeId) -> bool + 'a,
-) -> impl Fn(DialogueNodeId) -> Novelty + 'a {
+) -> impl Fn(DialogueNodeId) -> SeenState + 'a {
     move |node| seen_state(world, &seen_any_game, node)
 }
 

@@ -185,7 +185,7 @@ use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use lookahead_engine::bridge::{SnapshotWorld, WorldSnapshot};
-use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
+use lookahead_engine::core::types::{DialogueNodeId, SeenState, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::backward::{Backward, Budget as PassBudget};
@@ -195,9 +195,9 @@ use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
 use lookahead_engine::symbolic::known::GroupShape;
 use lookahead_engine::symbolic::menu;
-use lookahead_engine::symbolic::novelty_search::Where;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::search::Search;
+use lookahead_engine::symbolic::seen_state_search::Where;
 use lookahead_engine::symbolic::vars::DataVars;
 
 #[path = "../tests/common/mod.rs"]
@@ -286,15 +286,15 @@ fn ask(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget:
     } else {
         profile.unseen.iter().copied().collect()
     };
-    let novelty = move |id: DialogueNodeId| match unseen.contains(&id) {
-        true => Novelty::UnseenAnyGame,
-        false => Novelty::SeenThisGame,
+    let seen_state = move |id: DialogueNodeId| match unseen.contains(&id) {
+        true => SeenState::UnseenAnyGame,
+        false => SeenState::SeenThisGame,
     };
 
     let targets: Vec<_> = graph
         .nodes()
         .filter(|n| {
-            !n.is_group && novelty(n.id) > Novelty::SeenThisGame && !options.contains(&n.id)
+            !n.is_group && seen_state(n.id) > SeenState::SeenThisGame && !options.contains(&n.id)
         })
         .map(|n| n.id)
         .collect();
@@ -378,7 +378,7 @@ fn ask(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget:
                 COUNTER_CAP as u32,
             )
             .position(start),
-            baseline: novelty(start),
+            baseline: seen_state(start),
             landing: vec![start],
         })
         .collect();
@@ -390,7 +390,7 @@ fn ask(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget:
             world: &world,
             counter_cap: COUNTER_CAP as u32,
         },
-        &novelty,
+        &seen_state,
         &contestants,
         &menu::Budget {
             wall: Duration::from_secs(1200),
@@ -415,7 +415,7 @@ fn ask(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget:
                 world: &world,
                 counter_cap: COUNTER_CAP as u32,
             },
-            &novelty,
+            &seen_state,
             std::slice::from_ref(&contestants[index]),
             &menu::Budget {
                 wall: Duration::from_secs(600),
@@ -426,7 +426,7 @@ fn ask(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget:
         let own = alone.marks[0].distance;
         // The structural lower bound this option has on the nearest unread line: a zero-one
         // walk over links with no guards and no diagrams at all.
-        let bound = lookahead_engine::symbolic::novelty_search::choice_bounds(
+        let bound = lookahead_engine::symbolic::seen_state_search::choice_bounds(
             graph,
             &contestants[index].position,
             &HashSet::new(),

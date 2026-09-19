@@ -137,8 +137,8 @@ fn a_look_ahead_response_survives_the_wire() {
         answers: vec![wire::LookAheadAnswer {
             start: Some(node(9, 50)),
             branch: wire::Branch::Pass as i32,
-            destination: wire::Novelty::UnseenThisGame as i32,
-            best: wire::Novelty::UnseenAnyGame as i32,
+            destination: wire::SeenState::UnseenThisGame as i32,
+            best: wire::SeenState::UnseenAnyGame as i32,
             witness: Some(node(9, 42)),
             complete: false,
             elapsed_ms: 17,

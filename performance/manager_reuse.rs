@@ -87,7 +87,7 @@ use std::time::Instant;
 use lookahead_engine::bridge::{
     LookAheadRequest, NodeRef, SnapshotWorld, WorldSnapshot, answer_starts,
 };
-use lookahead_engine::core::types::{DialogueNodeId, Novelty};
+use lookahead_engine::core::types::{DialogueNodeId, SeenState};
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
@@ -219,7 +219,7 @@ fn main() {
                 .with_constant_clock(DataLayout::group_passes_time(&graph));
             let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
             // THE ONE RULE, off this world and the profile's set - see `world::seen_state`.
-            let novelty = lookahead_engine::world::seen_states(&world, profile.seen_any_game());
+            let seen_state = lookahead_engine::world::seen_states(&world, profile.seen_any_game());
 
             // THE WHOLE MENU IN ONE CALL, which is what a request is. This asked the options
             // one at a time until the per-option path was deleted.
@@ -240,10 +240,11 @@ fn main() {
                 ..Default::default()
             };
             let began = Instant::now();
-            let answers = answer_starts(&graph, &world, &request, &novelty, &mut compiler, &seed);
+            let answers =
+                answer_starts(&graph, &world, &request, &seen_state, &mut compiler, &seed);
             let found = answers
                 .iter()
-                .filter(|answer| answer.best > Novelty::SeenThisGame as i32)
+                .filter(|answer| answer.best > SeenState::SeenThisGame as i32)
                 .count();
             let took = began.elapsed();
             answers_each_round.push(found);

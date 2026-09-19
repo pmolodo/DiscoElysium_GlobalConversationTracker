@@ -34,7 +34,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::core::action::{CounterCaps, DialogueAction};
 use crate::core::state::{LookAheadState, seed_state};
-use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, StartBranch, Ternary};
+use crate::core::types::{DialogueCheckKind, DialogueNodeId, SeenState, StartBranch, Ternary};
 use crate::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
 use crate::world::{CrawlContext, ILookAheadWorld};
@@ -95,7 +95,7 @@ impl Walk {
         self.exhausted
     }
 
-    /// The best novelty anything the walk ARRIVED AT carries.
+    /// The best seen state anything the walk ARRIVED AT carries.
     ///
     /// Arrived at, not merely stood on: the start is where the seed states were built, and
     /// for one outcome of a rolled check it is the CHECK rather than anything that outcome
@@ -103,15 +103,15 @@ impl Walk {
     /// this branch leads. It is scored only where a link leads back to it.
     ///
     /// Groups are traversed and never scored, because the player never sees a group.
-    pub fn best_novelty<F>(&self, novelty: F) -> Novelty
+    pub fn best_novelty<F>(&self, seen_state: F) -> SeenState
     where
-        F: Fn(DialogueNodeId) -> Novelty,
+        F: Fn(DialogueNodeId) -> SeenState,
     {
         self.arrived
             .iter()
-            .map(|id| novelty(*id))
+            .map(|id| seen_state(*id))
             .max()
-            .unwrap_or(Novelty::SeenThisGame)
+            .unwrap_or(SeenState::SeenThisGame)
     }
 }
 
@@ -771,14 +771,14 @@ mod tests {
         assert!(walk.reached(node(1)), "a group is walked through");
         let unseen = |id: DialogueNodeId| {
             if id == node(1) {
-                Novelty::UnseenAnyGame
+                SeenState::UnseenAnyGame
             } else {
-                Novelty::SeenThisGame
+                SeenState::SeenThisGame
             }
         };
         assert_eq!(
             walk.best_novelty(unseen),
-            Novelty::SeenThisGame,
+            SeenState::SeenThisGame,
             "and never scored",
         );
     }
@@ -787,9 +787,9 @@ mod tests {
     fn the_start_is_scored_only_where_a_link_leads_back_to_it() {
         let unseen = |id: DialogueNodeId| {
             if id == node(0) {
-                Novelty::UnseenAnyGame
+                SeenState::UnseenAnyGame
             } else {
-                Novelty::SeenThisGame
+                SeenState::SeenThisGame
             }
         };
 
@@ -797,13 +797,13 @@ mod tests {
             vec![Entry::new(0).links(&[1]), Entry::new(1)],
             &TestWorld::new(),
         );
-        assert_eq!(onward.best_novelty(unseen), Novelty::SeenThisGame);
+        assert_eq!(onward.best_novelty(unseen), SeenState::SeenThisGame);
 
         let loops_back = walked(
             vec![Entry::new(0).links(&[1]), Entry::new(1).links(&[0])],
             &TestWorld::new(),
         );
-        assert_eq!(loops_back.best_novelty(unseen), Novelty::UnseenAnyGame);
+        assert_eq!(loops_back.best_novelty(unseen), SeenState::UnseenAnyGame);
     }
 
     #[test]

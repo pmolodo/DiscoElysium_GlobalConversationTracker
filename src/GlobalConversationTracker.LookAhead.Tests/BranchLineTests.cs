@@ -99,15 +99,15 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 {
                     Start = WireConvert.Write(check),
                     Branch = Wire.Branch.Pass,
-                    Best = Wire.Novelty.UnseenAnyGame,
+                    Best = Wire.SeenState.UnseenAnyGame,
                     Complete = true,
                 },
                 new Wire.LookAheadAnswer
                 {
                     Start = WireConvert.Write(check),
                     Branch = Wire.Branch.Fail,
-                    Destination = Wire.Novelty.UnseenThisGame,
-                    Best = Wire.Novelty.UnseenThisGame,
+                    Destination = Wire.SeenState.UnseenThisGame,
+                    Best = Wire.SeenState.UnseenThisGame,
                     Complete = true,
                 });
 
@@ -148,10 +148,10 @@ namespace GlobalConversationTracker.LookAhead.Tests
         [InlineData(0, Seen)]
         [InlineData(1, This)]
         [InlineData(2, Any)]
-        public void EachWordTakesTheColourOfItsOwnDestination(int novelty, string expected)
+        public void EachWordTakesTheColourOfItsOwnDestination(int seenState, string expected)
         {
             string line = Assert.IsType<string>(
-                Line(Both(novelty, novelty, 0, 0), Palette()));
+                Line(Both(seenState, seenState, 0, 0), Palette()));
 
             Assert.Contains($"<color={expected}>{BranchLine.PassWord}</color>", line);
             Assert.Contains($"<color={Seen}>{BranchLine.FailWord}</color>", line);

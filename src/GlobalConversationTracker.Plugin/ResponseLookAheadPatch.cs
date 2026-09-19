@@ -346,7 +346,7 @@ namespace GlobalConversationTracker
         /// off when the engine dies without touching the tracking hooks - see
         /// <see cref="EngineDied"/>.
         /// </param>
-        /// <param name="session">The session novelty is read from.</param>
+        /// <param name="session">The session a seen state is read from.</param>
         /// <param name="log">Where hook failures are reported.</param>
         /// <param name="modDirectory">
         /// Where the mod keeps its own files, so a stale index can be rebuilt into it.
@@ -1583,8 +1583,8 @@ namespace GlobalConversationTracker
                 return null;
             }
 
-            Novelty own = NoveltyOf(session, entry.conversationID, entry.id);
-            if (own == Novelty.UnseenAnyGame)
+            SeenState own = NoveltyOf(session, entry.conversationID, entry.id);
+            if (own == SeenState.UnseenAnyGame)
             {
                 // Already the most novel thing there is, so nothing can outrank it.
                 return null;
@@ -1633,10 +1633,10 @@ namespace GlobalConversationTracker
                 return answer.Complete ? null : Uncertain();
             }
 
-            // Above the option's own novelty, so something was actually reached. That is
+            // Above the option's own seen state, so something was actually reached. That is
             // definite even under a budget - a witness is a witness - so an incomplete
             // search that found one still draws the ordinary marker.
-            string colour = answer.Best == (int)Novelty.UnseenAnyGame
+            string colour = answer.Best == (int)SeenState.UnseenAnyGame
                 ? _unseenAnyGameHtml
                 : _unseenThisGameHtml;
             return Draw(colour, FoundMarker);
@@ -1727,18 +1727,18 @@ namespace GlobalConversationTracker
         /// How novel one entry is, from the two facts the mod already tracks: the game's
         /// own per-save SimStatus, and the global state's record of every other save.
         /// </summary>
-        private static Novelty NoveltyOf(
+        private static SeenState NoveltyOf(
             GlobalStateSession session, int conversationId, int entryId)
         {
             if (DialogueLua.GetSimStatus(conversationId, entryId) == "WasDisplayed")
             {
-                return Novelty.SeenThisGame;
+                return SeenState.SeenThisGame;
             }
 
             SimStatus global = session.EnsureInitialized().GetStatus(conversationId, entryId);
             return global == SimStatus.WasDisplayed
-                ? Novelty.UnseenThisGame
-                : Novelty.UnseenAnyGame;
+                ? SeenState.UnseenThisGame
+                : SeenState.UnseenAnyGame;
         }
 
         /// <summary>

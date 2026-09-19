@@ -6,7 +6,7 @@
 //! reads 8 where the layered pass proves 23 to 25. de-0jsf.13 measured that gap and
 //! de-0jsf.15 asks whether closing it is a matter of walking a smaller graph.
 //!
-//! `novelty_search::choice_bounds` consults no guard at all. It walks `node.links`,
+//! `seen_state_search::choice_bounds` consults no guard at all. It walks `node.links`,
 //! respecting only the cut set, so every route the dialogue refuses for reasons that do not
 //! depend on the data state is still in it.
 //!
@@ -119,8 +119,8 @@ use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::dominators::Dominators;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
-use lookahead_engine::symbolic::novelty_search::{Where, choice_bounds};
 use lookahead_engine::symbolic::reachability::{never_displays, seed_of};
+use lookahead_engine::symbolic::seen_state_search::{Where, choice_bounds};
 use lookahead_engine::symbolic::vars::DataVars;
 use oxidd::BooleanFunction;
 

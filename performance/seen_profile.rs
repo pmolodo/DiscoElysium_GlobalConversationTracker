@@ -54,7 +54,7 @@ pub fn structurally_reachable(
 ///
 /// GROUPS ARE EXCLUDED because the game never writes a group's SimStatus, so every group in
 /// the database reads as never displayed and naming one as unseen would make a search
-/// succeed instantly on a lie. `novelty_search::candidates_from` excludes them for the same
+/// succeed instantly on a lie. `seen_state_search::candidates_from` excludes them for the same
 /// reason.
 ///
 /// DEEPEST FIRST, which is what makes `deepest-N` mean something; the identifiers break the

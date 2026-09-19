@@ -60,7 +60,7 @@ namespace GlobalConversationTracker
         /// <summary>
         /// The colour given to an option no save has ever picked, as an HTML colour
         /// string. A warm orange: brighter than the stock option colour, which is a
-        /// pale desaturated green-white, so novelty reads at a glance without looking
+        /// pale desaturated green-white, so newness reads at a glance without looking
         /// like one of the game's own check colours.
         /// </summary>
         internal const string DefaultNovelColorHtml = "#FF8C42";

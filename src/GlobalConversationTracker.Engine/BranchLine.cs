@@ -113,11 +113,11 @@ namespace GlobalConversationTracker.Engine
         /// </remarks>
         private static string Half(string word, LookAheadAnswer branch, MarkerPalette palette)
         {
-            string coloured = Draw(ColourOf((Novelty)branch.Destination, palette), word);
+            string coloured = Draw(ColourOf((SeenState)branch.Destination, palette), word);
 
             if (branch.Best > branch.Destination)
             {
-                string html = branch.Best == (int)Novelty.UnseenAnyGame
+                string html = branch.Best == (int)SeenState.UnseenAnyGame
                     ? palette.UnseenAnyGame
                     : palette.UnseenThisGame;
                 return coloured + Draw(html, FoundMarker);
@@ -129,7 +129,7 @@ namespace GlobalConversationTracker.Engine
             // settled, whether or not the search finished. Drawing '*?' there would claim
             // a doubt about a question that has none. The option's own marker has always
             // reasoned this way, refusing a search it can prove pointless before it starts.
-            if (branch.Destination >= (int)Novelty.UnseenAnyGame)
+            if (branch.Destination >= (int)SeenState.UnseenAnyGame)
             {
                 return coloured;
             }
@@ -145,11 +145,11 @@ namespace GlobalConversationTracker.Engine
                 : coloured;
         }
 
-        /// <summary>The colour the mod paints one novelty in.</summary>
-        private static string ColourOf(Novelty novelty, MarkerPalette palette) => novelty switch
+        /// <summary>The colour the mod paints one seen state in.</summary>
+        private static string ColourOf(SeenState seenState, MarkerPalette palette) => seenState switch
         {
-            Novelty.UnseenAnyGame => palette.UnseenAnyGame,
-            Novelty.UnseenThisGame => palette.UnseenThisGame,
+            SeenState.UnseenAnyGame => palette.UnseenAnyGame,
+            SeenState.UnseenThisGame => palette.UnseenThisGame,
             _ => palette.Seen,
         };
 

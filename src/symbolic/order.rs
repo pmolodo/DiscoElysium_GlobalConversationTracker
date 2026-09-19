@@ -176,7 +176,7 @@ impl IterationOrder {
         };
 
         // The start is walked FROM without being recorded as arrived at, matching
-        // `novelty_search::link_distances`: it gets a distance only if a link leads back to
+        // `seen_state_search::link_distances`: it gets a distance only if a link leads back to
         // it, and otherwise stays at zero, which is the lowest rank its component allows.
         let mut queue = VecDeque::from([(start, 0u32)]);
         while let Some((id, here)) = queue.pop_front() {

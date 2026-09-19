@@ -26,7 +26,7 @@
 //!   reason; `evaluate` is what the plugin's marker actually comes from. If the two ever
 //!   disagree, the prefilter is either wrong or pointless.
 
-use lookahead_engine::core::types::{DialogueNodeId, Novelty};
+use lookahead_engine::core::types::{DialogueNodeId, SeenState};
 use lookahead_engine::index::{build_group_graph, read_index};
 
 mod common;
@@ -119,9 +119,9 @@ fn the_engine_finds_nothing_either() {
         // built - one walk of the links, and no diagram at all. Stronger as well as
         // cheaper: a search that finds nothing might be a search that gave up.
         assert_eq!(
-            graph.best_linked_class(start, |_| Novelty::SeenThisGame),
+            graph.best_linked_class(start, |_| SeenState::SeenThisGame),
             None,
-            "conversation {conversation} ({}) found novelty where everything is seen",
+            "conversation {conversation} ({}) found seen_state where everything is seen",
             scenario.save,
         );
         asked += 1;

@@ -120,8 +120,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
             {
                 Start = Node(9, 50),
                 Branch = Branch.Pass,
-                Destination = Novelty.UnseenThisGame,
-                Best = Novelty.UnseenAnyGame,
+                Destination = SeenState.UnseenThisGame,
+                Best = SeenState.UnseenAnyGame,
                 Witness = Node(9, 42),
                 Complete = false,
                 ElapsedMs = 17,

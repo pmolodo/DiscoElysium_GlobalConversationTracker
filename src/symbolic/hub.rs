@@ -316,7 +316,7 @@ pub fn walk_to_menu(
 /// NOTHING NEW IS TRACKED FOR THIS. `state::seed_state` seeds a node's `once_slot` from
 /// `world.is_seen`, because `GenericLuaFunctions.Once` is a test on whether the entry has been
 /// shown - so "this branch's incrementor has fired" is exactly "the player has seen this entry",
-/// the same per-entry data the novelty markers are drawn from.
+/// the same per-entry data the seen state markers are drawn from.
 ///
 /// ## What it is for: cost, and only cost
 ///
@@ -352,11 +352,11 @@ pub fn spent_branches<F>(
     order: &IterationOrder,
     hub: DialogueNodeId,
     seen: &dyn Fn(DialogueNodeId) -> bool,
-    novelty: &F,
-    unread: crate::core::types::Novelty,
+    seen_state: &F,
+    unread: crate::core::types::SeenState,
 ) -> HashSet<DialogueNodeId>
 where
-    F: Fn(DialogueNodeId) -> crate::core::types::Novelty,
+    F: Fn(DialogueNodeId) -> crate::core::types::SeenState,
 {
     let Some(component) = order.component_of(hub) else {
         return HashSet::new();
@@ -376,7 +376,11 @@ where
     // NOT spent, which this one knows nothing about.
     let mut spent = HashSet::new();
     for &option in &node.links {
-        if branch_if_spent(graph, order, hub, component, option, seen, novelty, unread).is_some() {
+        if branch_if_spent(
+            graph, order, hub, component, option, seen, seen_state, unread,
+        )
+        .is_some()
+        {
             spent.insert(option);
         }
     }
@@ -395,11 +399,11 @@ fn branch_if_spent<F>(
     component: u32,
     option: DialogueNodeId,
     seen: &dyn Fn(DialogueNodeId) -> bool,
-    novelty: &F,
-    unread: crate::core::types::Novelty,
+    seen_state: &F,
+    unread: crate::core::types::SeenState,
 ) -> Option<HashSet<DialogueNodeId>>
 where
-    F: Fn(DialogueNodeId) -> crate::core::types::Novelty,
+    F: Fn(DialogueNodeId) -> crate::core::types::SeenState,
 {
     let mut branch = HashSet::new();
     let mut pending = VecDeque::from([option]);
@@ -408,7 +412,7 @@ where
             continue;
         }
         let node = graph.get(id)?;
-        if novelty(id) >= unread {
+        if seen_state(id) >= unread {
             return None;
         }
         if !is_no_op_on_re_entry(node, seen) {
@@ -447,7 +451,7 @@ fn is_no_op_on_re_entry(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::core::types::Novelty;
+    use crate::core::types::SeenState;
     use crate::test_graph::{Entry, GraphBuilder, node};
 
     /// Garte's kitchen, cut down to its shape.
@@ -792,14 +796,14 @@ pub(crate) mod tests {
     }
 
     /// Nothing unread anywhere, which is condition one out of the way.
-    fn all_read(_: DialogueNodeId) -> Novelty {
-        Novelty::SeenThisGame
+    fn all_read(_: DialogueNodeId) -> SeenState {
+        SeenState::SeenThisGame
     }
 
     fn spent_with(
         graph: &LookAheadGraph,
         seen: &[i32],
-        novelty: &dyn Fn(DialogueNodeId) -> Novelty,
+        seen_state: &dyn Fn(DialogueNodeId) -> SeenState,
     ) -> HashSet<DialogueNodeId> {
         let seen: HashSet<DialogueNodeId> = seen.iter().map(|id| node(*id)).collect();
         let was_seen = |id: DialogueNodeId| seen.contains(&id);
@@ -808,8 +812,8 @@ pub(crate) mod tests {
             &IterationOrder::of(graph),
             node(1),
             &was_seen,
-            &novelty,
-            Novelty::UnseenThisGame,
+            &seen_state,
+            SeenState::UnseenThisGame,
         )
     }
 
@@ -850,9 +854,9 @@ pub(crate) mod tests {
         let graph = two_spendable_topics();
         let unread_at_three = |id: DialogueNodeId| {
             if id == node(3) {
-                Novelty::UnseenAnyGame
+                SeenState::UnseenAnyGame
             } else {
-                Novelty::SeenThisGame
+                SeenState::SeenThisGame
             }
         };
         let spent = spent_with(&graph, &[2, 3], &unread_at_three);

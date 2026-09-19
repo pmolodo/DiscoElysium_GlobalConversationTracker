@@ -17,7 +17,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         /// </remarks>
         private static LookAheadAnswer Result(
             int states, int nodes = 1, bool exhausted = false,
-            Novelty best = Novelty.SeenThisGame, string stoppedBy = "states",
+            SeenState best = SeenState.SeenThisGame, string stoppedBy = "states",
             long milliseconds = 0)
         {
             return new LookAheadAnswer(
@@ -86,10 +86,10 @@ namespace GlobalConversationTracker.LookAhead.Tests
             var statistics = new LookAheadStatistics();
             var node = Node(1);
 
-            statistics.Record(node, Result(1, best: Novelty.UnseenAnyGame), 1.0);
-            statistics.Record(node, Result(1, best: Novelty.UnseenAnyGame), 1.0);
-            statistics.Record(node, Result(1, best: Novelty.UnseenThisGame), 1.0);
-            statistics.Record(node, Result(1, best: Novelty.SeenThisGame), 1.0);
+            statistics.Record(node, Result(1, best: SeenState.UnseenAnyGame), 1.0);
+            statistics.Record(node, Result(1, best: SeenState.UnseenAnyGame), 1.0);
+            statistics.Record(node, Result(1, best: SeenState.UnseenThisGame), 1.0);
+            statistics.Record(node, Result(1, best: SeenState.SeenThisGame), 1.0);
 
             Assert.Equal(2, statistics.FoundUnseenAnyGame);
             Assert.Equal(1, statistics.FoundUnseenThisGame);

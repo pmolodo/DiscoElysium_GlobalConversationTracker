@@ -41,7 +41,7 @@
 //! them holding the same states - never at the check itself, whose pre-entry states are
 //! reachable by either roll and would let a meet there prove the wrong thing. So the
 //! beginnings are a map rather than a single entry, and a meet at any of them proves the
-//! same thing as a meet at the one. See `novelty_search::Where`.
+//! same thing as a meet at the one. See `seen_state_search::Where`.
 
 use std::collections::HashMap;
 use std::sync::Arc;

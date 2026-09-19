@@ -35,7 +35,7 @@ impl Hash for DialogueNodeId {
 /// How new a dialogue entry is to the player.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(u8)]
-pub enum Novelty {
+pub enum SeenState {
     SeenThisGame = 0,
     UnseenThisGame = 1,
     UnseenAnyGame = 2,

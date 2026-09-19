@@ -283,16 +283,16 @@ fn collapse(entries: &[i32]) -> Vec<wire::NodeRun> {
     runs
 }
 
-/// The novelty a rung number means.
+/// The seen state a rung number means.
 ///
 /// An unknown number is the SEEN rung rather than a refusal. This is the engine's own
 /// answer on its way out, so a number outside the three would be a bug here and not a
 /// message from anywhere; answering with the least surprising rung keeps the menu drawn.
-fn novelty_of(best: i32) -> wire::Novelty {
+fn seen_state_of(best: i32) -> wire::SeenState {
     match best {
-        1 => wire::Novelty::UnseenThisGame,
-        2 => wire::Novelty::UnseenAnyGame,
-        _ => wire::Novelty::Seen,
+        1 => wire::SeenState::UnseenThisGame,
+        2 => wire::SeenState::UnseenAnyGame,
+        _ => wire::SeenState::SeenThisGame,
     }
 }
 
@@ -319,8 +319,8 @@ fn write_answer(answer: LookAheadAnswer) -> wire::LookAheadAnswer {
     wire::LookAheadAnswer {
         start: Some(answer.start.into()),
         branch: branch_of(answer.branch.as_deref()) as i32,
-        destination: novelty_of(answer.destination) as i32,
-        best: novelty_of(answer.best) as i32,
+        destination: seen_state_of(answer.destination) as i32,
+        best: seen_state_of(answer.best) as i32,
         witness: answer.witness.map(wire::NodeRef::from),
         complete: answer.complete,
         elapsed_ms: answer.elapsed_ms,
@@ -488,9 +488,9 @@ mod tests {
 
     #[test]
     fn the_three_rungs_cross_as_themselves() {
-        assert_eq!(novelty_of(0), wire::Novelty::Seen);
-        assert_eq!(novelty_of(1), wire::Novelty::UnseenThisGame);
-        assert_eq!(novelty_of(2), wire::Novelty::UnseenAnyGame);
+        assert_eq!(seen_state_of(0), wire::SeenState::SeenThisGame);
+        assert_eq!(seen_state_of(1), wire::SeenState::UnseenThisGame);
+        assert_eq!(seen_state_of(2), wire::SeenState::UnseenAnyGame);
     }
 
     /// The budgets are wider on the wire than in the engine on a 32-bit build.

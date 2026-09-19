@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 //! The question the look-ahead actually asks, answered one target at a time.
 //!
-//! What the mod asks for is the best novelty among the entries a start can reach, and
+//! What the mod asks for is the best seen state among the entries a start can reach, and
 //! nothing beyond the best there is. So the answer is a MAXIMUM over an ordered enum, and
 //! the way to compute a maximum is not to compute the set it is a maximum of.
 //!
@@ -14,7 +14,7 @@
 //! entry reachable says nothing about whether a far `UnseenAnyGame` one is, and the far
 //! one is the answer if it is - `best` is a maximum, not a first sighting.
 //!
-//! So candidates are grouped by novelty class, best class first, and only WITHIN a class
+//! So candidates are grouped by seen state class, best class first, and only WITHIN a class
 //! sorted by how far away they are. The first candidate proved reachable in a class ends
 //! the search, because every better class has already been refused entirely. A class every
 //! candidate of which is refused drops to the next one down.

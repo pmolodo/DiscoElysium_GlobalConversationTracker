@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 //! Compare greedy menu marking with exhaustive concrete-state distances.
-use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
+use lookahead_engine::core::types::{DialogueNodeId, SeenState, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::oracle;
 use lookahead_engine::symbolic::budget::DiagramBudget;
@@ -10,7 +10,7 @@ use lookahead_engine::symbolic::known::GroupShape;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::search::Search;
 use lookahead_engine::symbolic::vars::DataVars;
-use lookahead_engine::symbolic::{menu, novelty_search};
+use lookahead_engine::symbolic::{menu, seen_state_search};
 use lookahead_engine::test_graph::{Entry, GraphBuilder, node};
 use lookahead_engine::world::ILookAheadWorld;
 use lookahead_engine::world::test_world::TestWorld;
@@ -22,7 +22,7 @@ fn compare(
     graph: &LookAheadGraph,
     options: &[DialogueNodeId],
     world: &dyn ILookAheadWorld,
-    novelty: &impl Fn(DialogueNodeId) -> Novelty,
+    seen_state: &impl Fn(DialogueNodeId) -> SeenState,
 ) {
     let layout = DataLayout::for_group(graph, world, 16);
     let vars = DataVars::new(&layout, graph.symbols(), DiagramBudget::modest());
@@ -31,7 +31,7 @@ fn compare(
     let contestants: Vec<_> = options
         .iter()
         .map(|&id| menu::Contestant {
-            position: novelty_search::Where::of(
+            position: seen_state_search::Where::of(
                 graph,
                 id,
                 StartBranch::Either,
@@ -41,7 +41,7 @@ fn compare(
                 16,
             )
             .position(id),
-            baseline: novelty(id),
+            baseline: seen_state(id),
             landing: vec![id],
         })
         .collect();
@@ -52,7 +52,7 @@ fn compare(
             world,
             counter_cap: 16,
         },
-        novelty,
+        seen_state,
         &contestants,
         &menu::Budget {
             wall: Duration::from_secs(30),
@@ -61,13 +61,13 @@ fn compare(
         &GroupShape::of(graph),
     );
     assert!(found.marks.iter().all(|m| m.complete));
-    let mut expected: Vec<_> = options.iter().map(|id| (novelty(*id), None)).collect();
+    let mut expected: Vec<_> = options.iter().map(|id| (seen_state(*id), None)).collect();
     let mut claimed: HashSet<_> = options.iter().copied().collect();
     let mut marked = HashSet::new();
     let mut round = 0;
-    for class in [Novelty::UnseenAnyGame, Novelty::UnseenThisGame] {
+    for class in [SeenState::UnseenAnyGame, SeenState::UnseenThisGame] {
         let mut hunting: Vec<_> = (0..options.len())
-            .filter(|i| !marked.contains(i) && novelty(options[*i]) < class)
+            .filter(|i| !marked.contains(i) && seen_state(options[*i]) < class)
             .collect();
         let mut cut: HashSet<_> = (0..options.len())
             .filter(|i| !hunting.contains(i))
@@ -96,7 +96,7 @@ fn compare(
                 .filter_map(|&i| {
                     walks[&i]
                         .iter()
-                        .filter(|(id, _)| novelty(**id) == class && !claimed.contains(id))
+                        .filter(|(id, _)| seen_state(**id) == class && !claimed.contains(id))
                         .map(|(_, d)| *d)
                         .min()
                         .map(|d| (i, d))
@@ -115,7 +115,7 @@ fn compare(
             assert!(hunting.contains(&i));
             assert_eq!((chosen.best, chosen.distance), (class, Some(best)));
             let witness = chosen.witness.expect("a marker has a witness");
-            assert_eq!(novelty(witness), class);
+            assert_eq!(seen_state(witness), class);
             assert!(!claimed.contains(&witness));
             assert_eq!(walks[&i].get(&witness), Some(&best));
             expected[i] = (class, Some(best));
@@ -152,22 +152,22 @@ fn cyclic_menus_agree_for_every_assignment_of_novelty() {
         .add(Entry::new(8))
         .build();
     for assignment in 0usize..729 {
-        let novelty = |id: DialogueNodeId| {
+        let seen_state = |id: DialogueNodeId| {
             let digit = assignment / 3usize.pow((id.entry_id - 1).clamp(0, 5) as u32) % 3;
             if id.entry_id == 0 {
-                return Novelty::SeenThisGame;
+                return SeenState::SeenThisGame;
             }
             [
-                Novelty::SeenThisGame,
-                Novelty::UnseenThisGame,
-                Novelty::UnseenAnyGame,
+                SeenState::SeenThisGame,
+                SeenState::UnseenThisGame,
+                SeenState::UnseenAnyGame,
             ][digit]
         };
         compare(
             &graph,
             &[node(1), node(2), node(3)],
             &TestWorld::new(),
-            &novelty,
+            &seen_state,
         );
     }
 }
@@ -189,11 +189,11 @@ fn real_conversations_agree_with_the_greedy_walk() {
         lookahead_engine::symbolic::isolated::on_its_own_thread(|| {
             compare(&graph, &options, &world, &|id| {
                 if options.contains(&id) {
-                    Novelty::SeenThisGame
+                    SeenState::SeenThisGame
                 } else if id.entry_id % 3 == 0 {
-                    Novelty::UnseenAnyGame
+                    SeenState::UnseenAnyGame
                 } else {
-                    Novelty::UnseenThisGame
+                    SeenState::UnseenThisGame
                 }
             });
         });

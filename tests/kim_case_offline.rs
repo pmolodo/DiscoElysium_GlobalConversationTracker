@@ -53,7 +53,7 @@ const MENU: [(i32, &str); 6] = [
     (882, "\"Nothing\". [Leave.]"),
 ];
 
-/// What the mod would draw on an option, given its own novelty and what the search found.
+/// What the mod would draw on an option, given its own seen state and what the search found.
 fn drawn(own: i32, reply: &LookAheadAnswer) -> &'static str {
     if own == UNSEEN_ANY_GAME {
         return "none";
@@ -156,7 +156,7 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
     );
     println!("  {unanswered:?}");
 
-    let novelty_of = |node: NodeRef| {
+    let seen_state_of = |node: NodeRef| {
         let key = (node.conversation, node.entry);
         if read_here.contains(&key) {
             SEEN_THIS_GAME
@@ -171,7 +171,7 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
     let rung: HashSet<NodeRef> = everything
         .iter()
         .copied()
-        .filter(|node| novelty_of(*node) == UNSEEN_ANY_GAME)
+        .filter(|node| seen_state_of(*node) == UNSEEN_ANY_GAME)
         .collect();
 
     let request = LookAheadRequest {
@@ -209,7 +209,7 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
             thoughts: holdings.thoughts,
             variables: fixtures::variables_sent(&scenario.save, &asked),
             // WHAT THIS SAVE HAS ALREADY SHOWN, which the engine seeds its seen slots from
-            // and which no offline run has ever sent. The same set the novelty rungs are
+            // and which no offline run has ever sent. The same set the seen state rungs are
             // built out of, put where a guard on having been shown can read it: without it
             // every once-only entry starts unfired, and a route that is spent in the save
             // is open to the crawl. Found by diffing against what the game sends - de-v702.
@@ -291,7 +291,7 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
             .iter()
             .find(|reply| reply.start == start && reply.branch.is_none())
             .unwrap_or_else(|| panic!("nothing came back for {conversation}:{entry}"));
-        let own = novelty_of(start);
+        let own = seen_state_of(start);
         println!(
             "  {}. [{:6}] {conversation}:{entry} {line}",
             position + 1,

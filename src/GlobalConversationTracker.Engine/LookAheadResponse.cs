@@ -7,8 +7,8 @@ namespace GlobalConversationTracker.Engine
     /// <summary>What one option scored.</summary>
     /// <param name="Start">The option entry that was asked about.</param>
     /// <param name="Best">
-    /// The best novelty reachable from it: 0 seen, 1 unseen this save, 2 unseen in any
-    /// save. The same numbering as the managed engine's <c>Novelty</c>, deliberately, so
+    /// The best seen state reachable from it: 0 seen, 1 unseen this save, 2 unseen in any
+    /// save. The same numbering as the managed engine's <c>SeenState</c>, deliberately, so
     /// the two can be compared while both exist.
     /// </param>
     /// <param name="Complete">
@@ -37,8 +37,8 @@ namespace GlobalConversationTracker.Engine
     /// that.
     /// </param>
     /// <param name="Destination">
-    /// The best novelty already known about this start before any search: the option's own
-    /// novelty, or for an outcome the best among the entries it leads to DIRECTLY. What the
+    /// The best seen state already known about this start before any search: the option's own
+    /// state, or for an outcome the best among the entries it leads to DIRECTLY. What the
     /// mod colours the word by, and the baseline a crawl has to beat to be worth running.
     /// </param>
     public readonly record struct LookAheadAnswer(

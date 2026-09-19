@@ -152,7 +152,7 @@ impl<'a> Reachability<'a> {
     /// The backward driver is what wants it. Its sets say "arriving HERE, the target is
     /// reachable", and a check's set unions both ways in - so asking it about the check
     /// answers about either roll. Asked instead about the check's children, with this, it
-    /// answers about one. See `novelty_search::best_novelty`.
+    /// answers about one. See `seen_state_search::best_novelty`.
     ///
     /// `None` WHERE THE MANAGER FILLED, and the distinction is the whole point of
     /// returning an option. Entering the start is diagram work like any other and can run

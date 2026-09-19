@@ -103,9 +103,9 @@ fn node_ref(text: &str) -> anyhow::Result<NodeRef> {
     })
 }
 
-/// A novelty as the mod's colours name it, since that is what a fixture is arranging.
-fn rung(novelty: i32) -> &'static str {
-    match novelty {
+/// A seen state as the mod's colours name it, since that is what a fixture is arranging.
+fn rung(seen_state: i32) -> &'static str {
+    match seen_state {
         2 => "orange (unseen in any game)",
         1 => "red (unseen this game)",
         _ => "dark red (already seen this game)",
@@ -127,7 +127,7 @@ fn half(branch: &LookAheadAnswer) -> String {
 
 /// The entries one outcome of a rolled start opens, guards and costs considered.
 ///
-/// See `novelty_search::Where::destinations`, which is what does the work. Built here
+/// See `seen_state_search::Where::destinations`, which is what does the work. Built here
 /// rather than exposed from the bridge because this is a tool's convenience: the bridge
 /// computes the same set for its baseline and does not need to hand it out.
 fn branch_destinations(
@@ -139,8 +139,8 @@ fn branch_destinations(
     use lookahead_engine::symbolic::budget::DiagramBudget;
     use lookahead_engine::symbolic::data_layout::DataLayout;
     use lookahead_engine::symbolic::guard_formula::GuardCompiler;
-    use lookahead_engine::symbolic::novelty_search::Where;
     use lookahead_engine::symbolic::reachability::seed_of;
+    use lookahead_engine::symbolic::seen_state_search::Where;
     use lookahead_engine::symbolic::vars::DataVars;
 
     const COUNTER_CAP: i32 = 16;
@@ -268,7 +268,7 @@ fn main() -> anyhow::Result<()> {
     // what one costs. `answer` is what the game asks, so what comes out here is what a
     // player would see.
     //
-    // Simplified novelty: unseen if not in the conversation being asked about.
+    // Simplified seen state: unseen if not in the conversation being asked about.
     let mut starts: Vec<NodeRef> = graph
         .nodes()
         .filter(|node| !node.is_group && !node.links.is_empty())

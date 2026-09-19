@@ -237,13 +237,13 @@ fn answers_on_this_thread(
     // THE ONE RULE, as `bridge::answer` asks it - see `world::seen_state`. A copy here would be
     // a second way of deciding it, and this test exists to agree with the bridge.
     let seen_any_game = |id: DialogueNodeId| request.seen_any_game.contains(&NodeRef::from(id));
-    let novelty = lookahead_engine::world::seen_states(&world, seen_any_game);
+    let seen_state = lookahead_engine::world::seen_states(&world, seen_any_game);
 
     Some(answer_starts(
         graph,
         &world,
         request,
-        &novelty,
+        &seen_state,
         &mut compiler,
         &seed,
     ))

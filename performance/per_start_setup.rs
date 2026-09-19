@@ -59,7 +59,7 @@
 //! ## What it prices, and what it does not
 //!
 //! ONLY THE GRAPH-ONLY WORK. `Where::of` is called three times per start - by
-//! `bridge::scored`, by `answer::best_novelty` and by `novelty_search::best_novelty` -
+//! `bridge::scored`, by `answer::best_novelty` and by `seen_state_search::best_novelty` -
 //! and is the same waste in the same place, but it needs a compiled world to run and so
 //! belongs with the diagram side rather than here. The columns above are a LOWER BOUND on
 //! what a menu spends rebuilding what it already had.

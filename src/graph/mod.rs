@@ -8,7 +8,7 @@ use std::fmt;
 
 use crate::core::action::ActionCondition;
 use crate::core::state::StateSymbols;
-use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty};
+use crate::core::types::{DialogueCheckKind, DialogueNodeId, SeenState};
 use crate::graph::node::LookAheadNode;
 
 /// What a graph needs to know about its world before a search: the facts a search takes as
@@ -454,7 +454,7 @@ impl LookAheadGraph {
         }
     }
 
-    /// The best novelty class carried by anything LINK-REACHABLE beyond `start`.
+    /// The best seen state class carried by anything LINK-REACHABLE beyond `start`.
     ///
     /// GUARDS ARE IGNORED, which is the whole point: this is a few thousand pointer-follows
     /// against a search that is thousands of diagram operations, and it is run before every
@@ -486,13 +486,13 @@ impl LookAheadGraph {
     /// succeed on a lie.
     ///
     /// Stops the moment it meets the top rung, since nothing outranks it.
-    pub fn best_linked_class<F>(&self, start: DialogueNodeId, novelty: F) -> Option<Novelty>
+    pub fn best_linked_class<F>(&self, start: DialogueNodeId, seen_state: F) -> Option<SeenState>
     where
-        F: Fn(DialogueNodeId) -> Novelty,
+        F: Fn(DialogueNodeId) -> SeenState,
     {
         let mut expanded = HashSet::new();
         let mut pending = VecDeque::new();
-        let mut best: Option<Novelty> = None;
+        let mut best: Option<SeenState> = None;
 
         // Every entry this walk meets goes through the same three lines, the start
         // included. SCORED ON ARRIVAL AND EXPANDED ONCE are two different questions, and
@@ -502,11 +502,11 @@ impl LookAheadGraph {
             if node.is_group {
                 return false;
             }
-            let class = novelty(id);
-            if class > Novelty::SeenThisGame && Some(class) > best {
+            let class = seen_state(id);
+            if class > SeenState::SeenThisGame && Some(class) > best {
                 best = Some(class);
             }
-            best == Some(Novelty::UnseenAnyGame)
+            best == Some(SeenState::UnseenAnyGame)
         };
 
         if let Some(node) = self.get(start)
@@ -563,18 +563,18 @@ mod best_linked_class_tests {
     use super::*;
     use crate::test_graph::{Entry, GraphBuilder, node};
 
-    /// A novelty function from two lists, so a fixture can say which entry is which class.
+    /// A seen state function from two lists, so a fixture can say which entry is which class.
     fn classes<'a>(
         unseen_anywhere: &'a [i32],
         unseen_here: &'a [i32],
-    ) -> impl Fn(DialogueNodeId) -> Novelty + 'a {
+    ) -> impl Fn(DialogueNodeId) -> SeenState + 'a {
         move |id| {
             if unseen_anywhere.contains(&id.entry_id) {
-                Novelty::UnseenAnyGame
+                SeenState::UnseenAnyGame
             } else if unseen_here.contains(&id.entry_id) {
-                Novelty::UnseenThisGame
+                SeenState::UnseenThisGame
             } else {
-                Novelty::SeenThisGame
+                SeenState::SeenThisGame
             }
         }
     }
@@ -603,7 +603,7 @@ mod best_linked_class_tests {
 
         assert_eq!(
             graph.best_linked_class(node(0), classes(&[2], &[1])),
-            Some(Novelty::UnseenAnyGame),
+            Some(SeenState::UnseenAnyGame),
         );
     }
 
@@ -613,7 +613,7 @@ mod best_linked_class_tests {
 
         assert_eq!(
             graph.best_linked_class(node(0), classes(&[], &[1, 2])),
-            Some(Novelty::UnseenThisGame),
+            Some(SeenState::UnseenThisGame),
         );
     }
 
@@ -629,7 +629,7 @@ mod best_linked_class_tests {
 
         assert_eq!(
             graph.best_linked_class(node(0), classes(&[0], &[])),
-            Some(Novelty::UnseenAnyGame),
+            Some(SeenState::UnseenAnyGame),
         );
     }
 
@@ -643,7 +643,7 @@ mod best_linked_class_tests {
 
         assert_eq!(
             graph.best_linked_class(node(0), classes(&[0], &[])),
-            Some(Novelty::UnseenAnyGame),
+            Some(SeenState::UnseenAnyGame),
         );
     }
 
@@ -671,7 +671,7 @@ mod best_linked_class_tests {
 
         assert_eq!(
             graph.best_linked_class(node(0), classes(&[2], &[])),
-            Some(Novelty::UnseenAnyGame),
+            Some(SeenState::UnseenAnyGame),
         );
     }
 

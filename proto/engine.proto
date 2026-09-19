@@ -316,11 +316,12 @@ message LookAheadRequest {
 // What comes back from one look-ahead
 // ---------------------------------------------------------------------------
 
-// How new something is: seen, unseen this game, or unseen in any game.
-enum Novelty {
-  NOVELTY_SEEN = 0;
-  NOVELTY_UNSEEN_THIS_GAME = 1;
-  NOVELTY_UNSEEN_ANY_GAME = 2;
+// What an entry's seen state is, from the two facts that decide it - see the engine's
+// `world::seen_state`. Ordered, because a marking takes the best of them.
+enum SeenState {
+  SEEN_STATE_SEEN_THIS_GAME = 0;
+  SEEN_STATE_UNSEEN_THIS_GAME = 1;
+  SEEN_STATE_UNSEEN_ANY_GAME = 2;
 }
 
 // Which outcome of a rolled check an answer is about.
@@ -350,14 +351,14 @@ message LookAheadAnswer {
   // Which outcome of a rolled check this is, or BRANCH_NONE for an ordinary option.
   Branch branch = 2;
 
-  // The best novelty already known about this start, before any search.
+  // The best seen state already known about this start, before any search.
   //
-  // For an ordinary option it is the option's own novelty; for an outcome it is the best
-  // among the entries that outcome leads to directly. Either way it is the baseline a
-  // search has to beat to be worth running, and what the mod colours the word by.
-  Novelty destination = 3;
-  // The best novelty anything reachable carries.
-  Novelty best = 4;
+  // For an ordinary option it is the option's own state; for an outcome it is the best among
+  // the entries that outcome leads to directly. Either way it is the baseline a search has to
+  // beat to be worth running, and what the mod colours the word by.
+  SeenState destination = 3;
+  // The best seen state anything reachable carries.
+  SeenState best = 4;
   // The entry that proved it, where something did.
   optional NodeRef witness = 5;
   // Whether the search settled. False means best is a lower bound.

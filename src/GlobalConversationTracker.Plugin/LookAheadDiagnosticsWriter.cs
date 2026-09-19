@@ -258,7 +258,7 @@ namespace GlobalConversationTracker
             text.Append("  elapsed        ")
                 .Append(answer.ElapsedMs.ToString(CultureInfo.InvariantCulture))
                 .AppendLine(" ms");
-            text.Append("  best found     ").Append((Novelty)answer.Best).AppendLine();
+            text.Append("  best found     ").Append((SeenState)answer.Best).AppendLine();
             text.Append("  money          ").Append(world.Money).AppendLine();
             text.Append("  clock          ")
                 .Append((world.DayMinutes / 60).ToString("00", CultureInfo.InvariantCulture))

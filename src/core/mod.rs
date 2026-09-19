@@ -49,9 +49,9 @@ mod tests {
 
     #[test]
     fn test_novelty_ordering() {
-        use types::Novelty;
-        assert!(Novelty::UnseenAnyGame > Novelty::UnseenThisGame);
-        assert!(Novelty::UnseenThisGame > Novelty::SeenThisGame);
+        use types::SeenState;
+        assert!(SeenState::UnseenAnyGame > SeenState::UnseenThisGame);
+        assert!(SeenState::UnseenThisGame > SeenState::SeenThisGame);
     }
 
     #[test]
