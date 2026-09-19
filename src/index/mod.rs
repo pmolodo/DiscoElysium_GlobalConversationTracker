@@ -54,6 +54,16 @@ const CLICK_COST_FIELD: &str = "ClickCost";
 const COST_ONCE_FIELD: &str = "CostOnce";
 const HIDDEN_NOT_ENOUGH_FIELD: &str = "HiddenNotEnough";
 
+/// What an entry's presentation is scheduled by: the Dialogue System's sequence.
+///
+/// WHETHER A LINE HOLDS THE SCREEN IS IN HERE AND NOWHERE ELSE. A walk decides whether a line
+/// waits for a continue from what links out of it - a line behind it waits, a menu behind it
+/// does not - and measured in game that is right almost everywhere and wrong where a sequence
+/// RUNS: an animation, or a command scheduled with `@`, keeps its line up and takes a continue
+/// the link shape does not predict. Two entries of conversation 1467 are the measured case, and
+/// `tools/sequence-holds.py` counts the population they belong to. See de-oaaq.
+pub(crate) const SEQUENCE_FIELD: &str = "Sequence";
+
 /// The actor an entry names when the player speaks it, as [`ACTOR_FIELD`] spells it.
 ///
 /// A number rather than a name because that is what the field holds. `tests/shipped_index.rs`
@@ -78,7 +88,7 @@ pub const PLAYER_ACTOR: &str = "396";
 /// The extractor is C# and cannot share a constant with this, so `tests/shipped_index.rs`
 /// checks the two against each other instead: for every name here, an entry that has it in
 /// the full index must still have it in the trimmed one.
-pub const ENTRY_FIELDS_READ: [&str; 15] = [
+pub const ENTRY_FIELDS_READ: [&str; 16] = [
     ACTOR_FIELD,
     PASSIVE_FIELD,
     ANTIPASSIVE_FIELD,
@@ -94,6 +104,7 @@ pub const ENTRY_FIELDS_READ: [&str; 15] = [
     CLICK_COST_FIELD,
     COST_ONCE_FIELD,
     HIDDEN_NOT_ENOUGH_FIELD,
+    SEQUENCE_FIELD,
 ];
 
 /// The header line's version property, as the extractor writes it.

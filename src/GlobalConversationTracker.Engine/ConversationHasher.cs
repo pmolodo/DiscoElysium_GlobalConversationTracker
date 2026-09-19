@@ -140,9 +140,20 @@ namespace GlobalConversationTracker.Engine
             var kept = new SortedDictionary<string, string>(StringComparer.Ordinal);
             foreach (KeyValuePair<string, string> field in fields)
             {
+                // AN EMPTY FIELD IS AN ABSENT ONE, because the two sides of this comparison
+                // spell it differently and neither is wrong. The loaded database hands over
+                // every field a dialogue entry has, empty ones included; the index writes only
+                // the fields that say something. Hashing "" as though it were a value made the
+                // shipped index stop matching the game on the 1,873 entries whose Sequence is
+                // empty, which is a disagreement about nothing at all. See de-oaaq.
+                if (string.IsNullOrEmpty(field.Value))
+                {
+                    continue;
+                }
+
                 if (Array.IndexOf(IndexFields.Read, field.Key) >= 0)
                 {
-                    kept[field.Key] = field.Value ?? string.Empty;
+                    kept[field.Key] = field.Value;
                 }
             }
 

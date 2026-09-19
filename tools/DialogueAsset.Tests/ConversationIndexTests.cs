@@ -72,7 +72,11 @@ namespace GlobalConversationTracker.DialogueAsset.Tests
             EntryRecord entry = Extract()[0].Entries[1];
 
             Assert.Equal(new[] { "Title", "Sequence", "DifficultyPass", "Note" }, entry.Fields.Keys);
-            Assert.Equal("Say(\"hi\") \\ done", entry.Fields["Sequence"]);
+            // A SEQUENCE'S LINE BREAKS COME BACK AS LINE BREAKS, which no other field asks for:
+            // the export writes them as the two characters \ and n, and the loaded database
+            // holds a real newline. An index that kept the escaped form would carry text the
+            // game does not have, and the conversation hash would say so. See de-oaaq.
+            Assert.Equal("Say(\"hi\") \\ done;\nPlay(2)", entry.Fields["Sequence"]);
             // Escaped rather than written out, so this file stays ASCII: the fixture is
             // where the accented letter and the astral character actually live.
             Assert.Equal("Sur la lune - caf\u00e9 \U0001F600", entry.Fields["Note"]);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 //! Does the index the mod ships still say everything the engine reads?
 //!
-//! The shipped index is trimmed - 47.7 MB down to 14.3 MB - and trimming means a list,
+//! The shipped index is trimmed - 47.7 MB down to 16.9 MB - and trimming means a list,
 //! written in C# in `ShippedIndex.KeptFields`, of what survives. The engine's own list is
 //! `index::ENTRY_FIELDS_READ`, written in Rust. Two lists that must agree and cannot share
 //! a constant.

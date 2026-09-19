@@ -40,6 +40,11 @@ namespace GlobalConversationTracker.Engine
             "ClickCost",
             "CostOnce",
             "HiddenNotEnough",
+            // What schedules an entry's presentation, and the only place that says whether a
+            // line holds the screen: a sequence that RUNS - an animation, or a command
+            // scheduled with '@' - takes a continue that the entry's links do not predict.
+            // See de-oaaq and lookahead_engine::index::SEQUENCE_FIELD.
+            "Sequence",
         };
 
         /// <summary>

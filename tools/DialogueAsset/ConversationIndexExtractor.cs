@@ -21,6 +21,29 @@ namespace GlobalConversationTracker.DialogueAsset
     {
         private const string TitleField = "Title";
         private const string ActorField = "Actor";
+
+        /// <summary>What schedules an entry's presentation, and the one field read back as text.</summary>
+        private const string SequenceField = "Sequence";
+
+        /// <summary>
+        /// Turns the escaped line breaks a multi-line sequence is exported with back into real
+        /// ones, so the index spells it the way the loaded database does.
+        /// </summary>
+        /// <remarks>
+        /// <para>NARROW ON PURPOSE, and the narrowness is the point. <see cref="DialogueScalar.Decode"/>
+        /// says it unescapes only \" and \\ and that a reader needing more wants its own
+        /// decoder, because widening the shared one would silently rewrite every field of the
+        /// index. This is that own decoder, applied to the one field that needs it.</para>
+        ///
+        /// <para>WHY IT NEEDS IT: 41 sequences in the database run to several lines, and the
+        /// export writes those breaks as the two characters \ and n where the game holds a real
+        /// newline. Left alone, the index carries text the game does not have - and the
+        /// conversation hash says so, which is how this was found. See de-oaaq.</para>
+        /// </remarks>
+        private static string UnescapeLines(string value)
+        {
+            return value.Contains("\\n") ? value.Replace("\\n", "\n") : value;
+        }
         private const string ConversantField = "Conversant";
         private const string GroupValue = "1";
 
@@ -112,6 +135,11 @@ namespace GlobalConversationTracker.DialogueAsset
                             }
 
                             string value = DialogueScalar.Decode(item.Text);
+                            if (name == SequenceField)
+                            {
+                                value = UnescapeLines(value);
+                            }
+
                             entry!.Fields[name] = value;
                             if (name == TitleField)
                             {
