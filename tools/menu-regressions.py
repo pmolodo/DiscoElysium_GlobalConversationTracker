@@ -87,6 +87,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from measurement_common import (  # noqa: E402  (after the path is set)
     ALGORITHM_VARIABLES,
     COMBINED,
+    LOGS,
     OUT,
     RUN_RECORD,
     SUMMARY,
@@ -105,7 +106,7 @@ from measurement_common import (  # noqa: E402  (after the path is set)
 ###############################################################################
 
 # Where marked baselines are copied to. Under logs, which git ignores - see the module note.
-BASELINES = OUT / "logs" / "baselines"
+BASELINES = OUT / LOGS / "baselines"
 
 # What marking a baseline records about itself, beside what it copied.
 BASELINE_RECORD = "baseline.json"

@@ -74,6 +74,10 @@ skip the extra pass:
 --kind overrides the DEGCT_RUN_KIND that `tools/run-logged.sh --kind` exports, and with neither
 the run counts as a performance run and pays. See `takes_cold_run`.
 
+AND IT PLACES THE ROWS, since a dataset filed among the timings is one that later readings of
+performance/logs take for a measurement: the folder of rows goes under the tree the kind names,
+beside the transcript of a run wrapped as the same kind. See `measurement_common.in_tree`.
+
 WHAT COUNTS AS DONE:
 
     a row       measured, whatever it says. Done.
@@ -94,6 +98,8 @@ import measurement_common as common  # noqa: E402  (after the path is set)
 
 from measurement_common import (  # noqa: E402
     COMBINED,
+    KINDS,
+    PERFORMANCE_KIND,
     SUMMARY,
     TAB,
     Settling,
@@ -410,21 +416,19 @@ RUN_FOLDER = "run-{}"
 # notice. `tools/cold-run-effect.py` recomputes the figures above over whatever is on disk.
 COLD_FOLDER = "run-cold"
 
-# The one kind of run whose numbers a cold first run can spoil. See COLD_FOLDER.
-PERFORMANCE_KIND = "performance"
-
-# The same three `tools/run-logged.sh` names, each of which is also its tree's name. EVERY RUN
-# IS A MEASUREMENT - of correctness, of data, or of timing - so none of them is called
-# "measure"; the kind says what is being measured.
-KINDS = (PERFORMANCE_KIND, "testing", "analysis")
+# What this driver calls itself where the wrapper is not there to be asked, and what it
+# produced. THE TOOL SLOT IS FOR A TOOL: a folder under performance/logs whose tool field says
+# "measure" reads as a kind rather than as whatever wrote it, since a kind is what the three
+# trees are named for and no kind is called that.
+TOOL = "measure-menus"
+VERB = "menus"
 
 
 def takes_cold_run(asked):
     """Whether this run throws a first pass away, which only a performance run does.
 
-    `asked` is --kind, which WINS over the wrapper's `DEGCT_RUN_KIND`: the wrapper is told what
-    a run measures before the tool is, and a performance tool pressed into deriving a dataset is
-    exactly the case where the two differ. Saying it on the command line is what makes that a
+    `asked` is --kind, which `common.run_kind` weighs against the wrapper's DEGCT_RUN_KIND.
+    Saying it on the command line is what makes deriving a dataset with a performance tool a
     one-word change rather than a reason to reach for a second driver.
 
     UNKNOWN COUNTS AS TIMING, deliberately. An unwrapped invocation with no --kind says
@@ -432,7 +436,7 @@ def takes_cold_run(asked):
     where it was wanted can silently corrupt a comparison, while taking one where it was not
     wanted costs a run. Pay the run.
     """
-    return (asked or env("RUN_KIND", PERFORMANCE_KIND)) == PERFORMANCE_KIND
+    return common.run_kind(asked) == PERFORMANCE_KIND
 
 
 # How many of the costliest groups the summary lists.
@@ -624,8 +628,9 @@ def get_parser():
         choices=KINDS,
         default=None,
         help=(
-            "what this run is for, overriding DEGCT_RUN_KIND; anything but 'measure' skips the "
-            "throw-away cold run, so asking a perf tool for a dataset does not pay for one"
+            "what this run is for, overriding DEGCT_RUN_KIND; it names the tree the rows go "
+            f"under, and anything but '{PERFORMANCE_KIND}' skips the throw-away cold run, so "
+            "asking a perf tool for a dataset does not pay for one"
         ),
     )
     return parser
@@ -644,15 +649,22 @@ def main(argv=None):
         named = [int(c) for c in named]
 
     # NAMED, LABELLED, OR A FOLDER OF ITS OWN. A path is taken literally and resumes what is
-    # there; a plain word is a LABEL, which names the run and lets the folder be named the way
-    # every log here is - see `common.folder_for`. A run told nothing gets a fresh folder and
-    # resumes nothing, which is the safe default: a resume into a folder taken against
-    # different settings would mix two measurements.
+    # there; a plain word is a LABEL, which says what the run was for and is carried as a suffix
+    # on the name every log here has - see `common.folder_for`. A run told nothing gets a fresh
+    # folder and resumes nothing, which is the safe default: a resume into a folder taken
+    # against different settings would mix two measurements.
+    #
+    # THE KIND PLACES IT, transcript and rows alike: a dataset derived by this tool is filed
+    # with the datasets rather than among the timings.
+    kind = common.run_kind(args.kind)
     named_out = env("MENUS_OUT")
-    out = common.folder_for(named_out, "measure", "MENUS_OUT") if named_out else common.run_folder("menus", "MENUS_OUT")
+    if named_out:
+        out = common.folder_for(named_out, TOOL, VERB, "MENUS_OUT", kind)
+    else:
+        out = common.run_folder(TOOL, VERB, "MENUS_OUT", kind)
 
     workers = env_int("WORKERS", default_workers())
-    record_run(out, workers, args.runs, named, args.kind)
+    record_run(out, workers, args.runs, named, kind)
 
     # BUILT ONCE FOR THE WHOLE PASS, BEFORE THE FIRST RUN, so every run of it is the same
     # binary BY CONSTRUCTION. Building per run made that a matter of nobody having touched the
@@ -678,12 +690,12 @@ def main(argv=None):
         # THE COLD RUN IS FIRST AND IS NOT COMBINED, and a run measuring anything but timing
         # does not take one at all. See COLD_FOLDER and `takes_cold_run`.
         cold = None
-        if takes_cold_run(args.kind):
+        if takes_cold_run(kind):
             cold = out / COLD_FOLDER
             print(f"\n=== cold run (discarded from the combination) -> {cold} ===")
             measure(cold, named, workers, menus, digest)
         else:
-            print(f"\n=== {args.kind or env('RUN_KIND')}: no cold run, its columns do not time ===")
+            print(f"\n=== {kind}: no cold run, its columns do not time ===")
 
         folders = []
         for number in range(1, args.runs + 1):

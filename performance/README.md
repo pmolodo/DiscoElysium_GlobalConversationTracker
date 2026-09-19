@@ -106,6 +106,11 @@ same command again after a kill, a crash or a reboot and every group already in 
 is skipped. Rows are appended as they finish, so an interruption costs the group in flight and
 nothing else.
 
+A PATH places the folder; ONE PLAIN WORD labels it - `DEGCT_MENUS_OUT=qy5t-before` - and the
+label rides as a suffix on the name the run would have had anyway,
+`..._measure-menus_menus__qy5t-before/`, so the folder still carries its transcript's name.
+The same word later resumes the most recent folder carrying it.
+
 A default row is the shipped algorithm, walk included: each profile menu is asked with the walk
 a player would have been shown from the conversation's start (`hub::walk_to_menu`), and the hub
 cut it drives is worked out inside the timing, as a player's request has it worked out. Every

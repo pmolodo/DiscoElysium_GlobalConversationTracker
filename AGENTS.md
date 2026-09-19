@@ -51,8 +51,13 @@ drops in wherever the bare command stood. `--name-only` prints the path without 
 anything.
 
 A measurement's ROWS take the transcript's name exactly, minus the extension, so which folder
-belongs to which log is readable without opening either. `tools/tidy-logs.py` sorts any log
-that arrives loose, by the date in its name or its modification time.
+belongs to which log is readable without opening either. A label - `DEGCT_MENUS_OUT=qy5t-before`
+- is a SUFFIX on that name rather than a name of its own, `..._menus__qy5t-before/`, so a run
+can say what it was for without giving up the pairing. `tools/tidy-logs.py` sorts any log that
+arrives loose, by the date in its name or its modification time.
+
+The rows go under the tree the KIND names, the same tree the transcript goes to, so a dataset a
+performance tool derived is filed with the datasets and not among the timings.
 
 Analysis tools write their DATA to `analysis/outputs/`, beside their transcripts in
 `analysis/logs/`.

@@ -39,7 +39,19 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "performance"
+
+# The one kind of run whose numbers a cold first run can spoil. See `measure-menus.COLD_FOLDER`.
+PERFORMANCE_KIND = "performance"
+
+# The three kinds `tools/run-logged.sh` knows, each of which is also its tree's name. EVERY RUN
+# IS A MEASUREMENT - of correctness, of data, or of timing - so none of them is called "measure";
+# the kind says WHAT is measured, and a kind and its tree say the same word.
+KINDS = (PERFORMANCE_KIND, "testing", "analysis")
+
+# Where a log of a given kind goes, under its tree.
+LOGS = "logs"
+
+OUT = ROOT / PERFORMANCE_KIND
 
 TAB = "\t"
 
@@ -265,7 +277,53 @@ def is_label(value):
     return bool(LABEL.match(str(value))) and ".." not in str(value)
 
 
-def folder_for(value, verb, out_variable):
+# What stands between a run's own name and the label a caller gave it. TWO characters where
+# one would read the same, because a single underscore already separates the name's own fields
+# and a label joined by one would read as another field.
+LABEL_SEPARATOR = "__"
+
+
+def run_kind(asked):
+    """What a run is FOR: which tree its artefacts belong in, and whether it throws a pass away.
+
+    `asked` is the driver's own --kind, which WINS over the wrapper's DEGCT_RUN_KIND: the
+    wrapper is told what a run measures before the tool is, and a performance tool pressed into
+    deriving a dataset is exactly the case where the two differ.
+
+    UNKNOWN COUNTS AS TIMING, for the reason `measure-menus.takes_cold_run` gives: an unwrapped
+    invocation that says nothing about itself pays the cold run rather than risk a comparison
+    taken without one.
+    """
+    return asked or env("RUN_KIND", PERFORMANCE_KIND)
+
+
+def in_tree(folder, kind):
+    """`folder` under the tree `kind` names, where it sits in one of those trees at all.
+
+    THE KIND DECIDES THE TREE FOR THE ROWS TOO, not only for the transcript. A performance tool
+    asked for a DATASET writes a dataset, and rows filed among the timings put numbers nobody
+    took as measurements into the sample of everything that reads performance/logs -
+    `tools/cold-run-effect.py` counts the multi-run passes there, and any later survey of what
+    has been measured reads the same tree.
+
+    THE NAME STILL PAIRS THEM when the kind puts the rows in a different tree from the
+    transcript: same date folder, same name, so the transcript a folder came from is one
+    directory across and readable off the name.
+
+    ANYWHERE ELSE IS LEFT WHERE IT IS. DEGCT_RUN_LOG_DIR puts a log wherever it says, and a
+    caller who named the directory has already answered the question this asks.
+    """
+    folder = Path(folder)
+    try:
+        relative = folder.resolve().relative_to(ROOT)
+    except ValueError:
+        return folder
+    if len(relative.parts) > 2 and relative.parts[0] in KINDS and relative.parts[1] == LOGS:
+        return ROOT.joinpath(kind, *relative.parts[1:])
+    return folder
+
+
+def folder_for(value, tool, verb, out_variable, kind):
     """Where a driver told `value` should write: a path as given, or a label's folder.
 
     ## Two things one variable can be
@@ -273,11 +331,11 @@ def folder_for(value, verb, out_variable):
     A PATH is taken literally, which is what it always was: `DEGCT_MENUS_OUT=/tmp/rows` writes
     there and resumes there.
 
-    A LABEL - one plain word, no separators - names the run instead of placing it, and the
-    folder is built the way every log in this repository is named, with the label as the verb:
+    A LABEL - one plain word, no separators - names the run instead of placing it, and is a
+    SUFFIX on the name the run would have had anyway:
 
         DEGCT_MENUS_OUT=qy5t-before
-        -> performance/logs/2026-09-18/2026-09-18_10,07,41_7a2d23f_measure_qy5t-before/
+        -> performance/logs/2026-09-18/2026-09-18_10,07,41_7a2d23f_measure-menus_menus__qy5t-before/
 
     WHY THE LABEL EXISTS. Naming the folder by hand is the common case, and a hand-named folder
     sat outside the convention every other artefact follows - so `qy5t-before/` and the
@@ -285,12 +343,22 @@ def folder_for(value, verb, out_variable):
     said they belonged together. A label keeps the freedom to say what a run was FOR while
     letting the name say when it ran and against what.
 
+    WHY IT IS A SUFFIX AND NOT THE WHOLE NAME. A label that replaced the name would give up the
+    one thing the un-labelled case exists to provide - rows carrying their transcript's name
+    exactly, so which folder belongs to which log reads off the two names without opening
+    either - and it would give it up for the runs most worth pairing, since a run worth
+    labelling is a run somebody meant to come back to. As a suffix both hold at once.
+
     ## Resuming a label
 
     A label reuses the MOST RECENT folder carrying it, which is how resuming a path already
     behaves: point at the same thing and it continues. A label used for the first time gets a
     new folder. The settings check still refuses a resume whose measurement differs, so reusing
     a label across a change is caught rather than silently mixed.
+
+    EVERY TREE IS SEARCHED, not the one this run's kind names, because the kind says what a run
+    measures and a resume is the same measurement continuing - a folder must not be missed, and
+    a second one started beside it, over an argument about what to call the run.
 
     THE NAME KEEPS THE FIRST REVISION, AND THAT IS A KNOWN COST. A resumed folder is named for
     the invocation that made it, so rows added later can have been measured at another commit
@@ -303,17 +371,16 @@ def folder_for(value, verb, out_variable):
         return Path(value)
 
     existing = sorted(
-        (path for path in (OUT / "logs").glob(f"*/*_{verb}_{value}") if path.is_dir()),
+        (path for tree in KINDS for path in (ROOT / tree / LOGS).glob(f"*/*{LABEL_SEPARATOR}{value}") if path.is_dir()),
         key=lambda path: path.stat().st_mtime,
     )
     if existing:
         return existing[-1]
-    # NOT THE TRANSCRIPT'S NAME. A label was given, so it names the folder - see `run_folder`
-    # on why letting the transcript win here made two labels collide.
-    return run_folder(value, out_variable, use_transcript=False)
+    base = run_folder(tool, verb, out_variable, kind)
+    return base.with_name(base.name + LABEL_SEPARATOR + value)
 
 
-def run_folder(verb, out_variable, use_transcript=True):
+def run_folder(tool, verb, out_variable, kind):
     """One folder for this run, named the way every run log in this repository is named.
 
     THE SAME NAME AS THE TRANSCRIPT, EXACTLY, where there is one. A run writes two things -
@@ -321,13 +388,18 @@ def run_folder(verb, out_variable, use_transcript=True):
     to be readable off the two names, without opening either. So the folder is the transcript's
     path with the extension taken off:
 
-        2026-09-18/2026-09-18_10,05,29_<revision>_measure_menus.txt   the transcript
-        2026-09-18/2026-09-18_10,05,29_<revision>_measure_menus/      its rows
+        2026-09-18/2026-09-18_10,05,29_<revision>_measure-menus_menus.txt   the transcript
+        2026-09-18/2026-09-18_10,05,29_<revision>_measure-menus_menus/      its rows
 
     ASKED OF THE WRAPPER RATHER THAN REBUILT, and this is why it is taken from the exported
     path rather than by asking for a fresh name: two calls to the wrapper are two readings of
     the clock, so a folder named by the second would sit a second or two after the transcript
     named by the first and the pair would no longer match.
+
+    TWO LABELS UNDER ONE TRANSCRIPT ARE TWO FOLDERS, since the label is a suffix on this stem
+    rather than a replacement for it. A whole-game pass and a subset of it run under one
+    wrapped invocation are two measurements, and one folder holding both would report one set
+    of numbers twice.
 
     ASKED OF tools/run-logged.sh RATHER THAN BUILT HERE, where there is no transcript to take
     it from. The format lives in that script and in RunLog.cs, held to each other by
@@ -339,33 +411,37 @@ def run_folder(verb, out_variable, use_transcript=True):
     the one call a driver makes to the wrapper, so it stopped a run before its first row on
     the very path a person takes who sets nothing.
 
-    UNDER performance/logs WHATEVER RUN_LOG_DIR SAYS. This is a folder of rows rather than a
-    transcript, and rows belong beside the other measurements; a run that scattered them
-    wherever a variable happened to point would be one nobody could find afterwards.
+    IN THE TREE THE KIND NAMES, which is the same answer the wrapper gives a transcript, so the
+    rows of an analysis pass are no more filed among the timings than its transcript is. See
+    `in_tree`, and DEGCT_RUN_LOG_DIR still overrides both.
 
-    `out_variable` is the driver's own OUT name, said in the refusal when there is no bash to
-    ask - naming the folder is how a run gets one without the wrapper.
+    THE TREE IS HANDED OVER RATHER THAN ASKED FOR BY ITS KIND, which the script would happily
+    work out, because the script finds its own root with `pwd` in a bash that calls this drive
+    `/c` - and `/c/Projects/...` read back by this process is a folder named `c` at the root of
+    whatever drive it happens to be on. A directory this side spelt needs no converting. What
+    costs is one restatement of an invariant both files already carry: a kind is its tree's
+    name.
+
+    `tool` and `verb` are what the run calls itself where the wrapper is not there to be asked:
+    the driver's own name, and what it produced. `out_variable` is the driver's OUT name, said
+    in the refusal when there is no bash to ask - naming the folder is how a run gets one
+    without the wrapper.
     """
-    # THE TRANSCRIPT'S OWN NAME, where the run was not told what to call itself. A label is
-    # told, and must NOT land here: two labels under one wrapped invocation would both resolve
-    # to the transcript's stem, so the second would silently resume the first. That happened -
-    # a whole-game pass and a 132-menu subset wrote to one folder and reported one set of
-    # numbers twice.
     transcript = env("RUN_LOG")
-    if transcript and use_transcript:
-        return Path(transcript).with_suffix("")
+    if transcript:
+        return in_tree(Path(transcript).with_suffix(""), kind)
 
     folder = subprocess.run(
         [
             bash(f", or name the run's folder with {qualified(out_variable)}"),
             str(ROOT / "tools" / "run-logged.sh"),
             "--folder-only",
-            "measure",
+            tool,
             verb,
         ],
         capture_output=True,
         text=True,
-        env=env_for_child(RUN_LOG_DIR=str(OUT / "logs")),
+        env=env_for_child(RUN_LOG_DIR=env("RUN_LOG_DIR") or ROOT / kind / LOGS),
         check=True,
     ).stdout.strip()
     return Path(folder)
