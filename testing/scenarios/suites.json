@@ -46,6 +46,34 @@
       ]
     },
     {
+      "suite": "gurdis-goats",
+      "what": "an option guarded on a variable nothing declares is not offered at all",
+      "why": "1467:11 is written with six options - 148, 47, 182, 104, 68, 110 - and 104, 'And Gurdi?', is guarded on FlagSet(\"undefined.pinball_asked_about_the_goats\"), the ONLY undeclared variable any guard in the shipped database reads. FlagSet is LuaHelper.GetVariable, and a name Lua never heard of is nil, which is false in the condition a guard puts it in - so the game never offers it. aec99b8 made the engine agree, where it had answered Unknown and marked an option no play can ever clear. THE CORPUS SAYS THE SAME: of the 54 saves that displayed any of 1467, every one displayed 148, 47, 182 and 110, all but one displayed 68, and NONE displayed 104. WHAT CATCHES A REGRESSION IS THE POLICY RATHER THAN A ROW. Named markers require that every option this stop does not name is unmarked, and 104 leads to 172, a group opening 173 and 174, which an empty global state leaves unread - so were it offered it would be marked, and this would fail. The global state is empty for exactly that reason: it marks every option that reaches anything, which is the most sensitive world the claim can be made in.",
+      "state": "global-state-empty.json",
+      "scenarios": [
+        {
+          "save": "at-the-pinball",
+          "conversation": 1467,
+          "stops": [
+            {
+              "what": "the pinball table's menu, which Gurdi's goats are written into and never appear in",
+              "inputs": ["1", "enter", "3", "enter", "enter"],
+              "options": [
+                { "entry": 148, "marker": "orange", "why": "it leads on to text no save has read" },
+                { "entry": 47, "marker": "orange", "why": "and so does this one" },
+                { "entry": 182, "marker": "orange", "why": "its two pinball flags are set in this save, so it is offered, and it reaches unread text" },
+                { "entry": 68, "marker": "none", "why": "it is itself unseen in any game - the one option of the five this save never displayed - and nothing outranks the top rung, so the mod never marks it" },
+                { "entry": 110, "marker": "none", "why": "this save has read it and nothing beyond it outranks it" }
+              ]
+            }
+          ]
+        }
+      ],
+      "inGame": {
+        "notInDefaultRun": "Only until it has been SEEN to pass in game once. The offline half is green and the in-game half is the half that matters here - the plugin sending false for an undeclared name is what nothing else exercises - but the one run taken so far stopped at a settle that never answered, on a machine whose display went to sleep, so the run says nothing either way. It joins the default run when a launch on a waking machine passes it. Run it by name: --suite gurdis-goats."
+      }
+    },
+    {
       "suite": "money",
       "what": "a path spends as it walks, and the look-ahead has to spend with it",
       "why": "Conversation 451 gates a 0.50 real purchase behind a 50.00 one, and the staged global state leaves entry 80 - the only one a speaker buyer reaches - unseen. An option is therefore orange exactly when the crawl could afford both, which is what the three balances separate. The middle one is the point: a look-ahead that checked an option's price without subtracting what the path already spent would mark it.",
