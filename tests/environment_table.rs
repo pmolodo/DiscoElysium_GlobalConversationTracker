@@ -31,8 +31,12 @@ use std::process::Command;
 /// The doc this checks, which would otherwise count every variable it lists.
 const TABLE: &str = "docs/environment.md";
 
-/// This file, whose own patterns name variables as examples of what it looks for.
-const SELF: &str = "tests/environment_table.rs";
+/// The files ABOUT the variables, whose own patterns and prose name them as examples.
+///
+/// A file whose subject is the list cannot also be evidence for it: every name it uses to explain
+/// itself would become a row, and a name it stopped explaining would silently leave one. This file
+/// is one; `tools/survey-env.py`, which prints where each variable is read, is the other.
+const ABOUT: [&str; 2] = ["tests/environment_table.rs", "tools/survey-env.py"];
 
 /// What a file has to end in to be worth reading: the languages that have a helper, plus the
 /// docs, which name variables in prose.
@@ -45,7 +49,11 @@ const PREFIX: &str = "DEGCT_";
 ///
 /// Not `std::env::var`, which reads somebody else's name under its own spelling - the `env::`
 /// entries below are matched only where `std::` does not precede them.
-const QUOTED: [&str; 18] = [
+///
+/// NO C# SHAPE HERE, and `.cs` is still read. No C# file asks for one of ours through a helper,
+/// so there is no call shape to look for; a raw `GetEnvironmentVariable("DEGCT_X")` would still
+/// be caught, by the spelled-out name. A helper and the shape that finds it arrive together.
+const QUOTED: [&str; 14] = [
     "env::var(",
     "env::is_set(",
     "env::number(",
@@ -59,10 +67,6 @@ const QUOTED: [&str; 18] = [
     "env_int(",
     "env_list(",
     "qualified(",
-    "DegctEnvironment.Get(",
-    "DegctEnvironment.IsSet(",
-    "DegctEnvironment.Number(",
-    "DegctEnvironment.Set(",
     "env_for_child(",
 ];
 
@@ -133,7 +137,7 @@ fn rows(root: &Path) -> Option<Vec<String>> {
 
     let mut readers: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for path in String::from_utf8_lossy(&listed.stdout).lines() {
-        if path == TABLE || path == SELF {
+        if path == TABLE || ABOUT.contains(&path) {
             continue;
         }
         if !SUFFIXES

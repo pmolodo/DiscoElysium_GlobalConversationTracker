@@ -9,9 +9,8 @@ The table there names each variable and every tracked file that MENTIONS it - a 
 line of prose in a design note, all the same row. That is the right list for "what exists" and
 the wrong one for "what would it take to move this onto a CLI argument", which needs to know
 which mentions are reads, who owns the file doing the reading, and whether anything sets the name
-at all. Two of the five pieces this prints turned out not to match what the table suggests: the
-C# helper has no caller anywhere, and `DEGCT_MARKING` is prose in `src/bridge.rs` rather than a
-read.
+at all. `DEGCT_MARKING` is the example to keep in mind: the table rows `src/bridge.rs` for it, and
+what is in that file is a sentence about it in a comment.
 
 READS ARE RECOGNISED THE WAY `tests/environment_table.rs` RECOGNISES THEM, from the same two
 lists of call shapes, so this and the test agree about what counts as asking for a variable.
@@ -65,10 +64,6 @@ QUOTED = [
     "env_int(",
     "env_list(",
     "qualified(",
-    "DegctEnvironment.Get(",
-    "DegctEnvironment.IsSet(",
-    "DegctEnvironment.Number(",
-    "DegctEnvironment.Set(",
     "env_for_child(",
 ]
 
@@ -83,10 +78,10 @@ BARE = [
 ]
 
 # Calls that hand a value DOWN rather than read one.
-WRITERS = frozenset({"env::pass(", "env_for_child(", "DegctEnvironment.Set(", "degct_env_set ", "Set-DegctEnv "})
+WRITERS = frozenset({"env::pass(", "env_for_child(", "degct_env_set ", "Set-DegctEnv "})
 
 # The files that are NOTHING but the door, whose own reads are self-tests.
-HELPERS_ONLY = frozenset({"src/core/env.rs", "src/GlobalConversationTracker.Core/DegctEnvironment.cs"})
+HELPERS_ONLY = frozenset({"src/core/env.rs"})
 
 # Which piece of the project a path belongs to. FIRST MATCH WINS, so the order is the rule: the
 # plugin lives under `src/` too, and has to be recognised before the engine claims it.

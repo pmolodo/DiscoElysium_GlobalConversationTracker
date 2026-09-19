@@ -16,7 +16,10 @@ whether it is set, set one, and read a FOREIGN one under its own name.
 | Python | `tools/measurement_common.py` - `env`, `env_is_set`, `env_int`, `env_list`, `env_for_child` |
 | bash | `tools/degct-env.sh` - `degct_env`, `degct_env_is_set`, `degct_env_set`, `degct_env_foreign` |
 | PowerShell | `tools/DegctEnv.psm1` - `Get-DegctEnv`, `Test-DegctEnv`, `Set-DegctEnv` |
-| C# | `src/GlobalConversationTracker.Core/DegctEnvironment.cs` - `Get`, `IsSet`, `Number`, `Set`, `Foreign` |
+
+**C# has no helper, because no C# file reads one of ours.** The rule still covers it: a C# file
+that needs one gets a helper of its own, and `tests/environment_table.rs` gets the call shape to
+find it in the same change. Until then there is nothing for a door to open.
 
 Every one of them takes the **bare** name: `env("CONVERSATION")` reads `DEGCT_CONVERSATION`.
 They are all idempotent about an already-qualified name, because callers build names from both
@@ -78,7 +81,7 @@ forgotten.
 | `DEGCT_MEMORY_BUDGET_MB` | `performance/menu_residue.rs` |
 | `DEGCT_MENUS_OUT` | `AGENTS.md`, `CLAUDE.md`, `performance/README.md`, `tools/DegctEnv.psm1`, `tools/degct-env.sh`, `tools/measure-menus.py`, `tools/measurement_common.py` |
 | `DEGCT_MENU_TIME_BUDGET_MS` | `performance/menu_wall.rs` |
-| `DEGCT_NOLIMIT` | `performance/menu_matrix.rs`, `src/GlobalConversationTracker.Core/DegctEnvironment.cs`, `src/core/env.rs`, `tools/DegctEnv.psm1`, `tools/degct-env.sh`, `tools/measurement_common.py` |
+| `DEGCT_NOLIMIT` | `performance/menu_matrix.rs`, `src/core/env.rs`, `tools/DegctEnv.psm1`, `tools/degct-env.sh`, `tools/measurement_common.py` |
 | `DEGCT_NO_CACHE` | `performance/README.md`, `performance/group_list.rs`, `performance/kept.rs`, `performance/prepared.rs`, `performance/save_world.rs` |
 | `DEGCT_OUT` | `tools/degct-env.sh` |
 | `DEGCT_PLAYTHROUGHS_OUT` | `performance/greedy_playthrough.rs` |
