@@ -87,6 +87,24 @@ impl MenuProfile {
         (!starts.is_empty()).then_some(Self { unseen, starts })
     }
 
+    /// The starts one rule picked, asked with the globally-unseen set of ANOTHER.
+    ///
+    /// ## Why a profile is ever built crossed like this
+    ///
+    /// TO VARY ONE THING. [`Self::of`] derives its starts FROM its unseen set - they are the
+    /// entries that can reach it - so two profiles with different unseen sets ask about
+    /// different menus, and a pair of rows taken on them differs in both at once. Holding the
+    /// menu fixed and moving only the global set is what makes the pair a comparison: whatever
+    /// the two rows differ by is what the player's history across playthroughs is worth.
+    ///
+    /// The starts must still be able to reach something unseen, or the menu is refused before a
+    /// diagram is touched and the row measures nothing - which is this module's whole warning.
+    /// That is the caller's to establish, and it is why this returns `None` on an empty set
+    /// rather than pretending either half can stand alone.
+    pub fn crossing(starts: Vec<DialogueNodeId>, unseen: HashSet<DialogueNodeId>) -> Option<Self> {
+        (!starts.is_empty() && !unseen.is_empty()).then_some(Self { unseen, starts })
+    }
+
     /// What the global conversation state holds: every entry some playthrough has shown.
     ///
     /// HALF OF WHAT DECIDES A SEEN STATE, and it is handed to `world::seen_state` beside the
@@ -95,6 +113,54 @@ impl MenuProfile {
     pub fn seen_any_game(&self) -> impl Fn(DialogueNodeId) -> bool + '_ {
         move |id| !self.unseen.contains(&id)
     }
+}
+
+/// Everything a greedy playthrough reaches from the conversation's start, in the order it
+/// reaches it, or `None` where it reaches no more than `unseen_wanted` entries.
+///
+/// THE RANKING EVERY WALK-DEEPEST SET IS TAKEN OFF THE END OF, and the walk that establishes
+/// how much of a group any play can reach at all. `None` rather than a short set, because a
+/// group with nothing left over has nothing to leave unread and that is an answer about the
+/// group rather than a failure. THE START IS ALWAYS SHOWN - opening a conversation displays its
+/// entry 0 - so a walk that reached nothing else comes back here as `None`.
+fn whole_walk(
+    graph: &LookAheadGraph,
+    world: &dyn lookahead_engine::world::ILookAheadWorld,
+    conversation: i32,
+    ceiling: usize,
+    unseen_wanted: usize,
+) -> Option<Vec<DialogueNodeId>> {
+    use lookahead_engine::walkthrough::{Until, greedy_playthrough};
+
+    let none = HashSet::new();
+    let whole = greedy_playthrough(graph, world, conversation, ceiling, &none, Until::default());
+    (whole.shown.len() > unseen_wanted).then_some(whole.shown)
+}
+
+/// WALK-DEEPEST-X: the last X entries a greedy playthrough reaches, where X is `unseen_wanted`.
+///
+/// A SET A PLAY CAN LEAVE UNREAD, which is the whole difference from the link-deepest set
+/// [`MenuProfile::of`] asserts: a walk reached everything before these, so "everything seen
+/// except these" is a state some number of playthroughs can arrive at. The walk itself is
+/// thrown away here - only which entries it reached last is kept - so this says nothing about
+/// what THIS save has displayed.
+pub fn walk_deepest_unseen(
+    graph: &LookAheadGraph,
+    world: &dyn lookahead_engine::world::ILookAheadWorld,
+    conversation: i32,
+    ceiling: usize,
+    unseen_wanted: usize,
+) -> Option<HashSet<DialogueNodeId>> {
+    let shown = whole_walk(graph, world, conversation, ceiling, unseen_wanted)?;
+    Some(deepest_of(&shown, shown.len() - unseen_wanted))
+}
+
+/// The entries of a walk from `left` onwards, which is the part of it a profile calls unseen.
+///
+/// Taken from the tail rather than by a count, since a caller that stopped a second walk short
+/// knows how far THAT one actually got and the two need not agree.
+fn deepest_of(shown: &[DialogueNodeId], left: usize) -> HashSet<DialogueNodeId> {
+    shown[left..].iter().copied().collect()
 }
 
 /// How many presses a walked profile may play on for before giving up on finding a menu.
@@ -161,15 +227,9 @@ pub fn first_menu_profile(
     use lookahead_engine::walkthrough::{Until, greedy_playthrough, on_to_a_menu};
 
     let none = HashSet::new();
-    let whole = greedy_playthrough(graph, world, conversation, ceiling, &none, Until::default());
-    let reachable = whole.shown.len();
-    if reachable <= unseen_wanted {
-        return None;
-    }
-    let unseen: HashSet<DialogueNodeId> = whole.shown[reachable - unseen_wanted..]
-        .iter()
-        .copied()
-        .collect();
+    let shown = whole_walk(graph, world, conversation, ceiling, unseen_wanted)?;
+    let reachable = shown.len();
+    let unseen = deepest_of(&shown, reachable - unseen_wanted);
 
     // JUST OPENED, AND NOTHING MORE. One entry shown is the conversation's start, which opening
     // it displays - so this is the player arriving, before any choice.
@@ -282,13 +342,8 @@ pub fn walked_profile(
     use lookahead_engine::walkthrough::{Until, greedy_playthrough};
 
     let none = HashSet::new();
-    let whole = greedy_playthrough(graph, world, conversation, ceiling, &none, Until::default());
-    // THE START IS ALWAYS SHOWN - opening a conversation displays its entry 0 - so a walk that
-    // reached nothing else has nothing to take an unseen set from.
-    let reachable = whole.shown.len();
-    if reachable <= unseen_wanted {
-        return None;
-    }
+    let whole = whole_walk(graph, world, conversation, ceiling, unseen_wanted)?;
+    let reachable = whole.len();
 
     let stop_at = reachable - unseen_wanted;
     let stopped = greedy_playthrough(
@@ -302,7 +357,7 @@ pub fn walked_profile(
         },
     );
     let seen = stopped.shown.clone();
-    let unseen: HashSet<DialogueNodeId> = whole.shown[seen.len()..].iter().copied().collect();
+    let unseen = deepest_of(&whole, seen.len());
     if unseen.is_empty() {
         return None;
     }

@@ -208,3 +208,9 @@ path = "performance/onward_or_back.rs"
 [[example]]
 name = "target_cost"
 path = "performance/target_cost.rs"
+
+# Whether a fresh-save scenario's globally-unseen set is a state any play could leave, which
+# decides whether the row taken on it measures a world or a fiction. See de-5sdm.
+[[example]]
+name = "profile_closure"
+path = "performance/profile_closure.rs"

@@ -183,10 +183,13 @@
 //! The world it hands the engine IS the walk's own, so there is one account of what the player
 //! has read rather than two that can disagree. `DEGCT_WALKED_PROFILE=menu` asks instead about
 //! the menu the player is standing at; it is the more honest profile and the weaker
-//! measurement, and `menu_profile::Starts` carries the numbers. `=link-deepest` takes the
-//! deepest entries by LINK DISTANCE instead, whether or not a play can stand where they are
-//! still unread - see [`walked_profile`] for why that is not the default, and for why it does
-//! not reproduce the runs taken before the world became mandatory.
+//! measurement, and `menu_profile::Starts` carries the numbers.
+//!
+//! THE FRESH-SAVE PAIR asks the same menu of a save that has never opened the conversation, and
+//! differs only in what an EARLIER playthrough left unread: `=synthetic-menu` takes the deepest
+//! entries by LINK DISTANCE, whether or not a play can stand where they are still unread, and
+//! `=synthetic-menu-walk-deepest` takes a set a walk vouches for. See [`Scenario`], and
+//! [`walked_profile`] for why neither is the default.
 //!
 //! NOTHING RECONCILES THE TWO SCOPES, because nothing has to: a profile says what ANY game has
 //! shown and a world says what THIS one has, and `world::seen_state` maps the pair onto the
@@ -373,20 +376,19 @@ const WALK_DEEPEST: &str = "walk-deepest";
 /// A start set nobody can stand at, asked on a save that has shown nothing: the structural menu
 /// of `MenuProfile::of` with link-deepest-X globally unseen and no walk-up. See `Scenario`.
 const SYNTHETIC_MENU: &str = "synthetic-menu";
+/// The SAME menu and the same fresh save as [`SYNTHETIC_MENU`], with walk-deepest-X globally
+/// unseen instead of link-deepest-X. The pair differs in one thing. See `Scenario`.
+const SYNTHETIC_MENU_WALK_DEEPEST: &str = "synthetic-menu-walk-deepest";
 /// The FIRST menu a walk-up from the conversation's start reaches, with walk-deepest-X globally
 /// unseen. See `Scenario`.
 const FIRST_MENU: &str = "first-menu";
-/// The X unseen entries are the deepest ones BY LINK DISTANCE, picked off the dialogue graph
-/// with no regard for whether any play can be standing where they are still unread -
-/// link-deepest-X. No walk vouches for it.
-const LINK_DEEPEST: &str = "link-deepest";
 /// The menu the player is standing at, rather than starts chosen for reaching the unseen.
 const WALKED_ON_SCREEN: &str = "menu";
 /// What 21 rows already in `performance/logs` name `WALK_DEEPEST` as, kept so they stay
 /// reproducible. Nothing else spells it this way any more.
 const WALKED_FLAG: &str = "1";
 
-/// Which unseen set a row is taken on: walk-deepest-X by default, link-deepest-X on request.
+/// Which scenario a row is taken in: the walked one by default, a fresh-save one on request.
 ///
 /// ## The world says what is seen, and nothing else does
 ///
@@ -396,29 +398,28 @@ const WALKED_FLAG: &str = "1";
 /// at. There is ONE account of what the player has read - the world - and the seen state function
 /// agrees with it because it was derived from it.
 ///
-/// link-deepest-X takes the structurally deepest entries by link depth instead, and asserts them
-/// rather than reaching them. IT IS A SAVE THAT HAS NEVER OPENED THIS CONVERSATION: the deepest X
-/// are unseen in any game, everything else was read in an EARLIER playthrough, and nothing at all
-/// is seen this game - so no `once` has fired and no `seen` slot is set. That is a state a player
-/// can be in, and the one in which the most once-slots are still live variables rather than
-/// constants, which is what makes it adversarial.
+/// THE FRESH-SAVE SCENARIOS SHOW NOTHING AT ALL. The globally unseen entries are unseen in any
+/// game, everything else was read in an EARLIER playthrough, and nothing whatever is seen this
+/// game - so no `once` has fired and no `seen` slot is set. That is a state a player can be in,
+/// and the one in which the most once-slots are still live variables rather than constants,
+/// which is what makes it adversarial.
 ///
-/// WHAT IT CANNOT BE is a save that has read almost everything IN THIS GAME while none of its
-/// one-time effects have fired. Saying so was what made the profile incoherent, and the
-/// arithmetic of it is worth keeping: a `seen` slot shuts an entry that shuts once seen, so a
-/// world told that most of the conversation was read this game closes the routes to the rest,
-/// and 761 answered in 511 ms STARRING NOTHING - the cost of proving an empty menu. The unseen
-/// entries here are unseen ANY game, which closes nothing.
+/// WHAT NEITHER CAN BE is a save that has read almost everything IN THIS GAME while none of its
+/// one-time effects have fired. Saying so is what makes a profile incoherent, and the arithmetic
+/// of it is worth keeping: a `seen` slot shuts an entry that shuts once seen, so a world told
+/// that most of the conversation was read this game closes the routes to the rest, and 761
+/// answered in 511 ms STARRING NOTHING - the cost of proving an empty menu. An entry unseen ANY
+/// game closes nothing.
 ///
-/// ## link-deepest-X does not reproduce the runs it descends from
+/// ## A fresh-save row does not reproduce the runs it descends from
 ///
 /// It is the nearest thing still available to them, not a rerun of them. Those rows were taken
 /// when a row could be asked with NO world at all, and the world is mandatory now - so
-/// link-deepest-X pairs the old asserted unseen set with a world that has to be there. Where an
-/// old figure and a link-deepest-X figure differ, that gap is a candidate explanation and not a
-/// regression. Treat the old numbers as history, and re-take anything a decision rests on.
+/// `synthetic-menu` pairs the old asserted unseen set with a world that has to be there. Where
+/// an old figure and a `synthetic-menu` figure differ, that gap is a candidate explanation and
+/// not a regression. Treat the old numbers as history, and re-take anything a decision rests on.
 ///
-/// ROWS ARE NOT COMPARABLE ACROSS IT, which is why it is in `COMPARED_VARIABLES`: it is a
+/// ROWS ARE NOT COMPARABLE ACROSS IT, which is why it is in `COMPARED_VARIABLES`: each is a
 /// different question about a different world, not the same question measured better.
 ///
 /// # Panics
@@ -430,15 +431,44 @@ fn walked_profile() -> Scenario {
         Ok(value) => match value.as_str() {
             "" | WALKED_FLAG | WALK_DEEPEST => Scenario::Walked(menu_profile::Starts::Reaching),
             WALKED_ON_SCREEN => Scenario::Walked(menu_profile::Starts::OnScreen),
-            LINK_DEEPEST => Scenario::LinkDeepest,
-            SYNTHETIC_MENU => Scenario::SyntheticMenu,
+            SYNTHETIC_MENU => Scenario::SyntheticMenu(Globally::LinkDeepest),
+            SYNTHETIC_MENU_WALK_DEEPEST => Scenario::SyntheticMenu(Globally::WalkDeepest),
             FIRST_MENU => Scenario::FirstMenu,
             other => panic!(
                 "DEGCT_WALKED_PROFILE={other:?}: expected {WALK_DEEPEST} (or {WALKED_FLAG}), \
-                 {WALKED_ON_SCREEN}, {LINK_DEEPEST}, {SYNTHETIC_MENU} or {FIRST_MENU}"
+                 {WALKED_ON_SCREEN}, {SYNTHETIC_MENU}, {SYNTHETIC_MENU_WALK_DEEPEST} or \
+                 {FIRST_MENU}"
             ),
         },
     }
+}
+
+/// Which entries a scenario calls never seen in ANY game.
+///
+/// ## Two knobs, not one
+///
+/// What a player has EVER seen and what THIS save has displayed are separate facts, and the
+/// scenarios below vary them separately. This is the first: where the globally unseen set comes
+/// from. It says nothing about the world, which is the save's to say.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Globally {
+    /// LINK-DEEPEST-X, by edge depth, asserted rather than reached.
+    ///
+    /// IT IS MOSTLY NOT A STATE ANY PLAY CAN LEAVE, measured by `profile_closure` at
+    /// link-deepest-10 over the game: 306 of 395 groups are NOT reachable-closed, 761 among
+    /// them. Some entry the set calls seen is reachable only THROUGH an entry it calls unseen,
+    /// so seeing it would have meant seeing that one, and no number of playthroughs arrives
+    /// where the scenario says the player is standing.
+    ///
+    /// SO IT IS AN UPPER BOUND, NOT A PLAYER. It is the most adversarial assignment of seen
+    /// states the group admits, and a row taken on it says what the engine would cost if one
+    /// existed. What a real player pays is [`Self::WalkDeepest`], and the pair is how far apart
+    /// the two are: on 761, 2,099 ms settling nothing against 184 ms settling all eight.
+    LinkDeepest,
+    /// WALK-DEEPEST-X, the last X entries a greedy playthrough reaches. Closed by construction:
+    /// a walk reached everything before them, so "everything seen except these" is a state
+    /// earlier playthroughs could have left behind.
+    WalkDeepest,
 }
 
 /// Which scenario a row is taken in: which menu is asked, in what world, with what globally
@@ -451,17 +481,17 @@ enum Scenario {
     /// Walk-deepest-X globally unseen, asked in the world the walk stopped in. The walk has
     /// shown a great deal, so most one-time effects have already fired.
     Walked(menu_profile::Starts),
-    /// Link-deepest-X globally unseen, everything else seen this game. The profile the
-    /// baselines were taken on, kept for comparing against them.
-    LinkDeepest,
     /// ARTIFICIAL MENU, NOTHING SHOWN. The structural start set of `MenuProfile::of`, which is
     /// not a menu any player can stand at, asked on a save that has never opened the
-    /// conversation - so every `once` in the group is still pending. Link-deepest-X is globally
-    /// unseen and everything else is `UnseenThisGame`.
+    /// conversation - so every `once` in the group is still pending. Everything outside the
+    /// globally unseen set is `UnseenThisGame`.
     ///
     /// The most adversarial state that is still internally consistent: nothing here contradicts
     /// anything, it simply is not a position a player can be in.
-    SyntheticMenu,
+    ///
+    /// THE MENU IS THE SAME WHICHEVER SET IS GLOBALLY UNSEEN, which is the point of the pair -
+    /// see [`Globally`].
+    SyntheticMenu(Globally),
     /// THE REAL MENU, WALKED UP TO. The conversation is opened and played forward until a menu
     /// is on screen, choosing nothing - so the starts are the options the game would draw and
     /// the only entries shown this game are the ones it takes to get there. Walk-deepest-X is
@@ -578,11 +608,38 @@ fn main() {
         // better beyond them is refused before a diagram is touched, and the whole row reads
         // as a fast engine while measuring nothing.
         let scenario = walked_profile();
-        let (profile, walked) = if let Scenario::SyntheticMenu = scenario {
+        let (profile, walked) = if let Scenario::SyntheticMenu(globally) = scenario {
             // NO WALK-UP AND NOTHING SHOWN. The world is the save as it is - no `seen` slot set,
             // no `once` fired - and the starts are the structural set, which is why there is no
             // walk to stand at them by. `walked` stays None, so no hub cut is taken either.
-            match MenuProfile::of(&graph, root, unseen_wanted, starts_wanted) {
+            let Some(structural) = MenuProfile::of(&graph, root, unseen_wanted, starts_wanted)
+            else {
+                no_profile(conversation);
+                continue;
+            };
+            let built = match globally {
+                Globally::LinkDeepest => Some(structural),
+                // THE SAME MENU, A DIFFERENT GLOBAL SET. The starts stay the ones the structural
+                // rule picked, so the pair of rows differs in one thing; only which entries an
+                // earlier playthrough left unread changes. The walk that supplies them is taken
+                // against the template save and then thrown away - what it SHOWED is not this
+                // save's, which has displayed nothing.
+                Globally::WalkDeepest => {
+                    let base = SnapshotWorld::declaring(
+                        save_world::of_save(&graph, conversation, &shipped, &save()),
+                        save_world::declared(),
+                    );
+                    menu_profile::walk_deepest_unseen(
+                        &graph,
+                        &base,
+                        conversation,
+                        WALK_CEILING,
+                        unseen_wanted,
+                    )
+                    .and_then(|unseen| MenuProfile::crossing(structural.starts, unseen))
+                }
+            };
+            match built {
                 Some(found) => (found, None),
                 None => {
                     no_profile(conversation);
