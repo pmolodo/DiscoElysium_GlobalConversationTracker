@@ -66,7 +66,16 @@ CORPUS = Path(r"D:\Downloads\Apps\Games\Disco Elysium\Saves")
 OUT = Path("analysis/outputs/conversation-starts.tsv")
 
 SCRIPT_RE = re.compile(r"m_Script:\s*\{fileID:\s*-?\d+,\s*guid:\s*([0-9a-f]{32})")
-FIELD_RE = re.compile(r"^  ([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$")
+#: A field of a MonoBehaviour, AT ANY DEPTH. Unity writes a component's own fields at two
+#: spaces and the members of a list element deeper than that, with the first member of each
+#: element carrying the `- `. Matching only the two-space form reads a component's own fields
+#: and silently skips every list of structs it holds - which is where `overrideConversation`
+#: lives on a scheduled entity, and is how `APT / WCW MAIN` sat unexplained in a scene that
+#: names it.
+#:
+#: THE SAME MISTAKE THE MODULE DOC WARNS ABOUT, one level along: a scan fixed to one SHAPE
+#: reports a confident number, whether what it fixed is the field's spelling or its depth.
+FIELD_RE = re.compile(r"^\s+-?\s*([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$")
 GUID_RE = re.compile(r"^guid:\s*([0-9a-f]{32})\s*$", re.M)
 YAML_SUFFIXES = (".unity", ".prefab", ".asset")
 
@@ -196,11 +205,26 @@ def yaml_documents(path):
         yield current
 
 
+#: Assets that LIST conversation titles as their data rather than naming one to start.
+#:
+#: The dialogue database holds every title in the game, and a lockit holds every one again per
+#: language. Reading either as a component makes all 1,501 conversations look startable and the
+#: residue vanish - which is the answer this tool exists to refuse to give. The database is read
+#: properly by `named_by_items`, against its items table alone.
+DATA_TABLES = ("Dialogue Databases", "lockits", "VoiceOverClipsLibrary", "path_id_map")
+
+
+def is_a_data_table(path):
+    return any(part in str(path) for part in DATA_TABLES)
+
+
 def named_by_components(export, titles, guids):
     """(class, field) -> the conversation titles it holds, over all exported YAML."""
     holders = defaultdict(set)
     for path in export.rglob("*"):
         if path.suffix not in YAML_SUFFIXES or not path.is_file():
+            continue
+        if is_a_data_table(path):
             continue
         try:
             documents = list(yaml_documents(path))
