@@ -53,7 +53,13 @@
 //! `prep ms` is what came BEFORE either of those: building the group's graph and walking its
 //! profile. Every group pays it, whether or not a menu is ever measured, so it is its own
 //! column rather than a second meaning for `setup ms` - a column that means two things cannot
-//! be totalled, and these two can.
+//! be totalled, and these two can. `graph ms` is the part of it that was the graph build, so
+//! the walk and whatever else precedes the profile is the difference.
+//!
+//! PREPARATION IS MOST OF WHAT A WHOLE-GAME RUN SPENDS: 101 seconds against 7.7 of menu
+//! measuring, over 521 groups, and it barely tracks the group's size - three entries cost
+//! 110 ms and 4,724 cost 297. That is why it is split: a flat cost paid once per group is a
+//! different problem from one that grows with the graph. See de-ealo and de-9z1u.
 //!
 //! That is what makes a row saying NO-MENU cost anything at all. Such a row holds the word in
 //! `menu ms`, a `setup ms` of zero because no layout or manager is ever built for it, and a
@@ -192,9 +198,9 @@ use seen_profile::candidates;
 ///
 /// A DRIVER ASKS FOR THESE rather than parsing them off a row, so that a file assembled from
 /// many processes cannot get a header that disagrees with its rows.
-const COLUMNS: [&str; 14] = [
-    "conv", "entries", "options", "offered", "menu_ms", "setup_ms", "prep_ms", "asked", "rounds",
-    "settled", "partly", "nodes", "starred", "exact",
+const COLUMNS: [&str; 15] = [
+    "conv", "entries", "options", "offered", "menu_ms", "setup_ms", "graph_ms", "prep_ms", "asked",
+    "rounds", "settled", "partly", "nodes", "starred", "exact",
 ];
 
 /// The groups to measure when nothing is named: the heavy list the matrix has always meant.
@@ -610,13 +616,14 @@ fn main() {
     let unseen_wanted = from_env("UNSEEN", UNSEEN);
 
     for conversation in numbers("CONVERSATION", &CONVERSATIONS) {
-        // FROM BEFORE THE GRAPH BUILD, because that is the cost a row which never measures
-        // anything is made of - see `row`'s `spent`.
+        // FROM BEFORE THE GRAPH BUILD, because that is what a row which never measures
+        // anything is made of - see [`Prep`].
         let started = Instant::now();
         let Ok((graph, _)) = build_group_graph(&index, conversation) else {
             eprintln!("conversation {conversation}: no group builds from it; skipping.");
             continue;
         };
+        let built = started.elapsed();
         let root = DialogueNodeId::new(conversation, 0);
         if graph.get(root).is_none() {
             eprintln!("conversation {conversation}: no entry 0; skipping.");
@@ -634,7 +641,17 @@ fn main() {
             match MenuProfile::of(&graph, root, unseen_wanted, starts_wanted) {
                 Some(found) => (found.on_a_fresh_save(), None),
                 None => {
-                    row(conversation, &graph, 0, NO_MENU, started.elapsed(), None);
+                    row(
+                        conversation,
+                        &graph,
+                        0,
+                        NO_MENU,
+                        Prep {
+                            graph: built,
+                            total: started.elapsed(),
+                        },
+                        None,
+                    );
                     continue;
                 }
             }
@@ -681,7 +698,17 @@ fn main() {
                     )
                 }
                 None => {
-                    row(conversation, &graph, 0, NO_MENU, started.elapsed(), None);
+                    row(
+                        conversation,
+                        &graph,
+                        0,
+                        NO_MENU,
+                        Prep {
+                            graph: built,
+                            total: started.elapsed(),
+                        },
+                        None,
+                    );
                     continue;
                 }
             }
@@ -738,7 +765,17 @@ fn main() {
                     )
                 }
                 None => {
-                    row(conversation, &graph, 0, NO_MENU, started.elapsed(), None);
+                    row(
+                        conversation,
+                        &graph,
+                        0,
+                        NO_MENU,
+                        Prep {
+                            graph: built,
+                            total: started.elapsed(),
+                        },
+                        None,
+                    );
                     continue;
                 }
             }
@@ -746,7 +783,17 @@ fn main() {
             match MenuProfile::of(&graph, root, unseen_wanted, starts_wanted) {
                 Some(found) => (found, None),
                 None => {
-                    row(conversation, &graph, 0, NO_MENU, started.elapsed(), None);
+                    row(
+                        conversation,
+                        &graph,
+                        0,
+                        NO_MENU,
+                        Prep {
+                            graph: built,
+                            total: started.elapsed(),
+                        },
+                        None,
+                    );
                     continue;
                 }
             }
@@ -754,7 +801,10 @@ fn main() {
 
         // THE GRAPH AND THE WALK ARE BEHIND US, and nothing a menu costs is. Taken here rather
         // than where the row is written, or a measured row's prep would swallow its search.
-        let prep = started.elapsed();
+        let prep = Prep {
+            graph: built,
+            total: started.elapsed(),
+        };
 
         // WHAT THE PLAYER HAS SEEN, AT BOTH SCOPES, counted rather than described. A scenario is
         // a claim about the novelty distribution, and the row cannot say which claim it made -
@@ -1096,22 +1146,34 @@ where
     })
 }
 
+/// What a group spent before any menu existed, which EVERY group pays whether or not a menu
+/// is ever measured.
+///
+/// SPLIT, because the total alone does not say what to do about it. Measured whole-game on
+/// 2026-09-18, preparation was 93 per cent of the run - 101 seconds against 7.7 of menu
+/// measuring - and it barely tracks the group's size: three entries cost 110 ms and 4,724
+/// cost 297. Something flat dominates, and `graph` against `total` says whether the flat part
+/// is the graph build or what follows it. See de-ealo and de-9z1u.
+#[derive(Debug, Clone, Copy)]
+struct Prep {
+    /// Building the group's graph from the index.
+    graph: Duration,
+    /// That, and everything else up to the profile being ready to measure against.
+    total: Duration,
+}
+
 /// One row, as a tab-separated line.
 ///
 /// `why` is a word for a row that was not measured, and empty for one that was. It goes in
 /// the `menu_ms` column rather than in a column of its own, so a row that says nothing says
 /// so where a reader is already looking.
 ///
-/// `prep` is the graph build and the profile's walk, which EVERY group pays whether or not a
-/// menu is measured - so it is reported for every row, and a row that was not measured reports
-/// a `setup_ms` of zero beside it rather than borrowing that column to mean something else.
-/// See de-ealo.
 fn row(
     conversation: i32,
     graph: &LookAheadGraph,
     offered: usize,
     why: &str,
-    prep: Duration,
+    prep: Prep,
     measured: Option<&Menu>,
 ) {
     let cells: Vec<String> = match measured {
@@ -1122,7 +1184,8 @@ fn row(
             offered.to_string(),
             format!("{:.0}", ms(m.took)),
             format!("{:.0}", ms(m.setup)),
-            format!("{:.0}", ms(prep)),
+            format!("{:.0}", ms(prep.graph)),
+            format!("{:.0}", ms(prep.total)),
             m.asked.to_string(),
             m.rounds.to_string(),
             m.settled.to_string(),
@@ -1147,10 +1210,11 @@ fn row(
                 // NOTHING WAS SET UP: no layout, no manager, no compiled guards. Zero rather
                 // than "?", because it is known and it is none.
                 "0".to_string(),
-                format!("{:.0}", ms(prep)),
+                format!("{:.0}", ms(prep.graph)),
+                format!("{:.0}", ms(prep.total)),
             ];
             // The rest are answers a measurement would have given, and there was none.
-            cells.extend(COLUMNS.iter().skip(7).map(|_| "?".to_string()));
+            cells.extend(COLUMNS.iter().skip(8).map(|_| "?".to_string()));
             cells
         }
     };
