@@ -210,6 +210,47 @@ struct Counter {
     /// This is what `reputation.kim` is, and it is the whole of what the delta encoding
     /// leaves on the table in this dialogue set - four slots and seven bits.
     signed: bool,
+    /// Whether ANY increment site is not `once`, which is what stops the slot's value being
+    /// determined by which sites have fired.
+    ///
+    /// The exception rather than the rule, because a default `bool` is false and this is what
+    /// can be ORed as the sites are swept. "Every writer is once" is `!always && !amounts
+    /// .is_empty()`.
+    ///
+    /// WHY THAT MAKES THE SLOT REDUNDANT RATHER THAN NARROW. A `once` action fires only while
+    /// its entry's own `once_slot` is clear and raises that slot as it fires - so the guard and
+    /// the increment are on ONE node by construction, and the count is exactly how many of those
+    /// slots are set. The search already carries every one of them. Carrying the sum as well is
+    /// a second copy of information it holds, and `narrow_to_thresholds` caps that copy rather
+    /// than removing it.
+    ///
+    /// WHAT THIS FIELD DOES NOT ESTABLISH. That the substitution is legal needs more than every
+    /// writer being `once`: an assignment or a decrement puts a value in the slot that no count
+    /// of fired sites explains, and an increment by an amount other than one means the count
+    /// and the value are not the same number. Those are `assigned`, `signed` and `amounts`, and
+    /// `redundant` is what reads all four together. See de-bfs0.
+    always: bool,
+}
+
+impl Counter {
+    /// Whether this slot's value is a second copy of state the search already carries.
+    ///
+    /// Every increment `once`, so each fires at most once and raises a slot as it does; nothing
+    /// assigning it, so no value arrives that no count explains; nothing decrementing it, so the
+    /// value only climbs; and every increment by ONE, so the value IS the number of sites fired
+    /// rather than a weighted sum of them.
+    ///
+    /// The world's starting value is not a bar. The once slots are seeded from the save, so what
+    /// fired before it was written is in the count already, and what a conversation elsewhere
+    /// contributed is a constant for the request - the slot is that constant plus the count, and
+    /// a guard comparing it can compare the count against a threshold moved by the constant.
+    fn redundant(&self) -> bool {
+        !self.amounts.is_empty()
+            && !self.always
+            && self.assigned.is_empty()
+            && !self.signed
+            && self.amounts.iter().all(|amount| *amount == 1)
+    }
 }
 
 fn main() {
@@ -277,6 +318,7 @@ fn main() {
                         counter.amounts.push(action.value());
                         counter.looped |= repeatable && !action.once();
                         counter.signed |= action.value() < 0;
+                        counter.always |= !action.once();
                     }
                     DialogueActionKind::Assign => {
                         counters
@@ -367,7 +409,11 @@ fn main() {
             // WHICH ENCODING THIS SLOT WOULD TAKE, named rather than left to a reader
             // comparing three columns. On a different dialogue set this is the column that
             // answers the question the other five only supply the evidence for.
-            let win = if assigned > 0 {
+            // REDUNDANT BEATS EVERY WIDTH, because the question stops being how many bits the
+            // slot needs and becomes whether it is needed. See `Counter::redundant` and de-bfs0.
+            let win = if counter.redundant() {
+                "REDUNDANT (all once, +1)"
+            } else if assigned > 0 {
                 "ceiling (assigned)"
             } else if counter.looped {
                 "ceiling (looped)"
