@@ -746,6 +746,33 @@ impl Walker<'_> {
                     line_up = true;
                 }
                 Next::Menu(options) => {
+                    // A HELD LINE IS DISMISSED BEFORE ITS MENU IS ON OFFER. A menu normally
+                    // composes beside the line in front of it and costs nothing to reach - but
+                    // an entry whose sequence RUNS stays up until it is answered, and the menu
+                    // arrives only after. So the continue is spent here, and the same position
+                    // is evaluated again with nothing held. See `index::sequence_holds_the_screen`.
+                    if line_up && self.node(at).holds_the_screen {
+                        match keys.next() {
+                            Some((_, Input::Enter)) => {}
+                            Some((index, key)) => {
+                                return Err(format!(
+                                    "input {} is \"{key}\", but {at} holds the screen until it \
+                                     is answered with \"{ENTER}\"",
+                                    index + 1
+                                ));
+                            }
+                            None if to_first_menu => {}
+                            None => {
+                                return Err(format!(
+                                    "the inputs end at {at}, which holds the screen until it is \
+                                     answered with \"{ENTER}\", rather than at a menu"
+                                ));
+                            }
+                        }
+                        line_up = false;
+                        continue;
+                    }
+
                     let drawn: Vec<DialogueNodeId> = options.iter().map(|o| o.id).collect();
                     let Some((index, key)) = keys.next() else {
                         // THE MENU'S OWN HUBS ARE ON THE WALK. Composing it expands the groups
@@ -819,7 +846,10 @@ impl Walker<'_> {
                     encountered.push(chosen.id);
                     displayed.push(chosen.id);
                     at = chosen.id;
-                    line_up = false;
+                    // A CHOSEN OPTION NORMALLY DOES NOT WAIT - the conversation carries straight
+                    // on into whatever answers it - unless what it lands on holds the screen,
+                    // which is a fact about the entry rather than about having been chosen.
+                    line_up = self.node(chosen.id).holds_the_screen;
                 }
                 Next::End => {
                     return Err(format!(

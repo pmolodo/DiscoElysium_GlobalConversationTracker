@@ -57,7 +57,7 @@
           "stops": [
             {
               "what": "the pinball table's menu, which Gurdi's goats are written into and never appear in",
-              "inputs": ["1", "enter", "3", "enter", "enter"],
+              "inputs": ["1", "enter", "3", "enter", "enter", "enter", "enter"],
               "options": [
                 { "entry": 148, "marker": "orange", "why": "it leads on to text no save has read" },
                 { "entry": 47, "marker": "orange", "why": "and so does this one" },
@@ -68,10 +68,7 @@
             }
           ]
         }
-      ],
-      "inGame": {
-        "notInDefaultRun": "Only until it has been SEEN to pass in game once. The offline half is green and the in-game half is the half that matters here - the plugin sending false for an undeclared name is what nothing else exercises - but the one run taken so far stopped at a settle that never answered, on a machine whose display went to sleep, so the run says nothing either way. It joins the default run when a launch on a waking machine passes it. Run it by name: --suite gurdis-goats."
-      }
+      ]
     },
     {
       "suite": "money",

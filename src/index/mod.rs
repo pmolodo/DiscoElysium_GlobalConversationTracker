@@ -64,6 +64,51 @@ const HIDDEN_NOT_ENOUGH_FIELD: &str = "HiddenNotEnough";
 /// `tools/sequence-holds.py` counts the population they belong to. See de-oaaq.
 pub(crate) const SEQUENCE_FIELD: &str = "Sequence";
 
+/// Sequence commands that keep their line on screen until the player dismisses it.
+///
+/// SMALLER THAN THE EVIDENCE, ON PURPOSE. Only what has been measured holds; everything else
+/// keeps the behaviour it has today, so this can move the entries it was measured for and no
+/// others. `FocusCamera` is deliberately absent - 82 entries use it before a menu and nothing
+/// has measured it either way, and calling it a holder on a hunch would be claiming a
+/// measurement nobody took. See de-oaaq, and `tools/sequence-holds.py` for the population.
+const HOLDING_COMMANDS: [&str; 7] = [
+    "PlayAnimation",
+    "SetTriggerAnimation",
+    "FadeToBlack",
+    "TotalBlack",
+    "SemiBlack",
+    "PostFX",
+    "BanishInterface",
+];
+
+/// Whether an entry's sequence keeps its line on screen, so leaving it costs a continue.
+///
+/// ## Why a line's links do not answer this
+///
+/// A walk charges a continue to leave a line with another LINE behind it, and none to leave one
+/// with a MENU behind it, because the menu composes beside the line. Measured in game that is
+/// right almost everywhere - and wrong on the entries whose sequence RUNS, which stay up until
+/// they are dismissed whatever is behind them.
+///
+/// A COMMAND SCHEDULED WITH `@` HOLDS BY CONSTRUCTION, since the sequence is not over until the
+/// last thing in it has happened; `1467:177` schedules work at 1.5 and 2 seconds and waits. The
+/// named commands are the rest of what has been measured, `1467:17`'s animation among them.
+///
+/// An order that fires and forgets does NOT hold: `LuaRun`, `SetAreaState` and `TravelTo` were
+/// each watched in game with the menu composing beside them. That is why the test is not
+/// "carries a sequence" - most of the game's entries carry one, and 95.9% of those say only
+/// `Continue()`.
+pub(crate) fn sequence_holds_the_screen(sequence: &str) -> bool {
+    if sequence.is_empty() {
+        return false;
+    }
+    // A scheduled command: '@' then a time. Anything else after '@' is not one.
+    let scheduled = sequence
+        .match_indices('@')
+        .any(|(at, _)| sequence[at + 1..].starts_with(|c: char| c.is_ascii_digit()));
+    scheduled || HOLDING_COMMANDS.iter().any(|name| sequence.contains(name))
+}
+
 /// The actor an entry names when the player speaks it, as [`ACTOR_FIELD`] spells it.
 ///
 /// A number rather than a name because that is what the field holds. `tests/shipped_index.rs`
@@ -496,6 +541,10 @@ pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, V
                 .fields
                 .get(ACTOR_FIELD)
                 .is_some_and(|actor| actor == PLAYER_ACTOR);
+            node.holds_the_screen = entry
+                .fields
+                .get(SEQUENCE_FIELD)
+                .is_some_and(|sequence| sequence_holds_the_screen(sequence));
             nodes.push(node);
         }
     }

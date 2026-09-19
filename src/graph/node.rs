@@ -20,6 +20,9 @@ pub struct LookAheadNode {
     pub player: bool,
     /// A player line offered alongside another player line.
     pub choice: bool,
+    /// Whether this entry's sequence keeps its line on screen, so leaving it costs a continue
+    /// whatever is behind it - see [`crate::index::sequence_holds_the_screen`].
+    pub holds_the_screen: bool,
     pub kind: DialogueCheckKind,
     pub guard: Guard,
     pub actions: Vec<DialogueAction>,
@@ -76,6 +79,7 @@ impl LookAheadNode {
             is_group: false,
             player: false,
             choice: false,
+            holds_the_screen: false,
             kind: DialogueCheckKind::None,
             guard: Guard::always_true(),
             actions: Vec::new(),
