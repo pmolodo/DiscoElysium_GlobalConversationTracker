@@ -11,19 +11,23 @@
 //! pure function of files that did not change in between, which is the definition of
 //! cacheable. See de-9z1u.
 //!
-//! ## What every key carries, and why none of it is optional
+//! ## Two kinds of value, and they are keyed differently
 //!
-//! THE EXECUTABLE, not only the inputs. A kept value is valid for the code that derived it and
-//! nothing else, and that code changes. When it does, every value kept before it is wrong
-//! SILENTLY, which is the worst thing a measurement cache can be: a run would report numbers
-//! for a graph or a world the current code would not build, and nothing about the run would
-//! look unusual.
+//! WHAT THE CODE DERIVED CARRIES THE CODE, through [`at`]. A parsed index and a group's graph
+//! are this build's idea of them, and when that code changes every value kept before it is
+//! wrong SILENTLY - which is the worst thing a measurement cache can be: a run would report
+//! numbers for a graph the current code would not build, and nothing would look unusual.
 //!
-//! THE FILES IT WAS DERIVED FROM, named by the caller through [`stamp`] - which for everything
-//! here means an index, rebuilt from the game's own files rather than committed, so it can
-//! change under a cache that did not ask about it. The caller names it rather than this module
-//! assuming one, because there are two indexes and a value derived from one is not a value
-//! derived from the other.
+//! WHAT THE DIALOGUE DECIDES CARRIES THE DIALOGUE, through [`at_data`]. Whether a group reaches
+//! anything from its start, and whether anything it reaches offers the player a choice, are
+//! properties of the conversations; the engine reads them. Those outlive every rebuild, which
+//! matters because the dialogue is stable for months while the engine is rebuilt hourly.
+//!
+//! AND BOTH CARRY THE FILES THEY WERE READ FROM, named by the caller through [`stamp`] - an
+//! index, rebuilt from the game's own files rather than committed, so it can change under a
+//! cache that did not ask about it. The caller names it rather than this module assuming one,
+//! because there are two indexes and a value derived from one is not a value derived from the
+//! other.
 //!
 //! BY LENGTH AND MODIFICATION TIME rather than by content, which is what `cargo` itself does
 //! to decide whether to rebuild. Hashing a sixteen-megabyte index in every process would cost
@@ -68,9 +72,9 @@ pub fn verifying() -> bool {
 /// be kept at all.
 ///
 /// `kind` names the folder - "worlds", "graphs" - and `about` says which value within it: the
-/// group, the save, the [`stamp`] of every file it was read from. The executable is added here,
-/// because it is the one input no caller could be trusted to remember and the one whose absence
-/// from a key is silent.
+/// group, the save, the [`stamp`] of every file it was read from. The CODE is added here, by
+/// [`code`], because it is the one input no caller could be trusted to remember and the one
+/// whose absence from a key is silent.
 pub fn at(kind: &str, about: &str) -> Option<PathBuf> {
     let key = format!("{about}\u{1}{}", code()?);
     Some(folder(kind)?.join(format!("{}.{kind}", fingerprint(&key))))
@@ -78,11 +82,16 @@ pub fn at(kind: &str, about: &str) -> Option<PathBuf> {
 
 /// Where a fact about the DIALOGUE ITSELF is kept, which the code has no part in.
 ///
-/// WHAT THE DATA DECIDES, THE DATA KEYS. Whether a group has a walkable start, and whether it
-/// has a menu, are properties of the conversations - the engine reads them, it does not decide
-/// them - so such a fact survives a rebuild, and the dialogue database is stable for months at a
-/// time. The values that DO depend on the code - a graph the engine built, an index packed into
-/// this build's idea of a record - go through [`at`] instead.
+/// WHAT THE DATA DECIDES, THE DATA KEYS. Whether a group has a walkable start, and whether
+/// anything it reaches offers the player a choice, are properties of the conversations - the
+/// engine reads them, it does not decide them - so such a fact survives a rebuild, and the
+/// dialogue database is stable for months at a time. The values that DO depend on the code - a
+/// graph the engine built, an index packed into this build's idea of a record - go through
+/// [`at`] instead.
+///
+/// THE COST OF SUCH A KEY is that a change to how the fact is DERIVED goes unnoticed by it,
+/// since the dialogue did not change. The caller carries a version of its own meaning in
+/// `about` for that - see `prepared::DERIVATION`, and the thirteen groups that occasioned it.
 pub fn at_data(kind: &str, about: &str) -> Option<PathBuf> {
     Some(folder(kind)?.join(format!("{}.{kind}", fingerprint(about))))
 }
