@@ -415,16 +415,14 @@ fn own(opening: Opening, inbox: Receiver<Job>, ready: Sender<bool>) {
             continue;
         };
 
-        let novelty = |id: DialogueNodeId| {
-            let node = crate::bridge::NodeRef::from(id);
-            if request.unseen_any_game.contains(&node) {
-                Novelty::UnseenAnyGame
-            } else if request.unseen_this_game.contains(&node) {
-                Novelty::UnseenThisGame
-            } else {
-                Novelty::SeenThisGame
-            }
+        // THE ONE RULE, as `bridge::answer` asks it - see `world::seen_state`. A second copy
+        // here is how a workspace request and a plain one come to disagree about an entry.
+        let seen_any_game = |id: DialogueNodeId| {
+            !request
+                .unseen_any_game
+                .contains(&crate::bridge::NodeRef::from(id))
         };
+        let novelty = crate::world::seen_states(&world, seen_any_game);
 
         let answers = answer_starts(&graph, &world, request, &novelty, &mut compiler, &seed);
 

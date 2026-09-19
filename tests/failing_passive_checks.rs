@@ -115,10 +115,13 @@ fn menu_markers(consult_the_sheet: bool) -> Option<Vec<(i32, String)>> {
             })
             .collect(),
         unseen_any_game: by_class(UNSEEN_ANY_GAME).into_iter().collect(),
-        unseen_this_game: by_class(UNSEEN_THIS_GAME).into_iter().collect(),
         world: WorldSnapshot {
             day_minutes: DAY_MINUTES,
             day_counter: DAY_COUNTER,
+            // WHAT THIS SAVE HAS READ, which is the world's to say. Nothing sends the middle
+            // rung: an entry this world has not seen and `unseen_any_game` does not name IS
+            // that rung - see `world::seen_state`.
+            seen: by_class(SEEN_THIS_GAME).into_iter().collect(),
             // FROM THE SAVE. The hub is guarded on nothing here, but the world a scenario
             // means is the one the in-game run loads, and a fixture that quietly meant a
             // different one would agree with the game by accident.
@@ -222,6 +225,15 @@ fn best_reachable(start: (i32, i32), candidate: (i32, i32)) -> Option<i32> {
         world: WorldSnapshot {
             day_minutes: DAY_MINUTES,
             day_counter: DAY_COUNTER,
+            // EVERYTHING ELSE IS READ, which is what makes the candidate the only thing worth
+            // reaching. It has to be SAID rather than left out: an entry this world has not seen
+            // and `unseen_any_game` does not name is one the global tracking holds and this save
+            // has not read - unseen this game, and so worth reaching.
+            seen: graph
+                .nodes()
+                .map(|node| NodeRef::from(node.id))
+                .filter(|node| *node != of(candidate))
+                .collect(),
             variables: fixtures::variables_sent(SAVE, &questions_of(&graph, group.clone())),
             checks_pass: checks.pass,
             checks_fail: checks.fail,

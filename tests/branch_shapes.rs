@@ -254,8 +254,11 @@ fn disagreements(index: &lookahead_engine::index::Index, check: &Check) -> Vec<S
             }
         };
 
-        // The three rungs, exactly as the plugin builds them: read in THIS save wins,
-        // then recorded in some other save, then never seen anywhere.
+        // The three rungs, exactly as the plugin builds them, from TWO SENT SETS. What this save
+        // has read goes to `world.seen`, because that is the game's own per-save record.
+        // `unseen_any_game` names what no save has read. NOTHING SENDS THE MIDDLE RUNG: an entry
+        // in neither of those two IS the middle rung - held by the global tracking, unread here.
+        // See `world::seen_state`, which is the one place the three rungs are decided.
         let request = LookAheadRequest {
             conversation: check.conversation,
             starts: vec![start],
@@ -264,15 +267,15 @@ fn disagreements(index: &lookahead_engine::index::Index, check: &Check) -> Vec<S
                 .copied()
                 .filter(|node| rung_of(node) == 2)
                 .collect(),
-            unseen_this_game: everything
-                .iter()
-                .copied()
-                .filter(|node| rung_of(node) == 1)
-                .collect(),
             state_budget: row.state_budget,
             world: WorldSnapshot {
                 day_minutes: 720,
                 day_counter: 1,
+                seen: everything
+                    .iter()
+                    .copied()
+                    .filter(|node| rung_of(node) == 0)
+                    .collect(),
                 ..Default::default()
             },
             ..Default::default()

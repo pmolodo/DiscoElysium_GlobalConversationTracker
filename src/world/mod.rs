@@ -8,7 +8,45 @@ use crate::core::guard_value::GuardValue;
 use crate::core::state::LookAheadState;
 use crate::core::state::{ITEM_PREFIX, THOUGHT_PREFIX};
 use crate::core::state::{StateSymbols, VariableRef};
-use crate::core::types::{DialogueNodeId, Ternary};
+use crate::core::types::{DialogueNodeId, Novelty, Ternary};
+
+/// What seen state an entry is in, from the only two facts that decide it.
+///
+/// THE TWO FACTS ARE DIFFERENT MECHANISMS, and each has one owner. Seen THIS GAME is the game's
+/// own per-save record, which reaches the engine as the world's [`ILookAheadWorld::is_seen`].
+/// Seen ANY GAME is our global tracking across playthroughs, which reaches it as
+/// `seen_any_game` - what the global conversation state holds.
+///
+/// SEEN THIS GAME IMPLIES SEEN ANY GAME by definition, so the order below is the whole rule and
+/// there is no fourth case. (Nothing in the stored data GUARANTEES the implication; where it is
+/// broken this reads the entry as seen this game, which is the stronger of the two claims.)
+///
+/// EVERYTHING THAT NEEDS AN ENTRY'S SEEN STATE ASKS THIS, and nothing else maps facts onto the
+/// three states. Two places deciding it separately is how a measurement came to assert a state
+/// no save can hold - one asking a profile, the other asking the world, with a switch to
+/// reconcile them after the fact. There is no switch and no arm: the sets are the input, the
+/// mapping is not a choice.
+pub fn seen_state(
+    world: &dyn ILookAheadWorld,
+    seen_any_game: impl Fn(DialogueNodeId) -> bool,
+    node: DialogueNodeId,
+) -> Novelty {
+    if world.is_seen(node) {
+        Novelty::SeenThisGame
+    } else if seen_any_game(node) {
+        Novelty::UnseenThisGame
+    } else {
+        Novelty::UnseenAnyGame
+    }
+}
+
+/// [`seen_state`] as the closure every caller wants, bound to one world and one set.
+pub fn seen_states<'a>(
+    world: &'a dyn ILookAheadWorld,
+    seen_any_game: impl Fn(DialogueNodeId) -> bool + 'a,
+) -> impl Fn(DialogueNodeId) -> Novelty + 'a {
+    move |node| seen_state(world, &seen_any_game, node)
+}
 
 /// The guard-language call that asks what the player is carrying, in centimes.
 ///

@@ -225,17 +225,16 @@ fn main() -> anyhow::Result<()> {
                 .map(|node| NodeRef::from(node.id))
                 .filter(|node| !recorded.contains(node) && !seen_here.contains(node))
                 .collect(),
-            unseen_this_game: recorded
-                .iter()
-                .copied()
-                .filter(|node| !seen_here.contains(node))
-                .collect(),
             memory_budget_mb: args.memory_budget_mb,
             time_budget_ms: args.time_budget_ms,
             menu_time_budget_ms: args.menu_time_budget_ms,
             world: WorldSnapshot {
                 day_minutes: args.day_minutes,
                 day_counter: args.day_counter,
+                // WHAT THIS SAVE HAS READ IS THE WORLD'S, because it is the game's own per-save
+                // record. The middle rung follows from it and from what the global tracking
+                // holds - see `world::seen_state`.
+                seen: seen_here.iter().copied().collect(),
                 ..Default::default()
             },
             ..Default::default()

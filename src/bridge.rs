@@ -1130,6 +1130,13 @@ pub struct LookAheadRequest {
     #[serde(default)]
     pub unseen_any_game: NodeSet,
     /// Entries unseen this game but seen in a previous one.
+    ///
+    /// NOTHING READS IT. Which entries those are follows from the other two facts - an entry the
+    /// world has not seen, held by the global tracking - and `world::seen_state` derives it
+    /// rather than being told. It stays on the wire until de-kq8m.3 takes it off, so a sender
+    /// that still fills it is not broken by the engine ignoring it; a sender that fills it
+    /// INSTEAD of the world's seen set was already telling the engine something it did not
+    /// read the same way.
     #[serde(default)]
     pub unseen_this_game: NodeSet,
     /// The most search states one option may hold, or zero for no such limit.
@@ -1789,16 +1796,12 @@ pub fn answer(
 
     let world = SnapshotWorld::declaring(snapshot, declared);
     graph.fit(&crate::graph::Fitting::read(&graph, &world));
-    let novelty = |id: DialogueNodeId| {
-        let node = NodeRef::from(id);
-        if request.unseen_any_game.contains(&node) {
-            Novelty::UnseenAnyGame
-        } else if request.unseen_this_game.contains(&node) {
-            Novelty::UnseenThisGame
-        } else {
-            Novelty::SeenThisGame
-        }
-    };
+    // THE ONE RULE, asked of the world and of what the global tracking holds - see
+    // `world::seen_state`. `unseen_any_game` is that tracking inverted: an entry no save has
+    // read is one the tracking does not hold, and the request carries the complement until
+    // de-kq8m.3 turns the wire the right way round.
+    let seen_any_game = |id: DialogueNodeId| !request.unseen_any_game.contains(&NodeRef::from(id));
+    let novelty = crate::world::seen_states(&world, seen_any_game);
 
     // ON A THREAD OF ITS OWN, and everything the diagram manager owns is built inside it
     // and dropped inside it - see `symbolic::isolated`. Releasing a large diagram walks it
