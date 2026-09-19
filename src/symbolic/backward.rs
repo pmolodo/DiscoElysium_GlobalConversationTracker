@@ -2018,14 +2018,72 @@ struct NoRoom;
 /// `performance/bidirectional_headroom.rs` measured as landing within ten per cent of the best
 /// split without being told where it is.
 ///
-/// THE DIAGRAM, NOT THE ENTRY COUNT, because the entry count is nearly flat where the cost is
-/// not: on 761 the forward side carries 8 entries at its first layer and 251 at its fifteenth
-/// while the diagram those entries hold runs from 35,906 nodes to 17.4 million. Asking the
-/// manager how big the sets actually are costs a sweep of them per decision and is worth it -
-/// measured on 761, weighing by nodes took the pooled search from 17,808,343 diagram nodes to
-/// 14,666,558 and from 21,894 ms to about 20,320, with the same markers.
-fn weight_of(carry: &HashMap<DialogueNodeId, BDDFunction>) -> usize {
-    carry.values().map(|states| states.node_count()).sum()
+/// TWO WAYS TO SAY HOW BIG A FRONT IS, and which is better is not settled - see [`Weigh`].
+fn weight_of(weigh: Weigh, carry: &HashMap<DialogueNodeId, BDDFunction>) -> usize {
+    weigh.of(carry)
+}
+
+/// How a front's size is measured when the scheduler decides which one to grow.
+///
+/// ## A switch because the answer depends on the profile, measured both ways
+///
+/// The case for the DIAGRAM is that the entry count is nearly flat where the cost is not: on
+/// 761 the forward side carries 8 entries at its first layer and 251 at its fifteenth, while
+/// the diagram those entries hold runs from 35,906 nodes to 17.4 million.
+///
+/// MEASURED ON ONE COMMIT, 2026-09-18, the two profiles disagree and not by a little:
+///
+/// ```text
+///                                          nodes-weighted   entries-weighted
+/// 761, link-deepest-10, limits off              9,914 ms          17,472 ms
+/// whole game, walk-deepest-10, limits on        7,851 ms           7,424 ms
+///   - over the 36 groups the choice bit on      2,007 ms           1,726 ms
+/// ```
+///
+/// Weighing by nodes is worth 1.76x on the deep adversarial profile and costs 14 per cent on
+/// the menus of the game as played, where it loses on 30 groups and wins on 5. 3560c2c made it
+/// unconditional on the strength of a third profile again - `synthetic-menu` with five unread,
+/// where it was worth 17.6 per cent - which is how a switch becomes a decision it has not
+/// earned.
+///
+/// AND THE NODE COUNT IS NOT THE COST. Entries-weighting carries 1.1 per cent MORE diagram
+/// nodes over those 36 groups and takes 14 per cent LESS time. The same inversion turned up
+/// twice more the same day: the pooled scheduler carries 4.5 per cent fewer nodes for 10.7 per
+/// cent more time, and a variable order that cut the guards' span by 92 per cent cost 57 per
+/// cent more (de-2knp). A front's node count is what this steers by, and it is a poor proxy for
+/// what a front costs to grow.
+///
+/// The default stays [`Self::Nodes`], which is what the pooled search has always used, because
+/// the pooled search is itself opt-in - see `symbolic::menu::pooled_rounds` - and where it IS
+/// used today is the deep profile that nodes wins. If it ever becomes the default, this should
+/// flip with it. See de-z0ek.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Weigh {
+    /// How many entries the front carries.
+    Entries,
+    /// How many decision-diagram nodes the sets those entries hold add up to.
+    Nodes,
+}
+
+impl Weigh {
+    /// What `DEGCT_WEIGH_FRONTS` asks for, or [`Self::Nodes`], which is what ships.
+    ///
+    /// Read once per round rather than per decision: the scheduler asks this on every step of
+    /// every layer, and a run that changed its mind halfway would be measuring neither arm.
+    pub fn asked_for() -> Self {
+        match crate::core::env::var("WEIGH_FRONTS").as_deref() {
+            Ok("entries") => Self::Entries,
+            Ok("nodes") | Err(_) => Self::Nodes,
+            Ok(other) => panic!("DEGCT_WEIGH_FRONTS: no measure called {other:?}"),
+        }
+    }
+
+    fn of(self, carry: &HashMap<DialogueNodeId, BDDFunction>) -> usize {
+        match self {
+            Self::Entries => carry.len(),
+            Self::Nodes => carry.values().map(|states| states.node_count()).sum(),
+        }
+    }
 }
 
 /// The nearest of MANY targets, and which option gets there first.
@@ -2076,6 +2134,9 @@ impl<'a> Backward<'a> {
                 out_of_memory: true,
             };
         }
+
+        // ASKED ONCE, not per decision - see `Weigh::asked_for`.
+        let weigh = Weigh::asked_for();
 
         // ONE CRAWL PER TARGET, each with its own sets and its own layers. They share the
         // manager and the forward crawl and nothing else.
@@ -2129,7 +2190,9 @@ impl<'a> Backward<'a> {
                     (false, false) => break,
                     (true, false) => true,
                     (false, true) => false,
-                    (true, true) => weight_of(&forward.carry) <= weight_of(&theirs.carry),
+                    (true, true) => {
+                        weight_of(weigh, &forward.carry) <= weight_of(weigh, &theirs.carry)
+                    }
                 };
                 let stop = if grow_forward_now {
                     grow_forward(search.reborrow(), cut, &mut reached, &mut forward).is_err()
