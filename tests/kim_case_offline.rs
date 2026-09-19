@@ -183,11 +183,12 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
                 entry: *entry,
             })
             .collect(),
-        unseen_any_game: rung.iter().copied().collect(),
-        unseen_this_game: everything
+        // THE TWO LOWER RUNGS TOGETHER, which is what some playthrough has shown - seen this
+        // game implies seen any game. See `world::seen_state`.
+        seen_any_game: everything
             .iter()
             .copied()
-            .filter(|node| novelty_of(*node) == UNSEEN_THIS_GAME)
+            .filter(|node| !rung.contains(node))
             .collect(),
         state_budget: suite.state_budget,
         world: WorldSnapshot {

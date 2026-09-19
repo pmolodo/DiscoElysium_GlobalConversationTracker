@@ -41,11 +41,19 @@ namespace GlobalConversationTracker.Engine
         /// <summary>The option entries to score.</summary>
         public IList<NodeRef> Starts { get; } = new List<NodeRef>();
 
-        /// <summary>Entries the player has never seen in any save.</summary>
-        public NodeSet UnseenAnyGame { get; } = new NodeSet();
-
-        /// <summary>Entries unseen this save but seen in a previous one.</summary>
-        public NodeSet UnseenThisGame { get; } = new NodeSet();
+        /// <summary>Entries SOME save has shown, which is what the global state records.</summary>
+        /// <remarks>
+        /// One of the two facts that decide an entry's seen state; the other is
+        /// <see cref="WorldSnapshot.Seen"/>, what THIS save has shown. Neither is a claim about
+        /// the other, and the engine takes the three states from the pair in one place. So
+        /// nothing sends "unseen this save": an entry this world has not seen and this set holds
+        /// IS that state.
+        /// <para>
+        /// EMPTY MEANS NOTHING HAS BEEN SEEN ANYWHERE. That is the opposite of what an empty set
+        /// meant while the two were sent inverted, which is why the wire tag changed with it.
+        /// </para>
+        /// </remarks>
+        public NodeSet SeenAnyGame { get; } = new NodeSet();
 
         /// <summary>
         /// The most search states one option may hold, or 0 for no such limit.

@@ -68,7 +68,13 @@ fn request_in(index: &Index, save: &str) -> LookAheadRequest {
     LookAheadRequest {
         conversation: PHARMACY,
         starts: vec![START],
-        unseen_any_game: [MAGNESIUM_HANDED_OVER].into_iter().collect(),
+        // ONE ENTRY UNREAD ANYWHERE, so the rest of the group has been shown by some
+        // playthrough - which is what the request carries. See `world::seen_state`.
+        seen_any_game: graph
+            .nodes()
+            .map(|node| NodeRef::from(node.id))
+            .filter(|node| *node != MAGNESIUM_HANDED_OVER)
+            .collect(),
         world: WorldSnapshot {
             money: MONEY,
             day_minutes: holdings.day_minutes,

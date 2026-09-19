@@ -172,11 +172,13 @@ fn an_answer_survives_the_crossing() {
         }
 
         // A world with something in it, so the comparison is not between two empty
-        // snapshots: the deepest entries are unseen and a couple of facts are known.
-        let unseen: HashSet<NodeRef> = graph
+        // snapshots: a scattering of entries is unseen anywhere and a couple of facts are
+        // known. Stated as what the global tracking HOLDS, which is what a request carries -
+        // so the scattering is what it leaves out.
+        let seen_anywhere: HashSet<NodeRef> = graph
             .nodes()
             .map(|node| NodeRef::from(node.id))
-            .filter(|node| node.entry % 7 == 3)
+            .filter(|node| node.entry % 7 != 3)
             .collect();
 
         let mut snapshot = WorldSnapshot {
@@ -200,8 +202,7 @@ fn an_answer_survives_the_crossing() {
         let request = LookAheadRequest {
             conversation,
             starts: vec![NodeRef::from(start)],
-            unseen_any_game: unseen.iter().copied().collect(),
-            unseen_this_game: Default::default(),
+            seen_any_game: seen_anywhere.iter().copied().collect(),
             state_budget: 0,
             time_budget_ms: 0,
             menu_time_budget_ms: 0,
@@ -283,8 +284,14 @@ fn a_menu_that_runs_out_of_its_wall_still_answers_every_option() {
     let request = LookAheadRequest {
         conversation,
         starts: starts.clone(),
-        unseen_any_game: profile.unseen.iter().map(|id| NodeRef::from(*id)).collect(),
-        unseen_this_game: Default::default(),
+        // WHAT THE PROFILE SAYS SOME PLAYTHROUGH SHOWED, which is everything it does not call
+        // unseen anywhere - see `MenuProfile::seen_any_game`.
+        seen_any_game: graph
+            .nodes()
+            .map(|node| node.id)
+            .filter(|id| !profile.unseen.contains(id))
+            .map(NodeRef::from)
+            .collect(),
         state_budget: 0,
         time_budget_ms: 1000,
         menu_time_budget_ms: 1,

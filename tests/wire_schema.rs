@@ -121,8 +121,7 @@ fn a_look_ahead_request_survives_the_wire() {
     round_trip(&wire::LookAheadRequest {
         conversation: 631,
         starts: vec![node(631, 3), node(631, 7)],
-        unseen_any_game: Some(runs(631, &[(1, 5)])),
-        unseen_this_game: Some(runs(631, &[(6, 9)])),
+        seen_any_game: Some(runs(631, &[(1, 9)])),
         state_budget: 1,
         time_budget_ms: 1000,
         menu_time_budget_ms: 4000,

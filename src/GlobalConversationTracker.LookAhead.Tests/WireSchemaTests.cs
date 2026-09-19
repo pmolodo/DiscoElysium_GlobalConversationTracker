@@ -97,8 +97,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
             var request = new LookAheadRequest
             {
                 Conversation = 631,
-                UnseenAnyGame = Runs(631, (1, 5)),
-                UnseenThisGame = Runs(631, (6, 9)),
+                SeenAnyGame = Runs(631, (1, 9)),
                 StateBudget = 1,
                 TimeBudgetMs = 1000,
                 MenuTimeBudgetMs = 4000,

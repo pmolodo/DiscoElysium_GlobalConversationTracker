@@ -206,8 +206,7 @@ namespace GlobalConversationTracker.Engine
             var written = new Wire.LookAheadRequest
             {
                 Conversation = request.Conversation,
-                UnseenAnyGame = Write(request.UnseenAnyGame),
-                UnseenThisGame = Write(request.UnseenThisGame),
+                SeenAnyGame = Write(request.SeenAnyGame),
                 StateBudget = (ulong)Math.Max(0, request.StateBudget),
                 TimeBudgetMs = (ulong)Math.Max(0, request.TimeBudgetMs),
                 MenuTimeBudgetMs = (ulong)Math.Max(0, request.MenuTimeBudgetMs),

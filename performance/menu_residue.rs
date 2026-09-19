@@ -216,8 +216,13 @@ fn main() {
         .map(NodeRef::from)
         .collect(),
         starts,
-        unseen_any_game: unseen.iter().copied().collect(),
-        unseen_this_game: Default::default(),
+        // WHAT SOME PLAYTHROUGH SHOWED, which is everything the profile does not call unseen
+        // anywhere - see `world::seen_state`.
+        seen_any_game: graph
+            .nodes()
+            .map(|node| NodeRef::from(node.id))
+            .filter(|node| !unseen.contains(node))
+            .collect(),
         memory_budget_mb,
         time_budget_ms,
         world: WorldSnapshot {

@@ -1126,19 +1126,17 @@ pub struct LookAheadRequest {
     pub conversation: i32,
     /// The option entries to score. One answer comes back per start.
     pub starts: Vec<NodeRef>,
-    /// Entries the player has never seen in any game.
-    #[serde(default)]
-    pub unseen_any_game: NodeSet,
-    /// Entries unseen this game but seen in a previous one.
+    /// Entries SOME playthrough has shown, which is what the global conversation state holds.
     ///
-    /// NOTHING READS IT. Which entries those are follows from the other two facts - an entry the
-    /// world has not seen, held by the global tracking - and `world::seen_state` derives it
-    /// rather than being told. It stays on the wire until de-kq8m.3 takes it off, so a sender
-    /// that still fills it is not broken by the engine ignoring it; a sender that fills it
-    /// INSTEAD of the world's seen set was already telling the engine something it did not
-    /// read the same way.
+    /// ONE OF THE TWO FACTS THAT DECIDE A SEEN STATE, and the other is `world.seen` - what THIS
+    /// game has shown. `world::seen_state` maps the pair onto the three states, and nothing else
+    /// does, so an entry's state cannot depend on which caller asked.
+    ///
+    /// EMPTY MEANS NOTHING HAS BEEN SEEN ANYWHERE, so every entry is unseen in any game. That is
+    /// the opposite of what an empty set meant while this was carried inverted, which is why the
+    /// tag changed rather than the meaning of tag 3.
     #[serde(default)]
-    pub unseen_this_game: NodeSet,
+    pub seen_any_game: NodeSet,
     /// The most search states one option may hold, or zero for no such limit.
     ///
     /// A TEST-ONLY KNOB, and the only budget here that is not a player's. NO CONFIGURATION
@@ -1797,10 +1795,8 @@ pub fn answer(
     let world = SnapshotWorld::declaring(snapshot, declared);
     graph.fit(&crate::graph::Fitting::read(&graph, &world));
     // THE ONE RULE, asked of the world and of what the global tracking holds - see
-    // `world::seen_state`. `unseen_any_game` is that tracking inverted: an entry no save has
-    // read is one the tracking does not hold, and the request carries the complement until
-    // de-kq8m.3 turns the wire the right way round.
-    let seen_any_game = |id: DialogueNodeId| !request.unseen_any_game.contains(&NodeRef::from(id));
+    // `world::seen_state`.
+    let seen_any_game = |id: DialogueNodeId| request.seen_any_game.contains(&NodeRef::from(id));
     let novelty = crate::world::seen_states(&world, seen_any_game);
 
     // ON A THREAD OF ITS OWN, and everything the diagram manager owns is built inside it
@@ -3846,11 +3842,10 @@ mod tests {
                 conversation: 631,
                 entry: 4,
             }],
-            unseen_any_game: NodeSet::from_iter([NodeRef {
+            seen_any_game: NodeSet::from_iter([NodeRef {
                 conversation: 631,
                 entry: 9,
             }]),
-            unseen_this_game: NodeSet::default(),
             state_budget: 0,
             time_budget_ms: 0,
             menu_time_budget_ms: 0,
@@ -3874,7 +3869,7 @@ mod tests {
                 entry: 2,
             }]
         );
-        assert!(back.unseen_any_game.contains(&NodeRef {
+        assert!(back.seen_any_game.contains(&NodeRef {
             conversation: 631,
             entry: 9
         }));
@@ -3899,8 +3894,7 @@ mod tests {
         let request = LookAheadRequest {
             conversation: 1,
             starts: Vec::new(),
-            unseen_any_game: NodeSet::default(),
-            unseen_this_game: NodeSet::default(),
+            seen_any_game: NodeSet::default(),
             state_budget: 0,
             time_budget_ms: 0,
             menu_time_budget_ms: 0,
@@ -3923,8 +3917,7 @@ mod tests {
         let request = LookAheadRequest {
             conversation: 1,
             starts: Vec::new(),
-            unseen_any_game: NodeSet::default(),
-            unseen_this_game: NodeSet::default(),
+            seen_any_game: NodeSet::default(),
             state_budget: 0,
             time_budget_ms: 0,
             menu_time_budget_ms: 0,
@@ -3953,8 +3946,7 @@ mod tests {
         let request = LookAheadRequest {
             conversation: 1,
             starts: Vec::new(),
-            unseen_any_game: NodeSet::default(),
-            unseen_this_game: NodeSet::default(),
+            seen_any_game: NodeSet::default(),
             state_budget: 0,
             time_budget_ms: 250,
             menu_time_budget_ms: 0,
@@ -3982,8 +3974,7 @@ mod tests {
         let request = LookAheadRequest {
             conversation: 1,
             starts: Vec::new(),
-            unseen_any_game: NodeSet::default(),
-            unseen_this_game: NodeSet::default(),
+            seen_any_game: NodeSet::default(),
             state_budget: 0,
             time_budget_ms: 0,
             menu_time_budget_ms: 0,

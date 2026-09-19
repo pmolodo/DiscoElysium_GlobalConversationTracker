@@ -71,7 +71,14 @@ fn a_kept_manager_answers_what_a_fresh_one_answers() {
             // A DIFFERENT WORLD EACH ROUND, and different in what has been seen - which is
             // what the compiler bakes and therefore what a stale workspace would get wrong.
             let seen: HashSet<NodeRef> = entries.iter().take(round * 3).copied().collect();
-            let unseen: HashSet<NodeRef> = entries.iter().rev().take(4).copied().collect();
+            // THE LAST FOUR ARE UNREAD ANYWHERE, so what some playthrough showed is the rest -
+            // which is the set the request carries. See `world::seen_state`.
+            let unread: HashSet<NodeRef> = entries.iter().rev().take(4).copied().collect();
+            let seen_anywhere: HashSet<NodeRef> = entries
+                .iter()
+                .copied()
+                .filter(|node| !unread.contains(node))
+                .collect();
 
             let world = WorldSnapshot {
                 day_minutes: 720,
@@ -89,8 +96,7 @@ fn a_kept_manager_answers_what_a_fresh_one_answers() {
             let request = LookAheadRequest {
                 conversation,
                 starts: entries.iter().take(6).copied().collect(),
-                unseen_any_game: unseen.iter().copied().collect(),
-                unseen_this_game: Default::default(),
+                seen_any_game: seen_anywhere.iter().copied().collect(),
                 world: world.clone(),
                 ..Default::default()
             };
@@ -236,7 +242,15 @@ fn a_workspace_replaced_by_another_group_still_answers_the_first() {
             (entries.len() >= 8).then(|| LookAheadRequest {
                 conversation: *conversation,
                 starts: entries.iter().take(4).copied().collect(),
-                unseen_any_game: entries.iter().rev().take(3).copied().collect(),
+                // THE LAST THREE ARE UNREAD ANYWHERE; the rest some playthrough showed.
+                seen_any_game: {
+                    let unread: HashSet<NodeRef> = entries.iter().rev().take(3).copied().collect();
+                    entries
+                        .iter()
+                        .copied()
+                        .filter(|node| !unread.contains(node))
+                        .collect()
+                },
                 world: WorldSnapshot {
                     day_minutes: 720,
                     day_counter: 1,

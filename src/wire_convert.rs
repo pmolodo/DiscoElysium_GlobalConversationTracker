@@ -221,8 +221,7 @@ pub fn read_look_ahead(request: wire::LookAheadRequest) -> Result<LookAheadReque
     Ok(LookAheadRequest {
         conversation: request.conversation,
         starts: request.starts.into_iter().map(NodeRef::from).collect(),
-        unseen_any_game: read_node_set(request.unseen_any_game)?,
-        unseen_this_game: read_node_set(request.unseen_this_game)?,
+        seen_any_game: read_node_set(request.seen_any_game)?,
         state_budget: usize::try_from(request.state_budget).unwrap_or(usize::MAX),
         time_budget_ms: request.time_budget_ms,
         menu_time_budget_ms: request.menu_time_budget_ms,

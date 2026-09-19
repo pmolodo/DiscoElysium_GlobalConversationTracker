@@ -22,7 +22,7 @@ use lookahead_engine::bridge::{
     DataAnswer, DataKind, DataRequest, LookAheadRequest, NodeRef, WireValue, WorldSnapshot, answer,
 };
 use lookahead_engine::core::types::DialogueNodeId;
-use lookahead_engine::index::{Index, read_index};
+use lookahead_engine::index::{Index, build_group_graph, read_index};
 
 const DOLORES_DEI: i32 = 767;
 
@@ -55,7 +55,13 @@ fn shipped() -> Option<Index> {
 ///
 /// `amounts` is in the game's enum order: communist, revacholian_nationhood, ultraliberal,
 /// moralist.
-fn request(start: i32, target: i32, amounts: [i32; 4], thought_fixed: bool) -> LookAheadRequest {
+fn request(
+    index: &Index,
+    start: i32,
+    target: i32,
+    amounts: [i32; 4],
+    thought_fixed: bool,
+) -> LookAheadRequest {
     let variables = [
         "communist",
         "revacholian_nationhood",
@@ -95,12 +101,22 @@ fn request(start: i32, target: i32, amounts: [i32; 4], thought_fixed: bool) -> L
             conversation: DOLORES_DEI,
             entry: start,
         }],
-        unseen_any_game: [NodeRef {
-            conversation: DOLORES_DEI,
-            entry: target,
-        }]
-        .into_iter()
-        .collect(),
+        // ONE ENTRY UNREAD ANYWHERE, so everything else in the group has been shown by some
+        // playthrough - which is what the request carries, and it has to be named rather than
+        // left out. See `world::seen_state`.
+        seen_any_game: build_group_graph(index, DOLORES_DEI)
+            .expect("the group builds")
+            .0
+            .nodes()
+            .map(|node| NodeRef::from(node.id))
+            .filter(|node| {
+                *node
+                    != NodeRef {
+                        conversation: DOLORES_DEI,
+                        entry: target,
+                    }
+            })
+            .collect(),
         world,
         ..Default::default()
     }
@@ -108,7 +124,7 @@ fn request(start: i32, target: i32, amounts: [i32; 4], thought_fixed: bool) -> L
 
 /// Whether `start` reaches `target`, in a world holding these political amounts.
 fn reaches(index: &Index, start: i32, target: i32, amounts: [i32; 4], thought_fixed: bool) -> bool {
-    let request = request(start, target, amounts, thought_fixed);
+    let request = request(index, start, target, amounts, thought_fixed);
     let start = request.starts[0];
     let response = answer(index, None, &request);
     assert!(response.error.is_none(), "{:?}", response.error);
@@ -212,7 +228,7 @@ fn split_compiled(index: &Index, amounts: [i32; 4]) -> common::CompiledGuards {
     let split = [150, 151].map(|entry| DialogueNodeId::new(DOLORES_DEI, entry));
     common::compiled_guards(
         index,
-        &request(RAISES_NOTHING, NATIONHOOD_WINNING, amounts, true),
+        &request(index, RAISES_NOTHING, NATIONHOOD_WINNING, amounts, true),
         &split,
     )
 }

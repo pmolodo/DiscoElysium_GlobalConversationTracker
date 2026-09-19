@@ -256,10 +256,20 @@ message LookAheadRequest {
   int32 conversation = 1;
   // The option entries to score. One answer comes back per start.
   repeated NodeRef starts = 2;
-  // Entries the player has never seen in any game.
-  NodeSet unseen_any_game = 3;
-  // Entries unseen this game but seen in a previous one.
-  NodeSet unseen_this_game = 4;
+  // Entries SOME playthrough has shown, which is what the global conversation state holds.
+  //
+  // ONE OF THE TWO FACTS THAT DECIDE A SEEN STATE, and the other is the world's `seen` set -
+  // what THIS game has shown. Neither is a claim about the other, and the engine maps the pair
+  // onto the three states in one place. So nothing sends "unseen this game": an entry this
+  // world has not seen and this set holds IS that state.
+  NodeSet seen_any_game = 11;
+
+  // WHAT 3 AND 4 WERE, and they are not to be reused. They carried the two sets INVERTED -
+  // never seen anywhere, and unseen here but seen before - so an entry named by neither was
+  // seen this game. That made the request a third account of what the world already said, and
+  // a sender could fill one without the other and be read a way it did not mean.
+  reserved 3, 4;
+  reserved "unseen_any_game", "unseen_this_game";
 
   // The most search states one option may hold, or zero for no such limit.
   //

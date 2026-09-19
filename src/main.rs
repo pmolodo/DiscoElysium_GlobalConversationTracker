@@ -220,11 +220,9 @@ fn main() -> anyhow::Result<()> {
         let request = LookAheadRequest {
             conversation: args.conversation_id,
             starts: vec![NodeRef::from(start)],
-            unseen_any_game: graph
-                .nodes()
-                .map(|node| NodeRef::from(node.id))
-                .filter(|node| !recorded.contains(node) && !seen_here.contains(node))
-                .collect(),
+            // WHAT SOME PLAYTHROUGH SHOWED: what the global state records, and what this save
+            // has read - which the world says too, and says as the stronger claim.
+            seen_any_game: recorded.iter().chain(seen_here.iter()).copied().collect(),
             memory_budget_mb: args.memory_budget_mb,
             time_budget_ms: args.time_budget_ms,
             menu_time_budget_ms: args.menu_time_budget_ms,
@@ -285,9 +283,12 @@ fn main() -> anyhow::Result<()> {
     // and a shuffled list would look like a change every time.
     starts.sort_by_key(|start| (start.conversation, start.entry));
 
-    let unseen: HashSet<NodeRef> = graph
+    // EVERYTHING OUTSIDE THIS CONVERSATION IS UNREAD ANYWHERE, so what some playthrough showed
+    // is the conversation itself. Stated as the set the request carries rather than its
+    // complement - see `world::seen_state`.
+    let seen_anywhere: HashSet<NodeRef> = graph
         .nodes()
-        .filter(|node| node.id.conversation_id != args.conversation_id)
+        .filter(|node| node.id.conversation_id == args.conversation_id)
         .map(|node| NodeRef {
             conversation: node.id.conversation_id,
             entry: node.id.entry_id,
@@ -300,8 +301,7 @@ fn main() -> anyhow::Result<()> {
         &LookAheadRequest {
             conversation: args.conversation_id,
             starts,
-            unseen_any_game: unseen.into_iter().collect(),
-            unseen_this_game: Default::default(),
+            seen_any_game: seen_anywhere.into_iter().collect(),
             state_budget: 0,
             time_budget_ms: args.time_budget_ms,
             menu_time_budget_ms: args.menu_time_budget_ms,

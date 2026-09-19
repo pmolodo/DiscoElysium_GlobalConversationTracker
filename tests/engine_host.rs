@@ -308,7 +308,7 @@ fn a_refusal_crosses_as_a_status_and_leaves_the_host_serving() {
     assert_eq!(
         status_of(&host.ask(Kind::LookAhead(wire::LookAheadRequest {
             conversation: 1123,
-            unseen_any_game: Some(backwards),
+            seen_any_game: Some(backwards),
             ..Default::default()
         }))),
         Status::BadArgument,

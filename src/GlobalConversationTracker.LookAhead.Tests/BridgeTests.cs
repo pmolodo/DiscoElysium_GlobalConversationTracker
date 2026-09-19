@@ -151,7 +151,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
             var world = new WorldSnapshot { DayMinutes = 720, DayCounter = 1 };
             var request = new LookAheadRequest(1123, world);
             request.Starts.Add(new NodeRef(1123, 0));
-            request.UnseenAnyGame.Add(new NodeRef(1123, 3));
+            // A PLAYER WHO HAS SEEN NOTHING ANYWHERE, so everything the group holds is unread
+            // and the start has something to find. Leaving the set empty says that outright;
+            // it is not an omission.
 
             LookAheadResponse response = engine.Ask(request);
             _output.WriteLine($"{response.Answers.Count} answer(s)");

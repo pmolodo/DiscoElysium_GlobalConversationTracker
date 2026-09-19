@@ -125,7 +125,10 @@ fn main() {
     // one before a diagram is touched, and the whole measurement reads one millisecond a
     // request while measuring nothing at all. That is exactly the trap the first cut of
     // `menu_residue` fell into and the reason the profile is shared.
-    let mut menus: Vec<(i32, Vec<NodeRef>, Vec<NodeRef>, Vec<NodeRef>)> = Vec::new();
+    // THE GROUP'S ENTRIES TRAVEL WITH EACH MENU, because what a request carries is the set some
+    // playthrough HAS shown, and naming it needs everything the group holds - see
+    // `world::seen_state`. Worked out here with the rest of the menu, so neither arm pays for it.
+    let mut menus: Vec<(i32, Vec<NodeRef>, Vec<NodeRef>, Vec<NodeRef>, Vec<NodeRef>)> = Vec::new();
     // THE FIRST ONE IS THE SESSION, since the kept arm stands in `menus[0]` throughout and
     // the rest are only there to defeat the workspace in the fresh arm. So
     // `DEGCT_CONVERSATION=14,368,631` measures a session in conversation 14.
@@ -150,6 +153,7 @@ fn main() {
                 .into_iter()
                 .map(NodeRef::from)
                 .collect(),
+            graph.nodes().map(|node| NodeRef::from(node.id)).collect(),
         ));
     }
 
@@ -193,24 +197,29 @@ fn main() {
     for round in 0..rounds {
         // ONE GROUP THROUGHOUT for the kept arm, which is a player standing in a
         // conversation; rotating for the fresh arm, which is what defeats the workspace.
-        let (conversation, starts, unseen, walk) =
+        let (conversation, starts, unseen, walk, everything) =
             &menus[if fresh { round % menus.len() } else { 0 }];
 
         // A DIFFERENT WORLD EVERY ROUND, in the field that actually moves between menus.
         let seen: HashSet<NodeRef> = starts.iter().take(round % starts.len()).copied().collect();
 
-        // AND A SHRINKING QUARRY, which is what a session IS: the player reads lines, so
-        // entries leave `unseen_any_game` as the conversation goes on. Holding it fixed
-        // makes every round after the first the same question, which the memo answers
-        // without running a pass - so the manager never allocates and a measurement of what
-        // it accumulates measures nothing. de-dt75.2.
+        // AND A SHRINKING QUARRY, which is what a session IS: the player reads lines, so entries
+        // JOIN `seen_any_game` as the conversation goes on and stop being worth hunting. Holding
+        // it fixed makes every round after the first the same question, which the memo answers
+        // without running a pass - so the manager never allocates and a measurement of what it
+        // accumulates measures nothing. de-dt75.2.
         let read = (round * unseen.len()) / rounds.max(1);
-        let hunting = unseen.iter().skip(read).copied().collect();
+        let hunting: HashSet<NodeRef> = unseen.iter().skip(read).copied().collect();
+        let seen_anywhere = everything
+            .iter()
+            .copied()
+            .filter(|node| !hunting.contains(node))
+            .collect();
         let request = LookAheadRequest {
             conversation: *conversation,
             starts: starts.clone(),
             encountered: walk.clone(),
-            unseen_any_game: hunting,
+            seen_any_game: seen_anywhere,
             world: WorldSnapshot {
                 day_minutes: 720,
                 day_counter: 1,

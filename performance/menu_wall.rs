@@ -132,7 +132,14 @@ fn main() {
             .into_iter()
             .map(NodeRef::from)
             .collect(),
-            unseen_any_game: profile.unseen.iter().map(|id| NodeRef::from(*id)).collect(),
+            // WHAT SOME PLAYTHROUGH SHOWED, which is everything the profile does not call
+            // unseen anywhere - see `MenuProfile::seen_any_game`.
+            seen_any_game: graph
+                .nodes()
+                .map(|node| node.id)
+                .filter(|id| !profile.unseen.contains(id))
+                .map(NodeRef::from)
+                .collect(),
             time_budget_ms,
             menu_time_budget_ms: menu_budget_ms,
             world: WorldSnapshot {

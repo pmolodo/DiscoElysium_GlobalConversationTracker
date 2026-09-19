@@ -111,15 +111,14 @@ namespace GlobalConversationTracker.LookAhead.Tests
 
             var request = new LookAheadRequest(631, world);
             request.Starts.Add(new NodeRef(631, 4));
-            request.UnseenAnyGame.Add(new NodeRef(631, 9));
+            request.SeenAnyGame.Add(new NodeRef(631, 9));
 
             Wire.LookAheadRequest sent = WireConvert.Write(request);
             _output.WriteLine(sent.ToString());
 
             Assert.Equal(631, sent.Conversation);
             Assert.Equal(4, Assert.Single(sent.Starts).Entry);
-            Assert.Equal("631: 9-9", Runs(sent.UnseenAnyGame));
-            Assert.Empty(sent.UnseenThisGame.Conversations);
+            Assert.Equal("631: 9-9", Runs(sent.SeenAnyGame));
 
             Wire.WorldSnapshot snapshot = sent.World;
             Assert.Equal(250, snapshot.Money);
@@ -273,11 +272,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
             }
 
             var request = new LookAheadRequest(631, world);
-            // Every entry unseen anywhere, which is the state a crawl has most to say about.
-            foreach (NodeRef entry in questions.Entries)
-            {
-                request.UnseenAnyGame.Add(entry);
-            }
+            // Every entry unseen anywhere, which is the state a crawl has most to say about,
+            // and which is what an EMPTY seen-any-game set says: no save has shown any of it.
 
             // A handful of options rather than all 4,514 entries: the crossing is what is
             // being checked, and a crawl from every entry of the biggest group in the game
@@ -360,11 +356,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 world.QueryValues.Add(WireValue.FromBoolean(true));
             }
 
+            // EVERY ENTRY UNSEEN ANYWHERE, which an empty seen-any-game set says outright.
             var request = new LookAheadRequest(FanConversation, world);
-            foreach (NodeRef entry in questions.Entries)
-            {
-                request.UnseenAnyGame.Add(entry);
-            }
 
             var check = new NodeRef(FanConversation, GrabTheTieEntry);
             request.Starts.Add(check);

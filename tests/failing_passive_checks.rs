@@ -114,7 +114,12 @@ fn menu_markers(consult_the_sheet: bool) -> Option<Vec<(i32, String)>> {
                 entry: *entry,
             })
             .collect(),
-        unseen_any_game: by_class(UNSEEN_ANY_GAME).into_iter().collect(),
+        // WHAT SOME PLAYTHROUGH SHOWED: the two lower rungs together, since seen this game
+        // implies seen any game.
+        seen_any_game: by_class(SEEN_THIS_GAME)
+            .into_iter()
+            .chain(by_class(UNSEEN_THIS_GAME))
+            .collect(),
         world: WorldSnapshot {
             day_minutes: DAY_MINUTES,
             day_counter: DAY_COUNTER,
@@ -221,7 +226,14 @@ fn best_reachable(start: (i32, i32), candidate: (i32, i32)) -> Option<i32> {
     let request = LookAheadRequest {
         conversation: start.0,
         starts: vec![of(start)],
-        unseen_any_game: [of(candidate)].into_iter().collect(),
+        // EVERYTHING BUT THE CANDIDATE HAS BEEN SHOWN SOMEWHERE, which with the world below -
+        // which has read all of it but the candidate too - leaves the candidate the only thing
+        // unread anywhere and so the only thing worth reaching.
+        seen_any_game: graph
+            .nodes()
+            .map(|node| NodeRef::from(node.id))
+            .filter(|node| *node != of(candidate))
+            .collect(),
         world: WorldSnapshot {
             day_minutes: DAY_MINUTES,
             day_counter: DAY_COUNTER,

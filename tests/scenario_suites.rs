@@ -289,21 +289,18 @@ fn stage(
         questions: asked,
     };
 
-    // The three rungs, exactly as the plugin builds them.
+    // WHAT SOME PLAYTHROUGH SHOWED, exactly as the plugin sends it: the two lower rungs
+    // together, since seen this game implies seen any game. The world carries which of them
+    // THIS game showed, and `world::seen_state` takes the three rungs from the pair.
     let everything: Vec<NodeRef> = staged
         .graph
         .nodes()
         .map(|node| NodeRef::from(node.id))
         .collect();
-    staged.request.unseen_any_game = everything
+    staged.request.seen_any_game = everything
         .iter()
         .copied()
-        .filter(|node| staged.novelty_of(*node) == UNSEEN_ANY_GAME)
-        .collect();
-    staged.request.unseen_this_game = everything
-        .iter()
-        .copied()
-        .filter(|node| staged.novelty_of(*node) == UNSEEN_THIS_GAME)
+        .filter(|node| staged.novelty_of(*node) != UNSEEN_ANY_GAME)
         .collect();
 
     Some(staged)

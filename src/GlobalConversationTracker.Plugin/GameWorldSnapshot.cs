@@ -563,19 +563,20 @@ namespace GlobalConversationTracker
             GlobalConversationState state = session.EnsureInitialized();
             foreach (NodeRef node in entries)
             {
+                // TWO SETS, NOT THREE RUNGS. What THIS save has shown goes to the world, and
+                // what SOME save has shown to the request - and the first implies the second, so
+                // an entry the game calls seen joins both. The engine takes the three rungs from
+                // the pair; nothing here decides one.
                 if (GameFacts.IsSeen(node.Conversation, node.Entry))
                 {
                     world.Seen.Add(node);
+                    request.SeenAnyGame.Add(node);
                     continue;
                 }
 
                 if (state.GetStatus(node.Conversation, node.Entry) == SimStatus.WasDisplayed)
                 {
-                    request.UnseenThisGame.Add(node);
-                }
-                else
-                {
-                    request.UnseenAnyGame.Add(node);
+                    request.SeenAnyGame.Add(node);
                 }
             }
         }

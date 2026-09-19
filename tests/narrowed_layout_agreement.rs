@@ -27,7 +27,7 @@ use lookahead_engine::bridge::{
     COUNTER_CAP, LookAheadAnswer, LookAheadRequest, NodeRef, SnapshotWorld, WireValue,
     WorldSnapshot, answer_starts, entered_at_of, questions_for,
 };
-use lookahead_engine::core::types::{DialogueNodeId, Novelty};
+use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
@@ -85,11 +85,18 @@ fn a_narrowed_layout_answers_what_the_whole_group_answers() {
         }
 
         // Something unread to look for, or every answer is the same and proves nothing.
-        let unseen: HashSet<NodeRef> = graph
+        // FORTY ENTRIES OUTSIDE THE ASKED CONVERSATION ARE UNREAD ANYWHERE, so what some
+        // playthrough showed is everything else. Stated as the set the request carries.
+        let unread: HashSet<NodeRef> = graph
             .nodes()
             .map(|node| NodeRef::from(node.id))
             .filter(|node| node.conversation != conversation)
             .take(40)
+            .collect();
+        let seen_anywhere: HashSet<NodeRef> = graph
+            .nodes()
+            .map(|node| NodeRef::from(node.id))
+            .filter(|node| !unread.contains(node))
             .collect();
 
         let world = WorldSnapshot {
@@ -106,8 +113,7 @@ fn a_narrowed_layout_answers_what_the_whole_group_answers() {
         let request = LookAheadRequest {
             conversation,
             starts: starts.clone(),
-            unseen_any_game: unseen.iter().copied().collect(),
-            unseen_this_game: Default::default(),
+            seen_any_game: seen_anywhere.iter().copied().collect(),
             world,
             ..Default::default()
         };
@@ -228,16 +234,10 @@ fn answers_on_this_thread(
         .with_constant_clock(DataLayout::group_passes_time(graph));
     let seed = seed_of(graph, &world, &vars).expect("room for a seed");
 
-    let novelty = |id: DialogueNodeId| {
-        let node = NodeRef::from(id);
-        if request.unseen_any_game.contains(&node) {
-            Novelty::UnseenAnyGame
-        } else if request.unseen_this_game.contains(&node) {
-            Novelty::UnseenThisGame
-        } else {
-            Novelty::SeenThisGame
-        }
-    };
+    // THE ONE RULE, as `bridge::answer` asks it - see `world::seen_state`. A copy here would be
+    // a second way of deciding it, and this test exists to agree with the bridge.
+    let seen_any_game = |id: DialogueNodeId| request.seen_any_game.contains(&NodeRef::from(id));
+    let novelty = lookahead_engine::world::seen_states(&world, seen_any_game);
 
     Some(answer_starts(
         graph,
