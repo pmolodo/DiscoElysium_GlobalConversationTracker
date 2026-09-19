@@ -85,6 +85,37 @@ fn bits_for(max: u32) -> u8 {
 /// it would compile against a slot the layout does not carry, which reads as unknown and lets
 /// the gate through. The comparison has to be rewritten as a threshold over the returned slots
 /// first. See de-bfs0.
+/// How many `once` slots a counter may be determined by and still be worth dropping.
+///
+/// ## Why there is a limit at all
+///
+/// Dropping replaces a comparison against a few bits with `at_least_set` over every contributing
+/// slot, whose width is the NUMBER of contributors rather than the log of it. Somewhere that
+/// stops being a trade worth making, and conversation 347 is past it: one of its counters is
+/// determined by THIRTY once slots, and dropping it took the group from 4,429 diagram nodes to
+/// 9,427.
+///
+/// ## Where the line is, measured
+///
+/// Whole game, the 31 groups holding a redundant counter in a layout of at least twenty
+/// variables - below that a counter IS most of the state and a percentage says nothing - by how
+/// many once slots the widest counter has:
+///
+/// ```text
+///   1 to 9 once slots     29 groups, every one of them cheaper
+///  11 once slots           1 group,  +2.7 per cent      (conversation 1105)
+///  30 once slots           1 group,  +112.8 per cent    (conversation 347)
+/// ```
+///
+/// So the cutoff is free: the two groups it stops dropping for are the two that lost, and they
+/// had no saving to give up. Eight would not be - conversation 362's counter has nine and saves
+/// 2,254 nodes - which is why this is ten rather than a rounder-looking number.
+///
+/// WHAT IT IS NOT. Not a bound on how far the relation REACHES across the variable order, which
+/// was the other candidate and does not separate: conversation 379 reaches 97 per cent of its
+/// layout and saves 12 per cent, where 347 reaches 97 per cent and costs 113. See de-0q6b.
+const MOST_ONCES: usize = 10;
+
 pub fn counters_from_onces(graph: &LookAheadGraph) -> HashMap<usize, Vec<(DialogueNodeId, usize)>> {
     let mut contributors: HashMap<usize, Vec<(DialogueNodeId, usize)>> = HashMap::new();
     let mut disqualified: HashSet<usize> = HashSet::new();
@@ -740,6 +771,8 @@ impl DataLayout {
     /// precisely because dropping alone is unsound: a comparison compiled against a slot the
     /// layout no longer carries reads as unknown and lets its gate through. The compiler asks
     /// for the map and builds a threshold over the contributing slots instead.
+    ///
+    /// NOT WHERE THE COUNTER HAS TOO MANY CONTRIBUTORS - see [`MOST_ONCES`].
     pub fn dropping_redundant_counters(
         mut self,
         graph: &LookAheadGraph,
@@ -760,6 +793,7 @@ impl DataLayout {
             // set counts the group's own history already. Take `outside` to be the save's value
             // less the sites it records as shown, and every guard rebases by it: `counter >= k`
             // is `at least k - outside of these are set`.
+            .filter(|(_, contributors)| contributors.len() <= MOST_ONCES)
             .filter_map(|(slot, contributors)| {
                 let name = symbols.name_of(slot)?;
                 let declared = symbols.variable_ref(name)?;

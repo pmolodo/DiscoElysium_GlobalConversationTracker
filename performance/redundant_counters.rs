@@ -52,6 +52,35 @@ fn carrying_counters(graph: &LookAheadGraph, cap: i32) -> DataLayout {
         .keeping_only_read(graph.symbols(), &DataLayout::read_by(graph))
 }
 
+/// How many variables the relation between a counter and its `once` slots reaches across, and
+/// how many the layout has in all.
+///
+/// END TO END RATHER THAN COUNTED. The diagram carries "this counter is how many of those slots
+/// are set", and what that costs is governed by the distance between the first and last variable
+/// it ties together, not by how many of them there are: a relation over five slots that sit
+/// beside each other is local, and one over five spread across the layout is not.
+fn relation_reach(
+    layout: &DataLayout,
+    slot: usize,
+    onces: &[(lookahead_engine::core::types::DialogueNodeId, usize)],
+) -> (u32, u32) {
+    let Some((at, width)) = layout.slot(slot) else {
+        return (0, layout.total_vars());
+    };
+    let positions: Vec<u32> = onces
+        .iter()
+        .filter_map(|(_, once)| layout.slot(*once).map(|(at, _)| at))
+        .collect();
+    let first = positions.iter().copied().min().unwrap_or(at).min(at);
+    let last = positions
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(at)
+        .max(at + width as u32 - 1);
+    (last - first + 1, layout.total_vars())
+}
+
 fn main() {
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
@@ -72,9 +101,16 @@ fn main() {
         }
     };
 
+    // `reach` IS THE COLUMN TO READ AGAINST WHAT A GROUP GAINED, and `spans` is not: `spans` is
+    // `onces + bits` by construction and says nothing the two beside it do not. What a diagram
+    // pays for is how far apart the ORDER puts the variables the relation ties together, since
+    // the counter's bits must interleave with the once bits and no order is right for both. So
+    // `reach` is that distance from end to end, and `of` is how many variables the group has -
+    // a relation covering most of the layout is a different thing from one covering a tenth of
+    // it. See de-0q6b, which asks where dropping stops paying.
     println!(
-        "{:>7}  {:>38}  {:>5}  {:>5}  {:>6}",
-        "conv", "slot", "onces", "bits", "spans"
+        "{:>7}  {:>38}  {:>5}  {:>5}  {:>6}  {:>6}  {:>6}",
+        "conv", "slot", "onces", "bits", "spans", "reach", "of"
     );
 
     let mut groups = 0usize;
@@ -109,13 +145,16 @@ fn main() {
             slots += 1;
             bits += width as usize;
             let name = symbols.name_of(slot).unwrap_or("?");
+            let (reach, of) = relation_reach(&layout, slot, &onces);
             println!(
-                "{:>7}  {:>38}  {:>5}  {:>5}  {:>6}",
+                "{:>7}  {:>38}  {:>5}  {:>5}  {:>6}  {:>6}  {:>6}",
                 conversation,
                 &name[name.len().saturating_sub(38)..],
                 onces.len(),
                 width,
                 onces.len() + width as usize,
+                reach,
+                of,
             );
         }
     }
