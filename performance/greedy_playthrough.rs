@@ -4,20 +4,20 @@
 //! ## Why it exists
 //!
 //! The menu measurements ask a group in a state they ASSERT: `menu_profile` calls the
-//! structurally deepest entries unseen and everything else seen, and `menu_matrix` hands the
-//! engine a world whose `seen` set is empty regardless. Those two disagree, and the disagreement
-//! is not harmless - `state::seed_state` seeds a node's `once_slot` and `seen_slot` from
-//! `world.is_seen`, so a default row asks its menu with almost every line read and every
-//! one-time effect still pending, which is a state no save can hold.
+//! structurally deepest entries unseen in any game, and every other entry one an EARLIER
+//! playthrough showed. That is coherent - it is a save that has never opened the conversation,
+//! so nothing is seen this game and no `once` has fired - but nobody has demonstrated a play
+//! that leaves exactly those entries unread.
 //!
-//! Making the world agree by asserting the same set does not fix it and is worth knowing about:
-//! a `seen:` slot shuts an entry that shuts once seen, so declaring most of a conversation seen
-//! closes the routes to the rest. Measured on 761, `DEGCT_SEEN_WORLD=all` took the menu from
-//! 2,513 ms unsettled to 511 ms fully settled AND STARRING NOTHING, because its unread content
-//! had become unreachable. An asserted state can contradict itself.
+//! WHAT AN ASSERTION CANNOT DO is say the player read something IN THIS GAME, because
+//! `state::seed_state` seeds a node's `once_slot` and `seen_slot` from `world.is_seen` and a
+//! `seen:` slot shuts an entry that shuts once seen. Declare most of a conversation read this
+//! game and the routes to the rest close: measured on 761, that menu settles in 511 ms STARRING
+//! NOTHING, which is the cost of proving an empty menu rather than a faster answer.
 //!
-//! A WALKED state cannot. What this writes is a state reached by pressing keys, and the
-//! keypresses are the witness.
+//! A WALKED state can say it. What this writes is a state reached by pressing keys, so the
+//! entries it calls read this game are ones a play actually displayed, and the keypresses are
+//! the witness.
 //!
 //! ## What a playthrough is
 //!

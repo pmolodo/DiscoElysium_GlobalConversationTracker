@@ -174,9 +174,10 @@
 //! still unread - see [`walked_profile`] for why that is not the default, and for why it does
 //! not reproduce the runs taken before the world became mandatory.
 //!
-//! `DEGCT_SEEN_WORLD=all` makes a link-deepest row's world agree with its asserted unseen set
-//! about what the player has been shown, and `=body` does the same but leaves the menu's own
-//! options unseen. It does not repair the contradiction; see [`walked_profile`].
+//! NOTHING RECONCILES THE TWO SCOPES, because nothing has to: a profile says what ANY game has
+//! shown and a world says what THIS one has, and `world::seen_state` maps the pair onto the
+//! three states. Neither is a claim about the other, so there is no setting for making them
+//! agree and no way for a row to assert a state they disagree about.
 
 use std::time::{Duration, Instant};
 
@@ -315,120 +316,6 @@ fn marking() -> Marking {
     }
 }
 
-/// Whether the world agrees with the novelty function about what the player has been shown.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum SeenWorld {
-    /// The world says the player has been shown NOTHING, whatever the novelty function says.
-    Nothing,
-    /// Every entry the novelty function calls seen is seen in the world too.
-    Everything,
-    /// The same, less the menu's own options, which a player standing at the menu has not
-    /// chosen yet.
-    Body,
-}
-
-/// What `DEGCT_SEEN_WORLD` says for each.
-const SEEN_WORLD_EVERYTHING: &str = "all";
-const SEEN_WORLD_BODY: &str = "body";
-
-/// What `DEGCT_SEEN_WORLD` names, default [`SeenWorld::Nothing`].
-///
-/// UNDER INVESTIGATION, and a row taken with `all` or `body` should not be relied on until it
-/// is settled: both come back having asked NOTHING - no pass, no diagram - and starring
-/// nothing, and what makes that happen is not established. See de-rnrb, and the table below
-/// for the rows that raised it.
-///
-/// ## What this arm is for, and why the default is the incoherent one
-///
-/// The profile says "exactly the deepest entries are unseen and everything else is seen", and
-/// the novelty function says so, but the WORLD is built from a default snapshot whose `seen`
-/// set is empty. Those two disagree, and one of the things the world's `seen` set drives is
-/// which one-time effects have already fired: `state::seed_state` seeds a node's `once_slot`
-/// and `seen_slot` from `world.is_seen`, because `GenericLuaFunctions.Once` is a test on
-/// whether the entry has been shown. So a default row asks a menu in a state no save can be
-/// in - almost every line read, yet every one-time increment in the group still pending - and
-/// that is the state in which the most once-slots are still live variables rather than
-/// constants.
-///
-/// It is an opt-in arm rather than the default for the reason every arm here is: a row taken
-/// this way cannot be compared with the rows already measured, and the shipped algorithm is
-/// what a default row must describe. See de-l88t.
-///
-/// ## WHAT IT SAID ON 761, AND WHY THE NUMBER MUST NOT BE QUOTED AS A SPEED-UP
-///
-/// Link-deepest-10 with the limits off, at 90caf3d:
-///
-/// ```text
-///   seen world  menu_ms  asked  rounds  settled  partly      nodes  starred
-///   nothing        5657     23       4        8       0  4,810,836  422,164,989,848
-///   all             436      0       0        8       0     33,977  -
-///   body            423      0       0        8       0     33,977  -
-/// ```
-///
-/// A SEEN WORLD SETTLES WITHOUT ASKING ANYTHING: `asked` is zero, so no pass runs and no
-/// diagram is built, and nothing is starred. WHY is the open question - de-rnrb - and until it
-/// is answered the 436 ms is not a speed-up over the 5,657: the two rows did different amounts
-/// of work because they were asked different questions, and what the shorter one decided is
-/// exactly what is not established.
-///
-/// What IS established is that the arm does not isolate the once-slots. A seen set that was
-/// never walked to is not merely unwitnessed, it contradicts itself - it claims the player saw
-/// content while setting the flags that decide what that content leaves reachable.
-///
-/// WHAT THE QUESTION ACTUALLY NEEDS is a profile whose seen set came from a walk: step to the
-/// nearest unseen entry, mark the route seen and apply its actions so the one-time effects fire
-/// and the counters advance, and repeat until nothing unseen is reachable. What is left unseen
-/// is then "deepest" in a sense that has a witness, and the state around it is one some play
-/// demonstrably reaches. That is de-l88t's follow-up; until it exists, whether a realistic world
-/// makes 761 affordable is UNANSWERED.
-///
-/// # Panics
-///
-/// On any other value, so a misspelt run does not quietly measure the default.
-fn seen_world() -> SeenWorld {
-    match lookahead_engine::core::env::var("SEEN_WORLD")
-        .unwrap_or_default()
-        .as_str()
-    {
-        "" => SeenWorld::Nothing,
-        SEEN_WORLD_EVERYTHING => SeenWorld::Everything,
-        SEEN_WORLD_BODY => SeenWorld::Body,
-        other => panic!(
-            "DEGCT_SEEN_WORLD={other:?}: expected {SEEN_WORLD_EVERYTHING} or {SEEN_WORLD_BODY}"
-        ),
-    }
-}
-
-/// The entries the world says the player has been shown, from the novelty function itself so
-/// that the two cannot drift apart.
-///
-/// GROUP ENTRIES ARE NEVER MARKED. The game does not display one, so it cannot have shown it,
-/// and `seed_state` would read that as its one-time effects having fired.
-fn seen_by_world<F>(
-    graph: &LookAheadGraph,
-    novelty: &F,
-    starts: &[DialogueNodeId],
-    which: SeenWorld,
-) -> lookahead_engine::bridge::NodeSet
-where
-    F: Fn(DialogueNodeId) -> Novelty,
-{
-    let mut seen = lookahead_engine::bridge::NodeSet::default();
-    if which == SeenWorld::Nothing {
-        return seen;
-    }
-    for node in graph.nodes() {
-        if node.is_group || novelty(node.id) == Novelty::UnseenAnyGame {
-            continue;
-        }
-        if which == SeenWorld::Body && starts.contains(&node.id) {
-            continue;
-        }
-        seen.insert(NodeRef::from(node.id));
-    }
-    seen
-}
-
 /// How many options the menu asks about.
 ///
 /// EIGHT, which is what `workspace_menus` uses, so a figure here is comparable with one
@@ -484,18 +371,19 @@ const WALKED_FLAG: &str = "1";
 /// at. There is ONE account of what the player has read - the world - and the novelty function
 /// agrees with it because it was derived from it.
 ///
-/// link-deepest-X takes the structurally deepest entries by link depth instead, and has two
-/// accounts that can disagree: that asserted unseen set, and a world the walk never moved. The
-/// engine seeds its `once` and `seen` slots from the WORLD, so such a row asks its menu with
-/// almost every line called read AND every one-time effect still pending - a state no save holds.
-/// On 761 that is the difference between fifty thousand diagram nodes and ninety-three million,
-/// and it is where the +15.8 per cent reading that nearly overturned de-l88t came from.
+/// link-deepest-X takes the structurally deepest entries by link depth instead, and asserts them
+/// rather than reaching them. IT IS A SAVE THAT HAS NEVER OPENED THIS CONVERSATION: the deepest X
+/// are unseen in any game, everything else was read in an EARLIER playthrough, and nothing at all
+/// is seen this game - so no `once` has fired and no `seen` slot is set. That is a state a player
+/// can be in, and the one in which the most once-slots are still live variables rather than
+/// constants, which is what makes it adversarial.
 ///
-/// FILLING THE WORLD FROM THE ASSERTION DOES NOT REPAIR IT, which is what `DEGCT_SEEN_WORLD`
-/// was for: a `seen` slot shuts an entry that shuts once seen, so declaring most of a
-/// conversation read closes the routes to the rest. On 761 it took the menu from 2,513 ms
-/// unsettled to 511 ms settled AND STARRING NOTHING. An asserted state can contradict itself;
-/// a reached one cannot.
+/// WHAT IT CANNOT BE is a save that has read almost everything IN THIS GAME while none of its
+/// one-time effects have fired. Saying so was what made the profile incoherent, and the
+/// arithmetic of it is worth keeping: a `seen` slot shuts an entry that shuts once seen, so a
+/// world told that most of the conversation was read this game closes the routes to the rest,
+/// and 761 answered in 511 ms STARRING NOTHING - the cost of proving an empty menu. The unseen
+/// entries here are unseen ANY game, which closes nothing.
 ///
 /// ## link-deepest-X does not reproduce the runs it descends from
 ///
@@ -670,7 +558,7 @@ fn main() {
             // no `once` fired - and the starts are the structural set, which is why there is no
             // walk to stand at them by. `walked` stays None, so no hub cut is taken either.
             match MenuProfile::of(&graph, root, unseen_wanted, starts_wanted) {
-                Some(found) => (found.on_a_fresh_save(), None),
+                Some(found) => (found, None),
                 None => {
                     no_profile(conversation);
                     continue;
@@ -794,33 +682,12 @@ fn main() {
         // than where the row is written, or a measured row's prep would swallow its search.
         let prep = Prep::of(&shipped, before, built, started);
 
-        // WHAT THE PLAYER HAS SEEN, AT BOTH SCOPES, counted rather than described. A scenario is
-        // a claim about the novelty distribution, and the row cannot say which claim it made -
-        // every row is the same shape. Three numbers say it outright, and reading them beats
-        // reading the code that produced them.
-        {
-            let novelty = profile.novelty();
-            let mut any_game = 0;
-            let mut this_game = 0;
-            let mut seen = 0;
-            for node in graph.nodes() {
-                match novelty(node.id) {
-                    Novelty::UnseenAnyGame => any_game += 1,
-                    Novelty::UnseenThisGame => this_game += 1,
-                    Novelty::SeenThisGame => seen += 1,
-                }
-            }
-            eprintln!(
-                "conversation {conversation}: {any_game} unseen-any-game, {this_game} \
-                 unseen-this-game, {seen} seen-this-game"
-            );
-        }
-        let novelty = profile.novelty();
+        let seen_any_game = profile.seen_any_game();
         match menu(
             &graph,
             conversation,
             &profile.starts,
-            &novelty,
+            &seen_any_game,
             budget,
             walked.as_ref(),
         ) {
@@ -854,14 +721,18 @@ fn menu<F>(
     graph: &LookAheadGraph,
     conversation: i32,
     starts: &[DialogueNodeId],
-    novelty: &F,
+    seen_any_game: &F,
     budget: DiagramBudget,
     walked: Option<&Standing>,
 ) -> Option<Menu>
 where
     // SYNC, because the search runs on a thread of its own - de-fpax - and the closure
     // carried over is a shared reference to this one.
-    F: Fn(DialogueNodeId) -> Novelty + Sync,
+    //
+    // THE SET, NOT A READY-MADE CLASSIFIER, because the other half of what decides a seen state
+    // is the world, and the world is built below. Handing one in would mean deciding the states
+    // before the world that half-decides them exists.
+    F: Fn(DialogueNodeId) -> bool + Sync,
 {
     isolated::on_its_own_thread(|| {
         // WHERE A PLAYER WOULD HAVE WALKED FROM, built before the clock starts: it stands in for
@@ -889,9 +760,11 @@ where
                 None => WorldSnapshot {
                     day_minutes: 720,
                     day_counter: 1,
-                    // EMPTY BY DEFAULT, and `DEGCT_SEEN_WORLD` is what makes it agree with the
-                    // novelty function - see [`seen_world`] for what that changes.
-                    seen: seen_by_world(graph, novelty, starts, seen_world()),
+                    // NOTHING SEEN THIS GAME, which is the whole of what a profile with no walk
+                    // behind it asserts: a save that has never opened this conversation, so no
+                    // `once` has fired and no `seen` slot is set. The entries it calls read were
+                    // read in an EARLIER playthrough, which is the seen-any-game set and the
+                    // profile's to say.
                     ..Default::default()
                 },
             },
@@ -910,11 +783,47 @@ where
         // so a row pays what a player's menu pays for it. See `bridge::walkable_menu`.
         let (trimmed, shape) =
             lookahead_engine::bridge::walkable_menu(graph, &mut compiler, starts);
-        let reachable_novelty = trimmed.novelty(novelty);
+        // THE ONE RULE, off the world just built and the set the profile supplied - see
+        // `world::seen_state`.
+        let whole_novelty = lookahead_engine::world::seen_states(&world, seen_any_game);
+        let reachable_novelty = trimmed.novelty(&whole_novelty);
         let novelty = &reachable_novelty;
         let graph = &trimmed.graph;
         let setup = began.elapsed();
         let layout = built_layout;
+
+        // WHAT THE MARKING ACTUALLY HUNTS, counted AFTER the trim and outside the timing. A
+        // scenario is a claim about the seen states, and the row cannot say which claim it made
+        // - every row is the same shape. Counting BEFORE `walkable_menu` counts a graph the
+        // marking never sees, so a row could announce ten entries unseen anywhere and hunt none
+        // of them. See de-rnrb.
+        //
+        // OUT OF REACH IS COUNTED APART FROM READ, because `Trimmed::novelty` reads an entry the
+        // request cannot arrive at as seen-this-game - which is right for the marking and wrong
+        // for a reader. Adding the two together would report a save that has read hundreds of
+        // entries beside a world whose seen set is empty.
+        {
+            let mut any_game = 0;
+            let mut this_game = 0;
+            let mut seen = 0;
+            let mut out_of_reach = 0;
+            for node in graph.nodes() {
+                if !trimmed.reachable.contains(&node.id) {
+                    out_of_reach += 1;
+                    continue;
+                }
+                match novelty(node.id) {
+                    Novelty::UnseenAnyGame => any_game += 1,
+                    Novelty::UnseenThisGame => this_game += 1,
+                    Novelty::SeenThisGame => seen += 1,
+                }
+            }
+            eprintln!(
+                "conversation {conversation}: {any_game} unseen-any-game, {this_game} \
+                 unseen-this-game, {seen} seen-this-game, and {out_of_reach} this menu cannot \
+                 reach"
+            );
+        }
 
         // WHAT THE PLUGIN ASKS FOR, taken from the product rather than restated here, so a
         // change to the shipped budget moves this row with it.

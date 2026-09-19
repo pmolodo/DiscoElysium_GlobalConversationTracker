@@ -52,7 +52,7 @@ Checked against the code rather than trusted, by `tests/environment_table.rs`: i
 tracked file for a variable spelled out in full or asked for by bare name through the helper for
 its language, compares what it finds with the rows below and with the count in this sentence,
 and fails with the block to paste. So a stale table is a failing test rather than a reader
-looking for a variable that has been renamed. 51 variables.
+looking for a variable that has been renamed. 50 variables.
 
 A TEST RATHER THAN A GENERATOR because what is wanted is enforcement: a build script that
 rewrote this file would dirty the working tree on every build, which every measurement's log
@@ -95,7 +95,6 @@ forgotten.
 | `DEGCT_SCATTER` | `performance/onward_or_back.rs` |
 | `DEGCT_SEARCHES` | `performance/search_residue.rs`, `tools/measure-residue-arms.sh` |
 | `DEGCT_SEARCH_MS` | `performance/repeat_question.rs` |
-| `DEGCT_SEEN_WORLD` | `performance/greedy_playthrough.rs`, `performance/menu_matrix.rs` |
 | `DEGCT_SETTLE_FACTOR` | `tools/measure-menus.py`, `tools/measurement_common.py` |
 | `DEGCT_SETTLE_GROUPS` | `tools/measure-menus.py`, `tools/measurement_common.py` |
 | `DEGCT_SETTLE_MS` | `tools/measure-menus.py`, `tools/measurement_common.py` |

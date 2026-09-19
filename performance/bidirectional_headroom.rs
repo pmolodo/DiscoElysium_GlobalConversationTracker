@@ -364,12 +364,12 @@ fn wanted_target(graph: &LookAheadGraph, profile: &MenuProfile) -> DialogueNodeI
             entry.trim().parse().expect("an entry number"),
         );
     }
-    let novelty = profile.novelty();
+    // WHAT THE PROFILE CALLS UNREAD ANYWHERE, asked of the profile rather than of a seen state.
+    // A seen state needs a world as well - see `world::seen_state` - and this wants the
+    // profile's own assertion, which is the set it was built around.
     graph
         .nodes()
-        .filter(|n| {
-            !n.is_group && novelty(n.id) > lookahead_engine::core::types::Novelty::SeenThisGame
-        })
+        .filter(|n| !n.is_group && profile.unseen.contains(&n.id))
         .map(|n| n.id)
         .min_by_key(|id| (id.conversation_id, id.entry_id))
         .expect("the profile marks something unread")

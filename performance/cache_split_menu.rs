@@ -161,7 +161,7 @@ fn main() {
             eprintln!("conversation {conversation}: every start would be refused; skipping.");
             continue;
         };
-        let novelty = profile.novelty();
+        let seen_any_game = profile.seen_any_game();
 
         println!(
             "conversation {conversation}: {} entries, {} starts",
@@ -176,7 +176,7 @@ fn main() {
         let mut best: Option<(usize, Duration)> = None;
         for &split in &splits {
             let budget = DiagramBudget::new(budget_mb * 1024 * 1024).with_cache_split(split);
-            let Some((took, found)) = menu(&graph, &profile.starts, &novelty, budget) else {
+            let Some((took, found)) = menu(&graph, &profile.starts, &seen_any_game, budget) else {
                 println!("  {:>7}  no room for the manager", format!("1/{split}"));
                 continue;
             };
@@ -219,11 +219,13 @@ fn main() {
 fn menu<F>(
     graph: &LookAheadGraph,
     starts: &[DialogueNodeId],
-    novelty: &F,
+    seen_any_game: &F,
     budget: DiagramBudget,
 ) -> Option<(Duration, usize)>
 where
-    F: Fn(DialogueNodeId) -> Novelty + Sync,
+    // THE SET, NOT A CLASSIFIER: the world is the other half of what decides a seen state and
+    // it is built below. See `world::seen_state`.
+    F: Fn(DialogueNodeId) -> bool + Sync,
 {
     isolated::on_its_own_thread(|| {
         let symbols = graph.symbols().clone();
@@ -235,6 +237,7 @@ where
             },
             None,
         );
+        let novelty = &lookahead_engine::world::seen_states(&world, seen_any_game);
         let layout = DataLayout::for_group(graph, &world, COUNTER_CAP);
         let vars = DataVars::try_new(&layout, &symbols, budget)?;
         let mut compiler = GuardCompiler::new(&vars)

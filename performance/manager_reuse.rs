@@ -218,7 +218,8 @@ fn main() {
                 .with_world(&world)
                 .with_constant_clock(DataLayout::group_passes_time(&graph));
             let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
-            let novelty = profile.novelty();
+            // THE ONE RULE, off this world and the profile's set - see `world::seen_state`.
+            let novelty = lookahead_engine::world::seen_states(&world, profile.seen_any_game());
 
             // THE WHOLE MENU IN ONE CALL, which is what a request is. This asked the options
             // one at a time until the per-option path was deleted.

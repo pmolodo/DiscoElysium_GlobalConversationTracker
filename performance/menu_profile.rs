@@ -36,20 +36,18 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::graph::LookAheadGraph;
 
-/// A menu to ask about: which entries the player has seen, at which of the game's two scopes,
-/// and which starts to ask.
+/// A menu to ask about: what the player has seen ACROSS PLAYTHROUGHS, and which starts to ask.
 ///
-/// TWO SETS BECAUSE THE GAME HAS TWO SCOPES, and they are not the same question - see
-/// `bridge::answer`, which takes `unseen_any_game` and `unseen_this_game` as separate inputs.
-/// Global state says what this player has ever seen, across every playthrough; save state says
-/// what THIS game has displayed, and is what fires a `once`. A veteran player on a fresh save
-/// has seen almost everything globally and nothing at all this game.
+/// HALF OF THE TWO FACTS, and only half on purpose. The game has two scopes and they are not the
+/// same question. What THIS game has displayed is the WORLD'S to say - it is the save's own
+/// record and it is what fires a `once` - so a profile does not carry it and cannot contradict
+/// it. What ANY game has displayed is this, standing in for the global conversation state.
+/// `world::seen_state` is where the two meet, and it is the only place the three states are
+/// decided.
 pub struct MenuProfile {
-    /// Never seen in ANY game, which is the highest novelty there is.
+    /// Never seen in ANY game, which is the highest novelty there is. Its complement is the
+    /// seen-any-game set - see [`MenuProfile::seen_any_game`].
     pub unseen: HashSet<DialogueNodeId>,
-    /// What THIS save has displayed. Empty for a save that has not opened the conversation.
-    /// Everything in neither set has been seen before but not this game.
-    pub seen_this_game: HashSet<DialogueNodeId>,
     /// Starts that can reach something unseen, shallowest first - which is what an option in a
     /// response menu is: an entry with the group's depth still in front of it.
     pub starts: Vec<DialogueNodeId>,
@@ -86,41 +84,16 @@ impl MenuProfile {
             .take(starts_wanted)
             .collect();
 
-        let seen_this_game = everything_but(graph, &unseen);
-        (!starts.is_empty()).then_some(Self {
-            unseen,
-            seen_this_game,
-            starts,
-        })
+        (!starts.is_empty()).then_some(Self { unseen, starts })
     }
 
-    /// The novelty function this profile describes.
-    /// THE SAME THREE-LEVEL RULE `bridge::answer` APPLIES, off the same two sets, so a measured
-    /// row ranks options the way a request does rather than by a flattened stand-in.
-    pub fn novelty(
-        &self,
-    ) -> impl Fn(DialogueNodeId) -> lookahead_engine::core::types::Novelty + '_ {
-        use lookahead_engine::core::types::Novelty;
-        move |id| {
-            if self.unseen.contains(&id) {
-                Novelty::UnseenAnyGame
-            } else if self.seen_this_game.contains(&id) {
-                Novelty::SeenThisGame
-            } else {
-                Novelty::UnseenThisGame
-            }
-        }
-    }
-
-    /// The same profile with NOTHING SEEN THIS GAME: a save that has never opened this
-    /// conversation, so no `once` has fired and no `seen` slot is set.
+    /// What the global conversation state holds: every entry some playthrough has shown.
     ///
-    /// What was `SeenThisGame` becomes `UnseenThisGame` - seen in an earlier playthrough, not in
-    /// this one - which is a state a player can be in and the one in which the most one-time
-    /// effects are still pending.
-    pub fn on_a_fresh_save(mut self) -> Self {
-        self.seen_this_game.clear();
-        self
+    /// HALF OF WHAT DECIDES A SEEN STATE, and it is handed to `world::seen_state` beside the
+    /// world rather than turned into one here. A profile that answered with a state of its own
+    /// would be a second rule, and a row could then assert one the world disagrees with.
+    pub fn seen_any_game(&self) -> impl Fn(DialogueNodeId) -> bool + '_ {
+        move |id| !self.unseen.contains(&id)
     }
 }
 
@@ -225,11 +198,9 @@ pub fn first_menu_profile(
     }
 
     Some(Walked {
-        profile: MenuProfile {
-            seen_this_game: seen.iter().copied().collect(),
-            unseen,
-            starts,
-        },
+        // WHAT THE WALK SHOWED IS THE WORLD'S, and it travels as `seen` below rather than in
+        // the profile, so there is one statement of it - see `world::seen_state`.
+        profile: MenuProfile { unseen, starts },
         world: Default::default(),
         variables: variables_of(graph, world, &at.state),
         seen,
@@ -383,17 +354,11 @@ pub fn walked_profile(
         // EMPTY UNTIL THE CALLER FILLS IT, since building one needs the save this walk was
         // taken against and that is the caller's to name.
         world: Default::default(),
-        profile: MenuProfile {
-            // WHAT THE WALK PUT ON SCREEN, which is what this save has displayed - the same set
-            // the caller hands the world as `world.seen`. Taking "everything not singled out as
-            // unseen" instead made the novelty function and the world disagree about the same
-            // question, and left the middle level unreachable: every entry was either globally
-            // new or read this game, and an entry the walk never reached was called read. See
-            // de-ij9d and de-mo4q.
-            seen_this_game: seen.iter().copied().collect(),
-            unseen,
-            starts,
-        },
+        // WHAT THE WALK PUT ON SCREEN IS WHAT THIS SAVE HAS DISPLAYED, and it travels as `seen`
+        // below, which the caller hands the world. The profile says only what ANY game has
+        // shown, so the two cannot disagree about one question - see `world::seen_state`, and
+        // de-ij9d and de-mo4q for what it cost when they could.
+        profile: MenuProfile { unseen, starts },
         variables: variables_of(graph, world, &state),
         seen,
         shown: stop_at,
@@ -454,23 +419,6 @@ fn variables_of(
         found.insert(name.to_string(), wire);
     }
     found
-}
-
-/// Every entry of the group that is not in `unseen`.
-///
-/// WHAT THE PROFILES TAKEN BEFORE THREE-LEVEL NOVELTY MEANT: anything not singled out as unseen
-/// counted as seen this game. It is kept for those profiles so the rows already measured stay
-/// comparable, and it is not what a real save looks like - an entry no play has reached is not
-/// one the player has read. See de-ij9d.
-fn everything_but(
-    graph: &LookAheadGraph,
-    unseen: &HashSet<DialogueNodeId>,
-) -> HashSet<DialogueNodeId> {
-    graph
-        .nodes()
-        .map(|node| node.id)
-        .filter(|id| !unseen.contains(id))
-        .collect()
 }
 
 /// Every entry reachable from `start` by links, deepest first.

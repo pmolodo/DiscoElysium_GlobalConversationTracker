@@ -664,7 +664,6 @@ COMPARED_VARIABLES = frozenset(
         "NO_CACHE",
         "CACHE_VERIFY",
         "NOLIMIT",
-        "SEEN_WORLD",
         "STARTS",
         "WALKED_PROFILE",
         "UNSEEN",

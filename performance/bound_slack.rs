@@ -110,7 +110,7 @@ use std::collections::HashSet;
 
 use lookahead_engine::bridge::{SnapshotWorld, WorldSnapshot};
 use lookahead_engine::core::guard::GuardExpression;
-use lookahead_engine::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, StartBranch};
+use lookahead_engine::core::types::{DialogueCheckKind, DialogueNodeId, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::backward::Position;
@@ -235,10 +235,11 @@ fn report(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budg
         refused.hidden_test, refused.passive_fails, refused.guard_empty
     );
 
-    let novelty = profile.novelty();
+    // WHAT THE PROFILE CALLS UNREAD ANYWHERE. A seen state is decided from a world as well -
+    // see `world::seen_state` - and the targets here are the profile's own assertion.
     let mut targets: Vec<_> = graph
         .nodes()
-        .filter(|n| !n.is_group && novelty(n.id) > Novelty::SeenThisGame)
+        .filter(|n| !n.is_group && profile.unseen.contains(&n.id))
         .map(|n| n.id)
         .collect();
     targets.sort_by_key(|id| (id.conversation_id, id.entry_id));

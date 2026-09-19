@@ -85,7 +85,7 @@ use crate::bridge::{
     COUNTER_CAP, LookAheadAnswer, LookAheadRequest, Questions, SnapshotWorld, WorldSnapshot,
     answer_starts,
 };
-use crate::core::types::{DialogueNodeId, Novelty};
+use crate::core::types::DialogueNodeId;
 use crate::graph::{Fitting, LookAheadGraph};
 use crate::index::VariableTable;
 use crate::symbolic::budget::DiagramBudget;
