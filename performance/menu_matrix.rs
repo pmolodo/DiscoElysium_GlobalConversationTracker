@@ -282,7 +282,8 @@ const NOLIMIT_TIME: Duration = Duration::from_secs(300);
 /// several paragraphs about why a struct is shaped the way it is.
 #[derive(clap::Parser, Debug, Clone)]
 #[command(
-    about = "One row per group: what a whole menu costs and what it marks.",
+    about = "One row per group: what a whole menu costs and what it marks. \
+             With no group named, this driver's own heavy list.",
     long_about = None
 )]
 struct Options {

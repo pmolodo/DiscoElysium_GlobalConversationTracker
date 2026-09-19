@@ -41,6 +41,9 @@ use oxidd::{BooleanFunctionQuant, Function};
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+#[path = "options.rs"]
+mod options;
+
 const COUNTER_CAP: i32 = 16;
 
 const EXPENSIVE: [i32; 5] = [368, 631, 14, 28, 1030];
@@ -48,14 +51,12 @@ const EXPENSIVE: [i32; 5] = [368, 631, 14, 28, 1030];
 /// How many of the group's own entries to try before settling on the worst.
 const PROBES: usize = 24;
 
-fn conversations(default: &[i32]) -> Vec<i32> {
-    match lookahead_engine::core::env::var("CONVERSATION") {
-        Ok(named) => named
-            .split(',')
-            .filter_map(|id| id.trim().parse().ok())
-            .collect(),
-        Err(_) => default.to_vec(),
-    }
+/// What this driver takes. With no group named it uses the list below.
+#[derive(clap::Parser)]
+#[command(about = "What a backward pass carries, group by group.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
 }
 
 /// What kind of thing a slot is, by the prefix the symbol table gave it.
@@ -93,13 +94,14 @@ fn depths(graph: &LookAheadGraph, start: DialogueNodeId) -> HashMap<DialogueNode
 }
 
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::conversation_index() else {
         return;
     };
     let index = read_index(&path).expect("the index reads");
     let world = common::measurement_save();
 
-    for conversation in conversations(&EXPENSIVE) {
+    for conversation in asked.groups.or(&EXPENSIVE) {
         let Ok((graph, _)) = build_group_graph(&index, conversation) else {
             continue;
         };

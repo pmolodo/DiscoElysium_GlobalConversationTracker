@@ -30,6 +30,9 @@ use lookahead_engine::symbolic::data_layout::{DataLayout, counters_from_onces};
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+#[path = "options.rs"]
+mod options;
+
 /// What kind of state a slot holds, read off the prefix its name was interned with.
 ///
 /// The prefixes are `core::state`'s and are how a slot's class is known at all - a slot is an
@@ -53,18 +56,25 @@ fn class_of(name: &str) -> &'static str {
     "variable"
 }
 
+/// What this driver takes. A group is required: it lists one group's slots, so there is nothing
+/// to fall back to.
+#[derive(clap::Parser)]
+#[command(about = "What one group's layout holds, slot by slot.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+}
+
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;
     };
     let index = read_index(&path).expect("the index reads");
     let world = common::measurement_save();
-    let Some(conversation) = lookahead_engine::core::env::var("CONVERSATION")
-        .ok()
-        .and_then(|value| value.trim().parse::<i32>().ok())
-    else {
-        eprintln!("name a group with DEGCT_CONVERSATION.");
+    let Some(conversation) = asked.groups.conversations.first().copied() else {
+        eprintln!("name a group with --conversation.");
         return;
     };
 

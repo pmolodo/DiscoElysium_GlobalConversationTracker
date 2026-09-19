@@ -48,6 +48,12 @@
 //! be here as soon as one of them is converted; writing it before then would be a struct with no
 //! caller, which is the thing that had to be deleted from the C# side of this same epic.
 
+// EACH DRIVER COMPILES THIS FILE OF ITS OWN, through `#[path]`, so a group one driver does not
+// embed - or a helper it does not call - is dead code in that driver and live in the next.
+// `tests/common/mod.rs`, `prepared.rs` and `save_world.rs` are shared the same way and say the
+// same thing.
+#![allow(dead_code)]
+
 use clap::Args;
 
 /// WHICH GROUPS a run measures.
@@ -57,7 +63,10 @@ use clap::Args;
 /// the fallback, and the help says so because `clap` cannot print it.
 #[derive(Args, Debug, Clone)]
 pub struct Groups {
-    /// Which groups to measure; repeat or comma-separate. Defaults to this driver's own list.
+    // WHAT NOTHING NAMED MEANS IS THE DRIVER'S, so the help here does not claim it: one driver
+    // falls back to a list of its own, another sweeps every group in the game. Each says which in
+    // its own `about`.
+    /// Which groups to measure; repeat the flag or comma-separate the ids
     #[arg(long = "conversation", value_name = "ID", value_delimiter = ',')]
     pub conversations: Vec<i32>,
 }

@@ -41,6 +41,9 @@ use lookahead_engine::symbolic::data_layout::{DataLayout, counters_from_onces};
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+#[path = "options.rs"]
+mod options;
+
 /// The layout `DataLayout::for_group` builds, minus the step that drops these counters.
 ///
 /// THE ONLY WAY TO PRICE WHAT ONE COSTS, since the shipped layout drops them as it builds and
@@ -81,16 +84,23 @@ fn relation_reach(
     (last - first + 1, layout.total_vars())
 }
 
+/// What this driver takes. With no group named it sweeps every one in the game.
+#[derive(clap::Parser)]
+#[command(about = "Which counters a group carries that nothing reads back.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+}
+
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;
     };
     let index = read_index(&path).expect("the index reads");
     let world = common::measurement_save();
-    let named = lookahead_engine::core::env::var("CONVERSATION")
-        .ok()
-        .and_then(|value| value.trim().parse::<i32>().ok());
+    let named = asked.groups.conversations.first().copied();
 
     let starts: Vec<i32> = match named {
         Some(one) => vec![one],

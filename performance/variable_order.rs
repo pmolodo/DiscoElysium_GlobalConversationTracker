@@ -21,8 +21,8 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_CONVERSATION=761 tools/run-logged.sh --kind analysis cargo var-order -- \
-//!   cargo run --release --example variable_order
+//! tools/run-logged.sh --kind analysis cargo var-order -- \
+//!   cargo run --release --example variable_order -- --conversation 761
 //! ```
 //!
 //! With no conversation named it sweeps every group, which is how to tell whether an ordering
@@ -35,6 +35,20 @@ use lookahead_engine::symbolic::var_order::{Ordering, span};
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+#[path = "options.rs"]
+mod options;
+
+/// What this driver takes. With no group named it sweeps every one, which is how to tell whether
+/// an ordering helps generally or only where somebody went looking.
+#[derive(clap::Parser)]
+#[command(
+    about = "How far a group's constraints reach under each variable ordering; with no group named, every group in the game."
+)]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+}
+
 /// The orderings to report, in the column order they are printed in.
 const ORDERINGS: [(&str, Ordering); 4] = [
     ("slot", Ordering::Slot),
@@ -44,15 +58,14 @@ const ORDERINGS: [(&str, Ordering); 4] = [
 ];
 
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;
     };
     let index = read_index(&path).expect("the index reads");
     let world = common::measurement_save();
-    let named = lookahead_engine::core::env::var("CONVERSATION")
-        .ok()
-        .and_then(|value| value.trim().parse::<i32>().ok());
+    let named = asked.groups.conversations.first().copied();
 
     let starts: Vec<i32> = match named {
         Some(one) => vec![one],

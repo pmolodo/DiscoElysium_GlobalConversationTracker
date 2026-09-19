@@ -31,7 +31,7 @@
 # read as a conversation, so the stage is optional and order still reads naturally.
 set -u
 
-MEASUREMENT="${1:-symbolic_answers}"
+DEGCT_MEASUREMENT="${1:-symbolic_answers}"
 shift || true
 
 # An argument that is not a number is the stage to run; conversations are numbers.
@@ -71,8 +71,14 @@ for conversation in "${CONVERSATIONS[@]}"; do
     log="${DEGCT_LOG_DIR}/${DEGCT_RUN_NAME}-${conversation}.log"
     echo "=== conversation ${conversation} ==="
 
+    # BOTH WAYS, FOR AS LONG AS THE DRIVERS DISAGREE. A converted driver takes
+    # `--conversation`; one that has not been converted yet still reads DEGCT_CONVERSATION and
+    # ignores an argument it does not parse. Naming the group only one way would measure the
+    # wrong groups silently on whichever half is not yet converted. The variable goes when the
+    # last driver takes the flag - de-3dx9.4.3.
     DEGCT_CONVERSATION="${conversation}" cargo run --release --quiet \
-        --example "${DEGCT_MEASUREMENT}" ${STAGE:+-- "$STAGE"} >"${log}" 2>&1
+        --example "${DEGCT_MEASUREMENT}" -- ${STAGE:+"$STAGE"} \
+        --conversation "${conversation}" >"${log}" 2>&1
     status=$?
 
     # A crash is a data point, not a reason to stop. Report how it died and carry on.

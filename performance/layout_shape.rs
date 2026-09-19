@@ -52,6 +52,36 @@ use lookahead_engine::symbolic::data_layout::DataLayout;
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+#[path = "options.rs"]
+mod options;
+
+/// Whose slots the listing shows when no group is named: a group small enough to read whole.
+const DEFAULT_SLOT_GROUP: i32 = 14;
+
+/// What this driver takes: which report, and which group the slot listing is of.
+#[derive(clap::Parser)]
+#[command(
+    about = "What a group's layout holds: a summary over every group, or one group's slots.",
+    long_about = None
+)]
+struct Options {
+    /// Which report to print
+    #[arg(value_enum, default_value_t = Report::Groups)]
+    report: Report,
+
+    #[command(flatten)]
+    groups: options::Groups,
+}
+
+/// Which of the two reports a run prints.
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum Report {
+    /// A line per group: how many slots it carries and of what kind
+    Groups,
+    /// One group's slots, listed
+    Slots,
+}
+
 /// TWO MEASUREMENTS IN ONE EXAMPLE, chosen by argument, because they share the classifier.
 ///
 /// An example is one file with one `main`, so the alternative was two files - and the two
@@ -60,13 +90,10 @@ mod common;
 /// summary is drawn from, so splitting them apart from it is the one arrangement that
 /// would defeat the point of having it.
 fn main() {
-    match std::env::args().nth(1).as_deref() {
-        None | Some("groups") => what_each_group_carries(),
-        Some("slots") => list_the_slots(),
-        Some(other) => {
-            eprintln!("unknown argument {other:?}; expected 'groups' (the default) or 'slots'");
-            std::process::exit(2);
-        }
+    let asked = <Options as clap::Parser>::parse();
+    match asked.report {
+        Report::Groups => what_each_group_carries(),
+        Report::Slots => list_the_slots(asked.groups.conversations.first().copied()),
     }
 }
 
@@ -817,12 +844,9 @@ fn what_each_group_carries() {
 /// classifier. This prints the slots themselves so the claim can be read rather than
 /// trusted.
 ///
-/// `DEGCT_CONVERSATION=14 cargo run --release --example layout_shape -- slots`
-fn list_the_slots() {
-    let conversation: i32 = lookahead_engine::core::env::var("CONVERSATION")
-        .ok()
-        .and_then(|v| v.trim().parse().ok())
-        .unwrap_or(14);
+/// `cargo run --release --example layout_shape -- slots --conversation 14`
+fn list_the_slots(named: Option<i32>) {
+    let conversation = named.unwrap_or(DEFAULT_SLOT_GROUP);
 
     let Some(path) = common::conversation_index() else {
         eprintln!("no conversation index; skipping.");

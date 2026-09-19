@@ -57,7 +57,7 @@
 //!   cargo run --release --example counter_widths
 //! ```
 //!
-//! `DEGCT_CONVERSATION=631,368` picks the groups.
+//! `--conversation 631,368` picks the groups.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -71,8 +71,19 @@ use lookahead_engine::world::ILookAheadWorld;
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+#[path = "options.rs"]
+mod options;
+
 /// The six heaviest groups, which is where a wide slot would live if one does.
 const GROUPS: [i32; 6] = [362, 368, 631, 14, 28, 1030];
+
+/// What this driver takes. With no group named it uses the six above.
+#[derive(clap::Parser)]
+#[command(about = "What each counter slot would cost under each of the three encodings.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+}
 
 /// The counter cap every layout in this repository is built with.
 const COUNTER_CAP: i32 = 16;
@@ -254,6 +265,8 @@ impl Counter {
 }
 
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
+    let groups = asked.groups.or(&GROUPS);
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;
@@ -286,7 +299,7 @@ fn main() {
     // being one of the candidates at all.
     let mut writer_wins = 0;
 
-    for conversation in numbers("CONVERSATION", &GROUPS) {
+    for conversation in groups.iter().copied() {
         let Ok((graph, _)) = build_group_graph(&index, conversation) else {
             continue;
         };
@@ -458,7 +471,7 @@ fn main() {
          anything, so this is\n  the whole of what the standardisation is worth.",
         bits_today - bits_best,
     );
-    money_report(&index, &world);
+    money_report(&index, &world, &groups);
 
     println!(
         "\nTHE WRITER ENCODING WINS OUTRIGHT ON {writer_wins} SLOT(S) IN THIS DIALOGUE SET, and \
@@ -493,7 +506,11 @@ fn main() {
 /// gain: `bits_for(gained / gcd)`. The delta is a property of the group's actions and the gcd
 /// of its amounts, so neither depends on how much the player happens to be carrying - which is
 /// what keeps the layout world-independent and the workspace's key intact.
-fn money_report(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWorld) {
+fn money_report(
+    index: &lookahead_engine::index::Index,
+    world: &dyn ILookAheadWorld,
+    groups: &[i32],
+) {
     println!("\nMONEY, which is the slot the sneakers-and-speakers case actually lives in\n");
     println!(
         "{:>6}  {:>10}  {:>10}  {:>8}  {:>6}  {:>6}  {:>6}  {:>6}",
@@ -502,7 +519,7 @@ fn money_report(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWo
 
     let mut today_total = 0u32;
     let mut scaled_total = 0u32;
-    for conversation in numbers("CONVERSATION", &GROUPS) {
+    for conversation in groups.iter().copied() {
         let Ok((graph, _)) = build_group_graph(index, conversation) else {
             continue;
         };
@@ -577,21 +594,4 @@ fn money_report(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWo
          the groups measured.",
         today_total as i32 - scaled_total as i32,
     );
-}
-
-/// A comma-separated list from the environment, or the default written down here.
-fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
-    match lookahead_engine::core::env::var(name) {
-        Ok(named) => named
-            .split(',')
-            .map(str::trim)
-            .filter(|piece| !piece.is_empty())
-            .map(|piece| {
-                piece
-                    .parse()
-                    .unwrap_or_else(|_| panic!("{name}={piece:?} is not a number"))
-            })
-            .collect(),
-        Err(_) => fallback.to_vec(),
-    }
 }

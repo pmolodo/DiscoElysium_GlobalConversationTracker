@@ -33,7 +33,7 @@ would be a distinction nobody remembers:
   kept because it is where a structural precomputation would live if one ever pays; run it
   when something wants the answer, and delete what it wrote afterwards.
 - `guard_snapshot.rs` is a SNAPSHOT. It dumps every parsed guard to the file named by
-  `GUARD_SNAPSHOT`, to be run on both sides of a parser change and diffed. Identical output
+  `--out`, to be run on both sides of a parser change and diffed. Identical output
   over 26,210 guards is the equivalence claim; a diff is the list that changed meaning.
   NOTHING RUNS IT ON A SCHEDULE - it is reached for when the parser is about to move, and
   it is the person making that change who has to remember it.
@@ -57,8 +57,8 @@ log to read afterwards:
 
     tools/run-logged.sh cargo answers -- cargo run --release --example symbolic_answers
 
-    DEGCT_CONVERSATION=14 \
-      tools/run-logged.sh cargo slots -- cargo run --release --example layout_shape -- slots
+    tools/run-logged.sh cargo slots -- \
+      cargo run --release --example layout_shape -- slots --conversation 14
 
 Several take an argument, and it selects a stage rather than a setting. `layout_shape`
 takes `groups` (the default), which counts the slot classes per group, or `slots`, which

@@ -28,9 +28,17 @@ use lookahead_engine::parser::guard_parser::parse_guard;
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+/// What this driver takes: where to write the snapshot.
+#[derive(clap::Parser)]
+#[command(about = "Write every group's compiled guards to a file, to diff against another run's.")]
+struct Options {
+    /// The file to write the snapshot to
+    #[arg(long, value_name = "PATH")]
+    out: String,
+}
+
 fn main() {
-    let out = lookahead_engine::core::env::var("GUARD_SNAPSHOT")
-        .expect("set GUARD_SNAPSHOT to the file to write");
+    let out = <Options as clap::Parser>::parse().out;
     let Some(path) = common::conversation_index() else {
         panic!("no conversation index, so there is nothing to snapshot");
     };
