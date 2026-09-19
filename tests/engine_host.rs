@@ -186,6 +186,25 @@ fn the_host_answers_what_the_service_answers() {
     host.finish();
 }
 
+/// One look-ahead's bytes, with how long it took taken out.
+///
+/// COMPARED AS BYTES ON PURPOSE, and that is worth keeping: encoding both sides and comparing
+/// the result catches a field that crosses under the wrong NUMBER, which a comparison written
+/// field by field cannot - it would read each one by the name this side gives it and agree
+/// with itself.
+///
+/// EVERYTHING IN AN ANSWER IS DETERMINISTIC EXCEPT THE TIME. The two sides run the same search
+/// twice, so one can take a millisecond where the other takes none, and `elapsed_ms` is the
+/// one field that then differs - a zero is not encoded at all, so the bytes differ by its
+/// whole tag. Zeroing it keeps the comparison and drops the only thing in it that is about the
+/// machine rather than the answer. See de-ujm9, where this failed a full suite twice.
+fn untimed(mut answer: wire::LookAheadResponse) -> Vec<u8> {
+    for one in &mut answer.answers {
+        one.elapsed_ms = 0;
+    }
+    answer.encode_to_vec()
+}
+
 /// A whole look-ahead, over the pipe, against the same one run here.
 ///
 /// The only request whose body is big and whose answer is bigger, so it is the one that
@@ -231,8 +250,8 @@ fn a_look_ahead_crosses_and_comes_back_the_same() {
         let answered_here =
             here.answer_request(wire_convert::read_look_ahead(request).expect("the request reads"));
         assert_eq!(
-            crossed.look_ahead.map(|answer| answer.encode_to_vec()),
-            Some(wire_convert::write_look_ahead(answered_here).encode_to_vec()),
+            crossed.look_ahead.map(untimed),
+            Some(untimed(wire_convert::write_look_ahead(answered_here))),
             "look-ahead for {conversation}",
         );
     }
