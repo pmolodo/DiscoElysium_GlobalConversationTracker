@@ -2053,6 +2053,35 @@ fn weight_of(weigh: Weigh, carry: &HashMap<DialogueNodeId, BDDFunction>) -> usiz
 /// cent more (de-2knp). A front's node count is what this steers by, and it is a poor proxy for
 /// what a front costs to grow.
 ///
+/// ## IT IS NOT THE SWITCHING, MEASURED
+///
+/// The obvious reading of those three inversions is that alternating between two fronts is
+/// itself what costs: each swap leaves the other side's sets, node table and computed-table
+/// cache cold, and a measure that changes its mind more often would then look better by nodes
+/// and run worse by the clock. If that held, the fix would not be a better size estimate at
+/// all - it would be hysteresis, holding a side until the other is some factor lighter rather
+/// than swapping the moment it ties.
+///
+/// Measured 2026-09-19 on 761, `synthetic-menu`, limits off, pooled rounds on, by holding the
+/// side being grown until the other was lighter by the ratio shown:
+///
+/// ```text
+///   hold until           1.0x      1.5x      2.0x      4.0x      8.0x
+///   nodes-weighted      8,851 ms  9,549 ms 10,106 ms 11,019 ms 12,825 ms
+///     its nodes          6.44 M    6.43 M    6.43 M    7.97 M    8.89 M
+///   entries-weighted   16,412 ms 16,251 ms 16,085 ms 16,583 ms 15,183 ms
+/// ```
+///
+/// SWAPPING MORE OFTEN IS BETTER, NOT WORSE. Holding a side costs 45 per cent by the clock on
+/// the arm that is sensitive to it, monotonically, and carries 38 per cent more diagram nodes
+/// while doing it; the other arm does not move outside its own noise. Alternation is not
+/// overhead the scheduler pays - it is what keeps the two fronts balanced, and an unbalanced
+/// pair is dearer on both counts at once.
+///
+/// So the inversions want some other explanation, and a better estimate of what a front costs
+/// to GROW - the operations the next layer will take, rather than the size of the result it
+/// already holds - is the question left standing. See de-t329.
+///
 /// The default stays [`Self::Nodes`], which is what the pooled search has always used, because
 /// the pooled search is itself opt-in - see `symbolic::menu::pooled_rounds` - and where it IS
 /// used today is the deep profile that nodes wins. If it ever becomes the default, this should
