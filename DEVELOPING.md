@@ -346,12 +346,12 @@ non-zero unless `-Force` was given. Nothing is ever written into the game folder
 
 The manifest also records what the run *was*, not just that the log belongs to it:
 
-| Field | What it is |
-| --- | --- |
-| `pluginCommit`, `pluginTreeDirty`, `pluginBuildVersion` | read out of the installed `GlobalConversationTracker.dll`'s own `ProductVersion` (see `build.ps1` above) |
-| `pluginDir`, `pluginFiles` | every file installed in `<game>\BepInEx\plugins\GlobalConversationTracker` with size, write time and md5 - which covers the optional `articy_ids_final_cut.json` without naming it |
-| `route` | the source named in the log's `Resynced the global state from the running game (...)` line |
-| `envelopeOperation`, `averageEnvelopeMs`, `envelopeCallCount` | the run's final `Average envelope for <op>` figure, so runs can be compared without re-parsing logs |
+| Field                                                         | What it is                                                                                                                                                                         |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pluginCommit`, `pluginTreeDirty`, `pluginBuildVersion`       | read out of the installed `GlobalConversationTracker.dll`'s own `ProductVersion` (see `build.ps1` above)                                                                           |
+| `pluginDir`, `pluginFiles`                                    | every file installed in `<game>\BepInEx\plugins\GlobalConversationTracker` with size, write time and md5 - which covers the optional `articy_ids_final_cut.json` without naming it |
+| `route`                                                       | the source named in the log's `Resynced the global state from the running game (...)` line                                                                                         |
+| `envelopeOperation`, `averageEnvelopeMs`, `envelopeCallCount` | the run's final `Average envelope for <op>` figure, so runs can be compared without re-parsing logs                                                                                |
 
 Each is recorded when present and left `null` when not; a log from a build that stamped
 nothing is a fact worth recording rather than a failure. Two warnings come out of this:
@@ -423,10 +423,10 @@ dotnet run --project tools/GameHarness/GameHarness.csproj -- look-ahead
 neither is ours to modify:
 
 ```bash
-tools/run-logged.sh --kind test cargo corpus -- cargo test --test corpus
-tools/run-logged.sh --kind test dotnet unit -- dotnet test
+tools/run-logged.sh --kind testing cargo corpus -- cargo test --test corpus
+tools/run-logged.sh --kind testing dotnet unit -- dotnet test
 DISCO_ELYSIUM_GCT_INGAME_TESTS=1 \
-  tools/run-logged.sh --kind test dotnet in-game -- dotnet test tools/GameAutomation.Tests
+  tools/run-logged.sh --kind testing dotnet in-game -- dotnet test tools/GameAutomation.Tests
 ```
 
 It tees, so a long run can still be watched, and it exits with the command's own status.
@@ -435,6 +435,39 @@ The naming is written out twice - `tools/GameAutomation/RunLog.cs` for the runs 
 call it, `tools/run-logged.sh` for the ones that cannot, since the script has to work
 before anything is built and the harness has to work without a shell. `RunLogTests` runs
 both and fails if they disagree.
+
+## Two ways to run the tests
+
+**Before committing, the whole suite, and that has not changed:**
+
+```bash
+tools/run-logged.sh --kind testing cargo full-suite -- cargo test --release
+```
+
+**While iterating, every unit test and only those:**
+
+```bash
+tools/smoke.sh
+```
+
+Measured 2026-09-19, by touching a library source and asking for a verdict:
+
+| what was run                      | edit to verdict | what it covers                   |
+| --------------------------------- | --------------- | -------------------------------- |
+| `tools/smoke.sh` - debug, `--lib` | 6 s             | 471 unit tests                   |
+| release, `--lib`                  | 58 s            | the same 471                     |
+| `cargo test --release`            | 4m50s           | 46 binaries, 57 s of it in tests |
+
+Picking fewer TESTS is not the lever: every test here finishes in under twelve seconds and
+most in under one, so execution is a minute and the other four are compiling and linking
+twenty-nine integration binaries. `--lib` needs one binary and the debug profile makes
+building it seconds - the middle row is what leaving either lever unpulled costs.
+
+The smoke run is **every unit test**, a category rather than a list, so a test added to the
+library is in it from the moment it is written. It cannot answer anything the integration
+tests ask - the oracle, the committed saves, the wire schema, the scenario suites - which is
+why it is the loop and not the gate. The two are told apart in the logs by name:
+`..._cargo_smoke.txt` against `..._cargo_full-suite.txt`.
 
 ## Safety rules baked into the scripts
 
@@ -504,16 +537,16 @@ everything generated, so `src\` stays clean.
 
 ## Important paths
 
-| What | Where |
-| --- | --- |
-| Solution | `GlobalConversationTracker.slnx` |
-| Plugin project | `src\GlobalConversationTracker.Plugin\` |
-| Built DLL | `.build\bin\GlobalConversationTracker.Plugin\<Configuration>\net6.0\GlobalConversationTracker.dll` |
-| Release zip | `.build\dist\GlobalConversationTracker-v<version>.zip` |
-| Captured logs | `.build\logs\<label>-<timestamp>.log` (+ `.capture.json`) |
-| Installed plugin | `<game>\BepInEx\plugins\GlobalConversationTracker\` |
-| BepInEx log | `<game>\BepInEx\LogOutput.log` |
-| BepInEx config | `<game>\BepInEx\config\BepInEx.cfg` |
-| Playable Steam copy | `C:\Apps (x86)\Games\Steam\steamapps\common\Disco Elysium` |
-| Reference copies (read-only) | `.game_reference_copies\` - Steam downloads, AssetRipper exports, decompiler output; gitignored |
-| BepInEx cache (per machine) | `%LOCALAPPDATA%\GlobalConversationTracker\bepinex\` |
+| What                         | Where                                                                                              |
+| ---------------------------- | -------------------------------------------------------------------------------------------------- |
+| Solution                     | `GlobalConversationTracker.slnx`                                                                   |
+| Plugin project               | `src\GlobalConversationTracker.Plugin\`                                                            |
+| Built DLL                    | `.build\bin\GlobalConversationTracker.Plugin\<Configuration>\net6.0\GlobalConversationTracker.dll` |
+| Release zip                  | `.build\dist\GlobalConversationTracker-v<version>.zip`                                             |
+| Captured logs                | `.build\logs\<label>-<timestamp>.log` (+ `.capture.json`)                                          |
+| Installed plugin             | `<game>\BepInEx\plugins\GlobalConversationTracker\`                                                |
+| BepInEx log                  | `<game>\BepInEx\LogOutput.log`                                                                     |
+| BepInEx config               | `<game>\BepInEx\config\BepInEx.cfg`                                                                |
+| Playable Steam copy          | `C:\Apps (x86)\Games\Steam\steamapps\common\Disco Elysium`                                         |
+| Reference copies (read-only) | `.game_reference_copies\` - Steam downloads, AssetRipper exports, decompiler output; gitignored    |
+| BepInEx cache (per machine)  | `%LOCALAPPDATA%\GlobalConversationTracker\bepinex\`                                                |
