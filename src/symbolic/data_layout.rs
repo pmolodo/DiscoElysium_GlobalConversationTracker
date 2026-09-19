@@ -121,7 +121,71 @@ pub fn counters_from_onces(graph: &LookAheadGraph) -> HashMap<usize, Vec<(Dialog
         onces.dedup();
         !disqualified.contains(slot) && !onces.is_empty()
     });
+    // ASKED ONLY WHERE THERE IS SOMETHING TO ASK ABOUT. The sweep walks every guard in the
+    // group, which the great majority of groups would pay for nothing: most hold no counter
+    // whose every writer is `once`.
+    if !contributors.is_empty() {
+        let rewritable = read_only_as_thresholds(graph);
+        contributors.retain(|slot, _| rewritable.contains(slot));
+    }
     contributors
+}
+
+/// The slots whose every read is a comparison against a constant, which is the only shape the
+/// count can be substituted into.
+///
+/// ## Why the writers are not the whole story
+///
+/// `counters_from_onces` establishes what a slot's value IS. This establishes that nothing
+/// needs the slot to hold it. Dropping the bits is only sound where every reader has been
+/// taught to ask the once slots instead, and exactly one has -
+/// `GuardCompiler::comparison` on a whole-number literal, which rewrites to a threshold.
+///
+/// EVERY OTHER READER STILL WANTS THE BITS. A reputation question compares a range's amounts
+/// with each other rather than with a constant and reads them through
+/// `GuardCompiler::amounts_of`; a slot handed to a query is read by whatever the query does; a
+/// variable used as a bare condition asks whether its run of bits is non-zero. A slot dropped
+/// out from under any of those does not fail loudly - it reads as undecided, which is the
+/// permissive answer, and opens a gate that should have stayed shut.
+///
+/// So this counts, per slot, how often it appears as a variable at all and how often it
+/// appears as one side of a comparison the compiler can rewrite, and keeps only the slots
+/// where those agree. [`DataLayout::read_comparisons`] supplies the shapes that are reads
+/// without being variable nodes - a reputation range, a call's argument - which no count of
+/// variable nodes would see.
+fn read_only_as_thresholds(graph: &LookAheadGraph) -> HashSet<usize> {
+    let GuardReads {
+        unreadable,
+        mentions,
+        as_threshold,
+        ..
+    } = DataLayout::guard_reads(graph);
+
+    mentions
+        .into_iter()
+        .filter(|(slot, seen)| !unreadable.contains(slot) && as_threshold.get(slot) == Some(seen))
+        .map(|(slot, _)| slot)
+        .collect()
+}
+
+/// What one sweep of a group's guards says about how each slot is read.
+///
+/// ONE SWEEP RATHER THAN THREE. Two questions want this - how wide a slot has to be, and
+/// whether its every read is a shape the compiler can rewrite - and on the biggest groups the
+/// guards are large enough that walking them again to ask the second costs more than the
+/// answer saves.
+#[derive(Debug, Default)]
+struct GuardReads {
+    /// The largest constant compared against each slot, which bounds how wide it must be.
+    highest: HashMap<usize, u32>,
+    /// Slots read in a shape no constant describes - a reputation range, a query's argument,
+    /// a comparison against something other than a literal.
+    unreadable: HashSet<usize>,
+    /// How many times each slot is named as a variable at all.
+    mentions: HashMap<usize, usize>,
+    /// How many of those are one side of a comparison against a constant the compiler can
+    /// rewrite. Equal to `mentions` exactly when nothing reads the slot any other way.
+    as_threshold: HashMap<usize, usize>,
 }
 
 /// Where each part of a data state lives, in variable numbers.
@@ -278,12 +342,11 @@ impl DataLayout {
     /// is that EVERY comparison agrees, so one whose shape is unrecognised - a non-literal
     /// other side, or the slot handed to a world query - leaves the slot at full width.
     fn narrow_to_thresholds(graph: &LookAheadGraph, widths: &mut [u8], assigned: &[u8]) {
-        let symbols = graph.symbols();
-        let mut highest: HashMap<usize, u32> = HashMap::new();
-        let mut unreadable: HashSet<usize> = HashSet::new();
-        for node in graph.nodes() {
-            Self::read_comparisons(&node.guard, symbols, &mut highest, &mut unreadable);
-        }
+        let GuardReads {
+            highest,
+            unreadable,
+            ..
+        } = Self::guard_reads(graph);
 
         for (slot, width) in widths.iter_mut().enumerate() {
             if unreadable.contains(&slot) {
@@ -388,6 +451,17 @@ impl DataLayout {
             .collect()
     }
 
+    /// Collects, per slot, everything one sweep of the group's guards can say about how it is
+    /// read - see [`GuardReads`], and [`Self::read_comparisons`] for the sweep.
+    fn guard_reads(graph: &LookAheadGraph) -> GuardReads {
+        let symbols = graph.symbols();
+        let mut reads = GuardReads::default();
+        for node in graph.nodes() {
+            Self::read_comparisons(&node.guard, symbols, &mut reads);
+        }
+        reads
+    }
+
     /// Collects, per slot, the largest constant compared against it - and which slots are
     /// compared in a shape this cannot read.
     ///
@@ -395,14 +469,20 @@ impl DataLayout {
     /// A SWEEP RATHER THAN A WALK, because every node is looked at wherever it sits. The
     /// structure is wanted one node at a time - which side of a comparison names a slot,
     /// and what a call was handed - and never between nodes, so nothing here descends.
-    fn read_comparisons(
-        guard: &Guard,
-        symbols: &StateSymbols,
-        highest: &mut HashMap<usize, u32>,
-        unreadable: &mut HashSet<usize>,
-    ) {
+    fn read_comparisons(guard: &Guard, symbols: &StateSymbols, reads: &mut GuardReads) {
+        let GuardReads {
+            highest,
+            unreadable,
+            mentions,
+            as_threshold,
+        } = reads;
         for node in guard.nodes() {
             match node.expression() {
+                GuardExpression::Variable(name) => {
+                    if let Some(slot) = symbols.find(name) {
+                        *mentions.entry(slot).or_default() += 1;
+                    }
+                }
                 GuardExpression::Comparison(_, a, b) => {
                     for (side, other) in [(a, b), (b, a)] {
                         let Some(slot) = Self::slot_named(side, symbols) else {
@@ -412,6 +492,11 @@ impl DataLayout {
                             unreadable.insert(slot);
                             continue;
                         };
+                        // WHAT THE GUARD COMPILER CAN REWRITE, which is a narrower question than
+                        // what a width can be read off - see [`read_only_as_thresholds`].
+                        if crate::symbolic::guard_formula::whole_number(value).is_some() {
+                            *as_threshold.entry(slot).or_default() += 1;
+                        }
                         let number = value.number();
                         if !number.is_finite() || number < 0.0 {
                             unreadable.insert(slot);
@@ -451,7 +536,7 @@ impl DataLayout {
         let GuardExpression::Variable(name) = guard.expression() else {
             return None;
         };
-        (0..symbols.count()).find(|slot| symbols.name_of(*slot) == Some(name))
+        symbols.find(name)
     }
 
     /// The layout a search over a whole group gets, which is what the product runs.
@@ -529,7 +614,7 @@ impl DataLayout {
             false,
         )
         .keeping_only_read(graph.symbols(), &reads)
-        .dropping_redundant_counters_if_asked(graph, world)
+        .dropping_redundant_counters(graph, world)
     }
 
     /// Every entry reachable by links from any entry of `conversations`, those included.
@@ -686,23 +771,6 @@ impl DataLayout {
         }
         self.renumber();
         self
-    }
-
-    /// [`Self::dropping_redundant_counters`] where `DEGCT_DROP_COUNTERS` asks, and otherwise
-    /// the layout unchanged.
-    ///
-    /// BEHIND A SWITCH WHILE IT IS BEING MEASURED. It changes what every search carries, and
-    /// what it buys is a question about diagrams rather than about bits - see de-bfs0.
-    fn dropping_redundant_counters_if_asked(
-        self,
-        graph: &LookAheadGraph,
-        world: &dyn crate::world::ILookAheadWorld,
-    ) -> Self {
-        if crate::core::env::var("DROP_COUNTERS").as_deref() == Ok("1") {
-            self.dropping_redundant_counters(graph, world)
-        } else {
-            self
-        }
     }
 
     /// The `once` slots a dropped counter's value counts, and what the value holds on top of
@@ -1448,13 +1516,17 @@ mod tests {
     }
 
     /// The bits leave the layout, and the map the guards need is left behind.
+    ///
+    /// The layout to compare against is built by [`DataLayout::for_graph`], which lays every
+    /// slot out and drops nothing - [`DataLayout::for_group`] drops these as it builds, so it
+    /// cannot say what carrying one costs.
     #[test]
     fn dropping_a_redundant_counter_takes_its_bits_out() {
         let graph = gated_counter("charges", 3, 1, true);
         let slot = slot_named(&graph, "charges");
         let world = crate::world::test_world::TestWorld::new();
 
-        let kept = DataLayout::for_group(&graph, &world, 16);
+        let kept = DataLayout::for_graph(&graph, 16, None, false);
         let (_, width) = kept.slot(slot).expect("carried before");
         assert!(width > 0);
 
@@ -1487,8 +1559,7 @@ mod tests {
             .set_variable("charges", GuardValue::from_number(HELD as f64))
             .set_seen(DialogueNodeId::new(1, 0), true);
 
-        let dropped =
-            DataLayout::for_group(&graph, &world, 16).dropping_redundant_counters(&graph, &world);
+        let dropped = DataLayout::for_group(&graph, &world, 16);
         assert_eq!(
             dropped.counter_onces(slot).map(|(_, offset)| offset),
             Some(HELD - 1)
@@ -1502,8 +1573,7 @@ mod tests {
         let slot = slot_named(&graph, "charges");
         let world = crate::world::test_world::TestWorld::new();
 
-        let dropped =
-            DataLayout::for_group(&graph, &world, 16).dropping_redundant_counters(&graph, &world);
+        let dropped = DataLayout::for_group(&graph, &world, 16);
         assert_eq!(
             dropped.counter_onces(slot).map(|(_, offset)| offset),
             Some(0)

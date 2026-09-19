@@ -34,11 +34,23 @@
 //! With no conversation named it sweeps every group the index holds, which is how to learn
 //! whether this shape is one conversation's quirk or a pattern worth building for.
 
+use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::{DataLayout, counters_from_onces};
 
 #[path = "../tests/common/mod.rs"]
 mod common;
+
+/// The layout `DataLayout::for_group` builds, minus the step that drops these counters.
+///
+/// THE ONLY WAY TO PRICE WHAT ONE COSTS, since the shipped layout drops them as it builds and
+/// so cannot be asked what carrying one would take. These are the same three steps `for_group`
+/// takes - every slot laid out, narrowed to what the group's guards read - stopping short of
+/// the fourth.
+fn carrying_counters(graph: &LookAheadGraph, cap: i32) -> DataLayout {
+    DataLayout::for_graph(graph, cap, None, false)
+        .keeping_only_read(graph.symbols(), &DataLayout::read_by(graph))
+}
 
 fn main() {
     let Some(path) = common::shipped_index() else {
@@ -77,12 +89,12 @@ fn main() {
         if found.is_empty() {
             continue;
         }
-        let layout = DataLayout::for_group(&graph, &world, 16);
+        let layout = carrying_counters(&graph, 16);
         // WHERE THE SAVE HOLDS MORE THAN THIS GROUP'S OWN SHOWN SITES, which is a counter some
         // other conversation also raises. The substitution still stands there - the guards
         // rebase by the difference - so this is a count of what a group-local reading would
         // have had to give up, not of anything wrong.
-        let rebased = layout.clone().dropping_redundant_counters(&graph, &world);
+        let rebased = DataLayout::for_group(&graph, &world, 16);
         for slot in found.keys() {
             if let Some((_, offset)) = rebased.counter_onces(*slot)
                 && offset != 0
@@ -122,8 +134,8 @@ fn main() {
         let Ok((graph, _)) = build_group_graph(&index, one) else {
             return;
         };
-        let kept = DataLayout::for_group(&graph, &world, 16);
-        let dropped = kept.clone().dropping_redundant_counters(&graph, &world);
+        let kept = carrying_counters(&graph, 16);
+        let dropped = DataLayout::for_group(&graph, &world, 16);
         let went: u32 = counters_from_onces(&graph)
             .keys()
             .filter_map(|slot| kept.slot(*slot).map(|(_, width)| width as u32))

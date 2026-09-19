@@ -131,6 +131,28 @@ impl MayBe {
 /// This compiler used to build a manager of its own over the same layout, which looked
 /// harmless because the variable numbering agreed; it was not, and nothing had caught it
 /// only because nothing had yet asked a guard and an action about the same set.
+/// The integer a literal stands for, if it is one a slot could hold.
+///
+/// Free rather than a method because it decides which comparisons the compiler can rewrite,
+/// and `DataLayout` has to ask the same question about a guard it is deciding whether to drop
+/// a slot for. Two spellings of "a constant a slot could be compared against" would let the
+/// layout drop a slot the compiler then cannot rewrite.
+pub(crate) fn whole_number(value: &GuardValue) -> Option<i32> {
+    match value.kind() {
+        GuardValueKind::Boolean => Some(i32::from(value.boolean())),
+        GuardValueKind::Number => {
+            let number = value.number();
+            // Only whole numbers in range: a slot holds an integer.
+            if number.fract() == 0.0 && number >= 0.0 && number <= i32::MAX as f64 {
+                Some(number as i32)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
 pub struct GuardCompiler<'a> {
     vars: &'a DataVars<'a>,
     /// Where a variable no action writes gets its value.
@@ -1194,7 +1216,7 @@ impl<'a> GuardCompiler<'a> {
         let equality = op == "==" || op == "~=";
 
         // Tracked: pin the slot's bits against the value.
-        if let Some(value) = Self::whole_number(literal) {
+        if let Some(value) = whole_number(literal) {
             // A COUNTER THE LAYOUT DROPPED has no bits to pin: its value is how many of some
             // `once` slots are set, and those slots are still carried. This has to come before
             // every path below, all of which read bits that are no longer there - and a
@@ -1603,23 +1625,6 @@ impl<'a> GuardCompiler<'a> {
     fn literal_of<'g>(expression: GuardRef<'g>) -> Option<&'g GuardValue> {
         match expression.expression() {
             GuardExpression::Literal(value) => Some(value),
-            _ => None,
-        }
-    }
-
-    /// The integer a literal stands for, if it is one a slot could hold.
-    fn whole_number(value: &GuardValue) -> Option<i32> {
-        match value.kind() {
-            GuardValueKind::Boolean => Some(i32::from(value.boolean())),
-            GuardValueKind::Number => {
-                let number = value.number();
-                // Only whole numbers in range: a slot holds an integer.
-                if number.fract() == 0.0 && number >= 0.0 && number <= i32::MAX as f64 {
-                    Some(number as i32)
-                } else {
-                    None
-                }
-            }
             _ => None,
         }
     }
