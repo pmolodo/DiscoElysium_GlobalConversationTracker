@@ -91,7 +91,7 @@ forgotten.
 | `DEGCT_RUN_LOG` | `tools/measurement_common.py`, `tools/run-logged.sh` |
 | `DEGCT_RUN_LOG_DIR` | `tools/measure-symbolic.sh`, `tools/measurement_common.py`, `tools/run-logged.sh` |
 | `DEGCT_RUN_NAME` | `tools/measure-symbolic.sh` |
-| `DEGCT_SAVE` | `performance/greedy_playthrough.rs`, `performance/target_cost.rs`, `tests/kim_case_offline.rs` |
+| `DEGCT_SAVE` | `performance/greedy_playthrough.rs`, `performance/menu_matrix.rs`, `performance/target_cost.rs`, `tests/kim_case_offline.rs` |
 | `DEGCT_SCATTER` | `performance/onward_or_back.rs` |
 | `DEGCT_SEARCHES` | `performance/search_residue.rs`, `tools/measure-residue-arms.sh` |
 | `DEGCT_SEARCH_MS` | `performance/repeat_question.rs` |

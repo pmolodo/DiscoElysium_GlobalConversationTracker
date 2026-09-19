@@ -249,6 +249,17 @@ const NOLIMIT_BUDGET_MB: usize = 6144;
 /// row says where the search stops rather than where a player's patience would.
 const NOLIMIT_TIME: Duration = Duration::from_secs(300);
 
+/// Which save a walked profile is built from: the template, or what `DEGCT_SAVE` names.
+///
+/// THE TEMPLATE IS THE FAIR COMMON DENOMINATOR - the blank slate every committed scenario is a
+/// diff over, so no group is favoured by a save that happens to suit it. What it is not is a
+/// state anybody reached: on 761 a walk from it shows 44 entries of 2,263, where a walk from a
+/// real playthrough's save shows 144. Naming a save asks the same question of a world a player
+/// was actually in, and `target_cost` already reads this variable.
+fn save() -> String {
+    lookahead_engine::core::env::var("SAVE").unwrap_or_else(|_| save_world::TEMPLATE.to_string())
+}
+
 /// Whether this run is taken with the limits off. See [`NOLIMIT_BUDGET_MB`] and
 /// [`NOLIMIT_TIME`].
 fn nolimit() -> bool {
@@ -566,7 +577,7 @@ fn main() {
             }
         } else if let Scenario::FirstMenu = scenario {
             let base = SnapshotWorld::declaring(
-                save_world::of_save(&graph, conversation, &shipped, save_world::TEMPLATE),
+                save_world::of_save(&graph, conversation, &shipped, &save()),
                 save_world::declared(),
             );
             match menu_profile::first_menu_profile(
@@ -594,8 +605,7 @@ fn main() {
                         found.profile.unseen.len(),
                         found.reachable,
                     );
-                    let mut world =
-                        save_world::of_save(&graph, conversation, &shipped, save_world::TEMPLATE);
+                    let mut world = save_world::of_save(&graph, conversation, &shipped, &save());
                     world.seen = found.seen.iter().copied().map(NodeRef::from).collect();
                     world.variables = found.variables;
                     (
@@ -619,7 +629,7 @@ fn main() {
             // cached playthrough run fourteen legs while the profile measured here stopped at
             // seven. See de-qy5t.
             let base = SnapshotWorld::declaring(
-                save_world::of_save(&graph, conversation, &shipped, save_world::TEMPLATE),
+                save_world::of_save(&graph, conversation, &shipped, &save()),
                 save_world::declared(),
             );
             match menu_profile::walked_profile(
@@ -651,8 +661,7 @@ fn main() {
                          and the profile is taken {} in",
                         found.reachable, found.shown,
                     );
-                    let mut world =
-                        save_world::of_save(&graph, conversation, &shipped, save_world::TEMPLATE);
+                    let mut world = save_world::of_save(&graph, conversation, &shipped, &save());
                     world.seen = found.seen.iter().copied().map(NodeRef::from).collect();
                     world.variables = found.variables;
                     (
