@@ -485,16 +485,25 @@ namespace GlobalConversationTracker.Harness
                         Console.WriteLine($"--- {scenario.SaveName}: {scenario.Why} ---");
 
                         watcher.Mark();
+                        // CONTINUE GETS US INTO A WORLD; IT DOES NOT CHOOSE WHICH. A load by
+                        // name cannot run from the startup screens - see FirstSave - so the
+                        // first scenario presses Continue to leave the menu scene, and then
+                        // loads its own save the way every later scenario does.
+                        //
+                        // WHY NOT TRUST CONTINUE TO PICK IT. It takes the newest save, and the
+                        // staging order is written to make that the right one - but with
+                        // twenty-eight saves staged it took another, and conversation 379 then
+                        // opened in a world where its first option was a different entry
+                        // entirely. One save staged and the question cannot arise, so the fault
+                        // only ever showed on the first scenario of a full run. See de-5y0c.
                         if (firstScenario)
                         {
                             FirstSave.Get(watcher, timeout, saveGames);
                             firstScenario = false;
                         }
-                        else
-                        {
-                            ProbeCommand.SendLoadSave(saveGames, stagedNames[scenario.SaveName]);
-                            watcher.WaitForEvent("save-applied", timeout, Log);
-                        }
+
+                        ProbeCommand.SendLoadSave(saveGames, stagedNames[scenario.SaveName]);
+                        watcher.WaitForEvent("save-applied", timeout, Log);
 
                         RunScenario(
                             scenario, saveGames, watcher, timeout, report, window,
