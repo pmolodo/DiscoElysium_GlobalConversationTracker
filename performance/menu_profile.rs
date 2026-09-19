@@ -384,7 +384,13 @@ pub fn walked_profile(
         // taken against and that is the caller's to name.
         world: Default::default(),
         profile: MenuProfile {
-            seen_this_game: everything_but(graph, &unseen),
+            // WHAT THE WALK PUT ON SCREEN, which is what this save has displayed - the same set
+            // the caller hands the world as `world.seen`. Taking "everything not singled out as
+            // unseen" instead made the novelty function and the world disagree about the same
+            // question, and left the middle level unreachable: every entry was either globally
+            // new or read this game, and an entry the walk never reached was called read. See
+            // de-ij9d and de-mo4q.
+            seen_this_game: seen.iter().copied().collect(),
             unseen,
             starts,
         },
