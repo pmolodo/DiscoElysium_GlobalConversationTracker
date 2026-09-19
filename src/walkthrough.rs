@@ -746,12 +746,10 @@ impl Walker<'_> {
                     line_up = true;
                 }
                 Next::Menu(options) => {
-                    // A HELD LINE IS DISMISSED BEFORE ITS MENU IS ON OFFER. A menu normally
-                    // composes beside the line in front of it and costs nothing to reach - but
-                    // an entry whose sequence RUNS stays up until it is answered, and the menu
-                    // arrives only after. So the continue is spent here, and the same position
-                    // is evaluated again with nothing held. See `index::sequence_holds_the_screen`.
-                    if line_up && self.node(at).holds_the_screen {
+                    // A HELD LINE IS ANSWERED BEFORE ITS MENU IS ON OFFER: the continue is spent
+                    // here, and the same position is evaluated again with nothing held. The rule
+                    // is `menu_waits_on`, which the leg search below asks too.
+                    if self.menu_waits_on(at, line_up) {
                         match keys.next() {
                             Some((_, Input::Enter)) => {}
                             Some((index, key)) => {
@@ -846,10 +844,7 @@ impl Walker<'_> {
                     encountered.push(chosen.id);
                     displayed.push(chosen.id);
                     at = chosen.id;
-                    // A CHOSEN OPTION NORMALLY DOES NOT WAIT - the conversation carries straight
-                    // on into whatever answers it - unless what it lands on holds the screen,
-                    // which is a fact about the entry rather than about having been chosen.
-                    line_up = self.node(chosen.id).holds_the_screen;
+                    line_up = self.owes_continue(chosen.id, false);
                 }
                 Next::End => {
                     return Err(format!(
@@ -949,6 +944,19 @@ impl Walker<'_> {
                     continue;
                 }
             };
+            // A HELD LINE IS ANSWERED BEFORE ITS MENU IS ON OFFER, and answering it is a move of
+            // its own: one continue, spent where the player stands, displaying nothing new. The
+            // position it reaches is this one with nothing held, which the search tells apart
+            // from this one BY `line_up` - already part of the key, so the two do not collapse
+            // and the continue is not spent twice. See `index::sequence_holds_the_screen`.
+            if matches!(moves, Next::Menu(_))
+                && self.menu_waits_on(at, line_up)
+                && self.hold_answered(at, &state, presses, here, &mut best, &mut reached)
+            {
+                pending.push_back(reached.len() - 1);
+                continue;
+            }
+
             let taken: Vec<(Option<Input>, Vec<DialogueNodeId>, &Offered, bool)> = match &moves {
                 Next::End => Vec::new(),
                 Next::Line(line) => {
@@ -995,7 +1003,8 @@ impl Walker<'_> {
                     encountered,
                     displayed: vec![offered.id],
                 };
-                let key = (offered.id, next_state.clone(), is_line);
+                let waiting = self.owes_continue(offered.id, is_line);
+                let key = (offered.id, next_state.clone(), waiting);
                 if best.get(&key).is_some_and(|already| *already <= cost) {
                     continue;
                 }
@@ -1004,7 +1013,7 @@ impl Walker<'_> {
                 reached.push(Reached {
                     at: offered.id,
                     state: next_state,
-                    line_up: is_line,
+                    line_up: waiting,
                     parent: Some(here),
                     step: Some(step),
                     presses: cost,
@@ -1100,6 +1109,71 @@ impl Walker<'_> {
             next = charge(self.node(id), &next, &self.caps, self.world);
         }
         next
+    }
+
+    /// Whether a continue is owed before the MENU after `at` is on offer.
+    ///
+    /// ## Why both walkers ask this rather than each deciding it
+    ///
+    /// A menu normally composes beside the line in front of it and costs nothing to reach. An
+    /// entry whose sequence RUNS is the exception: it stays up until it is answered, and the
+    /// menu arrives after. THE TWO WALKERS BELOW MUST AGREE ABOUT THAT. One walks an explicit
+    /// list of presses and answers whether a scenario's inputs fit; the other searches for the
+    /// presses that reach an entry. If they count a conversation differently, a scenario and a
+    /// playthrough of the same ground disagree - which is the shape of the bug this rule was
+    /// added for, arriving from the inside instead. See de-oaaq and de-f739.
+    fn menu_waits_on(&self, at: DialogueNodeId, line_up: bool) -> bool {
+        line_up && self.node(at).holds_the_screen
+    }
+
+    /// Whether arriving at `id` leaves a continue owed.
+    ///
+    /// A line always owes one. An entry reached by CHOOSING it owes one only when its own
+    /// sequence holds the screen, since the conversation otherwise carries straight on into
+    /// whatever answers the choice. The other half of [`Self::menu_waits_on`], and shared for
+    /// the same reason.
+    fn owes_continue(&self, id: DialogueNodeId, is_line: bool) -> bool {
+        is_line || self.node(id).holds_the_screen
+    }
+
+    /// Records the continue that answers a line holding the screen, as a move of its own.
+    ///
+    /// It reaches the SAME entry in the SAME state with nothing held, costing one press and
+    /// displaying nothing: the line was already on screen, and answering it puts no new entry
+    /// there. Answers whether it was worth recording - a position already reached for no more
+    /// is left alone, exactly as any other move is.
+    #[allow(clippy::too_many_arguments)]
+    fn hold_answered(
+        &self,
+        at: DialogueNodeId,
+        state: &LookAheadState,
+        presses: usize,
+        from: usize,
+        best: &mut HashMap<(DialogueNodeId, LookAheadState, bool), usize>,
+        reached: &mut Vec<Reached>,
+    ) -> bool {
+        let cost = presses + 1;
+        let key = (at, state.clone(), false);
+        if best.get(&key).is_some_and(|already| *already <= cost) {
+            return false;
+        }
+        best.insert(key, cost);
+        reached.push(Reached {
+            at,
+            state: state.clone(),
+            line_up: false,
+            parent: Some(from),
+            step: Some(Step {
+                input: Some(Input::Enter),
+                at,
+                menu: Vec::new(),
+                rolled: None,
+                encountered: Vec::new(),
+                displayed: Vec::new(),
+            }),
+            presses: cost,
+        });
+        true
     }
 
     /// What follows `from`, by the dialogue system's rules.
