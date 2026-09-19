@@ -14,7 +14,7 @@ Usage:
 Examples:
     tools/measure-menus.py 368 631      # just these two
     tools/measure-menus.py all          # every group in the game, resumably
-    DEGCT_WORKERS=1 tools/measure-menus.py all   # every group one at a time
+    tools/measure-menus.py --workers 1 all   # every group one at a time
 
 ONE PROCESS PER GROUP for the reason the other drivers give: a group can take its process
 down - conversation 28's deepest entries overflow the stack inside a recursive diagram
@@ -29,11 +29,11 @@ THE HEAVY GROUPS ARE MEASURED ONE AT A TIME, because workers and timings pull op
 groups in parallel finish the run several times sooner and make every millisecond column a
 measurement of how busy the machine was - and the heavy groups are the ones whose milliseconds
 anybody reads. So the run measures groups one at a time, heaviest first, until the cost has
-bottomed out, and only then hands the rest to DEGCT_WORKERS at once. The rule lives in
-`measurement_common.Settling`: DEGCT_SETTLE_GROUPS settled groups in a
-row, a group counting as settled when it is within DEGCT_SETTLE_FACTOR of the cheapest menu so
-far or under DEGCT_SETTLE_MS outright. At least DEGCT_SETTLE_GROUPS groups are always measured
-one at a time.
+bottomed out, and only then hands the rest to `--workers` at once. The rule lives in
+`measurement_common.Settling`: `--settle-groups` settled groups in a row, a group counting as
+settled when it is within `--settle-factor` of the cheapest menu so far or under `--settle-ms`
+outright. At least `--settle-groups` groups are always measured one at a time. `--help` gives the
+defaults.
 
 WHAT COUNTS TOWARDS SETTLING. A measured menu counts by its `menu_ms`. A CRASHED or
 NOT-MEASURED group resets the count, since it is evidence that something did not measure
@@ -55,7 +55,7 @@ as of the search. It then writes combined.tsv - each group's median, min and max
 median nodes, and its rounds, settled and starred with a flag for whether every run agreed -
 and summary.txt, the per-run totals and the costliest groups, and prints the summary:
 
-    DEGCT_WORKERS=1 tools/measure-menus.py --runs 3 all
+    tools/measure-menus.py --workers 1 --runs 3 all
 
 The summary also says which groups' nodes moved between the runs, and by how much, since that
 column moves a little without the search moving at all. See NODES_NOISE.
@@ -117,7 +117,6 @@ from measurement_common import (  # noqa: E402
     build_measurement,
     default_workers,
     env,
-    env_int,
     progress_line,
     qualified,
     refuse,
@@ -327,7 +326,7 @@ def cost_of(rows):
     return f"{verdict} ms" if verdict.isdigit() else verdict
 
 
-def measure(out, conversations, workers, menus, digest, groups):
+def measure(out, conversations, workers, settle, menus, digest, groups):
     run = Run(out, menus, digest)
     run.header()
 
@@ -345,7 +344,6 @@ def measure(out, conversations, workers, menus, digest, groups):
         print("nothing to do.")
         return 0
 
-    settle = Settling.from_env(SETTLE_MS)
     if workers <= 1:
         print(f"{len(todo)} group(s), one at a time -> {run.rows}")
     else:
@@ -661,7 +659,7 @@ def combine(folders, out, cold=None):
 ###############################################################################
 
 
-def record_run(out, workers, runs, named, kind):
+def record_run(out, workers, settle, runs, named, kind):
     """Writes what this run is - see `measurement_common.write_run_record` - into its folder.
 
     PARALLELISM IS THE PART THAT CHANGES WHAT THE ROWS SAY: groups measured side by side pay a flat
@@ -671,7 +669,7 @@ def record_run(out, workers, runs, named, kind):
     """
     parallelism = {
         "workers": workers,
-        "settle": Settling.from_env(SETTLE_MS).rule() if workers > 1 else None,
+        "settle": settle.rule() if workers > 1 else None,
     }
     # WHETHER A COLD RUN WAS TAKEN, readable later without counting folders. The wrapper's
     # DEGCT_RUN_KIND is recorded with every other DEGCT_ variable, but --kind overrides it and
@@ -693,7 +691,10 @@ def get_parser():
         "--runs",
         type=int,
         default=1,
-        help="how many runs to take back to back; more than one writes each under run-N and combines them",
+        help=(
+            "how many runs to take back to back; more than one writes each under run-N and "
+            "combines them (default: %(default)s)"
+        ),
     )
     parser.add_argument(
         "--kind",
@@ -705,6 +706,16 @@ def get_parser():
             "asking a perf tool for a dataset does not pay for one"
         ),
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help=(
+            "how many groups to measure at once once the cost has bottomed out; the default is "
+            "the cores, or what the free memory affords, whichever is smaller"
+        ),
+    )
+    Settling.add_arguments(parser, SETTLE_MS)
     return parser
 
 
@@ -735,8 +746,12 @@ def main(argv=None):
     else:
         out = common.run_folder(TOOL, VERB, "MENUS_OUT", kind)
 
-    workers = env_int("WORKERS", default_workers())
-    record_run(out, workers, args.runs, named, kind)
+    # WHAT WAS NAMED WINS, INCLUDING UPWARDS. `default_workers` answers what the machine affords
+    # and is asked only when nothing was named; somebody who knows what their box can take is not
+    # second-guessed, and a run told `--workers 1` gets one whatever the cores say.
+    workers = args.workers if args.workers is not None else default_workers()
+    settle = Settling.of(args)
+    record_run(out, workers, settle, args.runs, named, kind)
 
     # BUILT ONCE FOR THE WHOLE PASS, BEFORE THE FIRST RUN, so every run of it is the same
     # binary BY CONSTRUCTION. Building per run made that a matter of nobody having touched the
@@ -769,7 +784,7 @@ def main(argv=None):
         if takes_cold_run(kind):
             cold = out / COLD_FOLDER
             print(f"\n=== cold run (discarded from the combination) -> {cold} ===")
-            measure(cold, named, workers, menus, digest, groups)
+            measure(cold, named, workers, settle, menus, digest, groups)
         else:
             print(f"\n=== {kind}: no cold run, its columns do not time ===")
 
@@ -777,7 +792,7 @@ def main(argv=None):
         for number in range(1, args.runs + 1):
             folder = out / RUN_FOLDER.format(number)
             print(f"\n=== run {number} of {args.runs} -> {folder} ===")
-            measure(folder, named, workers, menus, digest, groups)
+            measure(folder, named, workers, settle, menus, digest, groups)
             folders.append(folder)
         combine(folders, out, cold=cold)
         return 0

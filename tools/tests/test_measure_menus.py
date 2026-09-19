@@ -157,5 +157,43 @@ class NodesDrift(unittest.TestCase):
         self.assertIn("groups whose nodes move between runs: 1 of 1 measured", text)
 
 
+class OptionsReachTheRun(unittest.TestCase):
+    """What the command line says is what the run uses.
+
+    WORTH A TEST BECAUSE THE FAILURE IS SILENT. An option that is parsed and then not consulted
+    leaves a run that measures under the defaults while its own help, and its run record's command
+    line, say otherwise - and every number it produces looks exactly like a number taken the way
+    it was asked for.
+    """
+
+    def parse(self, *argv):
+        return menus.get_parser().parse_args(argv)
+
+    def test_the_settle_rule_is_the_one_asked_for(self):
+        args = self.parse("--settle-groups", "3", "--settle-factor", "5", "--settle-ms", "7", "368")
+        settle = menus.Settling.of(args)
+        self.assertEqual((settle.groups, settle.factor, settle.ms), (3, 5, 7))
+
+    def test_the_settle_rule_defaults_where_nothing_is_asked(self):
+        settle = menus.Settling.of(self.parse("368"))
+        self.assertEqual(settle.ms, menus.SETTLE_MS)
+        self.assertGreater(settle.groups, 0)
+
+    def test_the_rule_a_run_prints_is_the_rule_it_was_given(self):
+        """The sentence in the log and in run.json is built from the same object the phase uses."""
+        settle = menus.Settling.of(self.parse("--settle-groups", "3", "--settle-ms", "7", "368"))
+        self.assertIn("3 in a row", settle.rule())
+        self.assertIn("7ms", settle.rule())
+
+    def test_a_named_worker_count_is_not_second_guessed(self):
+        """Including upwards, and including 1 on a machine with many cores."""
+        self.assertEqual(self.parse("--workers", "1", "368").workers, 1)
+        self.assertEqual(self.parse("--workers", "64", "368").workers, 64)
+
+    def test_nothing_named_leaves_the_machine_to_answer(self):
+        """None rather than a number, so `default_workers` is what decides."""
+        self.assertIsNone(self.parse("368").workers)
+
+
 if __name__ == "__main__":
     unittest.main()

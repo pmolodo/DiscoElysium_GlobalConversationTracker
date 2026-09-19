@@ -83,9 +83,9 @@ says what the columns mean and which settings it reads.
 down costs that group and nothing else:
 
     tools/measure-menus.py 368 631                        # just these
-    DEGCT_WORKERS=1 tools/measure-menus.py all            # every group, one at a time
+    tools/measure-menus.py --workers 1 all                # every group, one at a time
     DEGCT_MENUS_OUT=performance/logs/whole-game tools/measure-menus.py all
-    DEGCT_WORKERS=1 tools/measure-menus.py --runs 3 all   # three runs, combined
+    tools/measure-menus.py --workers 1 --runs 3 all       # three runs, combined
 
 `--runs N` takes N runs back to back, each in `run-1` ... `run-N` under the run's folder, and
 when N is more than one writes `combined.tsv` - each group's median, min and max `menu_ms` and

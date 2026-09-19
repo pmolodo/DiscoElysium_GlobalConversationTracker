@@ -55,7 +55,7 @@ Checked against the code rather than trusted, by `tests/environment_table.rs`: i
 tracked file for a variable spelled out in full or asked for by bare name through the helper for
 its language, compares what it finds with the rows below and with the count in this sentence,
 and fails with the block to paste. So a stale table is a failing test rather than a reader
-looking for a variable that has been renamed. 50 variables.
+looking for a variable that has been renamed. 46 variables.
 
 A TEST RATHER THAN A GENERATOR because what is wanted is enforcement: a build script that
 rewrote this file would dirty the working tree on every build, which every measurement's log
@@ -98,9 +98,6 @@ forgotten.
 | `DEGCT_SCATTER` | `performance/onward_or_back.rs` |
 | `DEGCT_SEARCHES` | `performance/search_residue.rs`, `tools/measure-residue-arms.sh` |
 | `DEGCT_SEARCH_MS` | `performance/repeat_question.rs` |
-| `DEGCT_SETTLE_FACTOR` | `tools/measure-menus.py`, `tools/measurement_common.py` |
-| `DEGCT_SETTLE_GROUPS` | `tools/measure-menus.py`, `tools/measurement_common.py` |
-| `DEGCT_SETTLE_MS` | `tools/measure-menus.py`, `tools/measurement_common.py` |
 | `DEGCT_SPLITS` | `performance/cache_split.rs`, `performance/cache_split_menu.rs` |
 | `DEGCT_STARTS` | `performance/bidirectional_headroom.rs`, `performance/bound_slack.rs`, `performance/cache_split_menu.rs`, `performance/manager_reuse.rs`, `performance/menu_matrix.rs`, `performance/menu_residue.rs`, `performance/menu_wall.rs`, `performance/onward_or_back.rs`, `performance/per_start_setup.rs`, `performance/target_cost.rs`, `performance/workspace_menus.rs` |
 | `DEGCT_TARGET` | `performance/bidirectional_headroom.rs` |
@@ -111,7 +108,6 @@ forgotten.
 | `DEGCT_VERIFY_REPLAY` | `performance/greedy_playthrough.rs` |
 | `DEGCT_WALKED_PROFILE` | `performance/menu_matrix.rs`, `performance/profile_closure.rs` |
 | `DEGCT_WEIGH_FRONTS` | `src/symbolic/backward.rs` |
-| `DEGCT_WORKERS` | `performance/README.md`, `tools/measure-menus.py`, `tools/measurement_common.py` |
 
 ## Keeping this current
 

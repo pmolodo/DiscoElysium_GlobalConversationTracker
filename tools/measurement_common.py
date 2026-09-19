@@ -649,10 +649,15 @@ def write_run_record(folder, parallelism, **details):
 
 
 # DEGCT_ variables KNOWN to change what a menu measurement measures, and so compared between runs:
-# the manager's memory, the limits being off, how many starts a menu has and how many entries are
-# hunted, and the rule that decides when groups start being measured side by side. Every DEGCT_
-# variable is RECORDED whatever it is; only these decide whether two runs' settings are mixed, so a
-# stray variable nothing reads cannot refuse a comparison.
+# the manager's memory, the limits being off, and how many starts a menu has and how many entries
+# are hunted. Every DEGCT_ variable is RECORDED whatever it is; only these decide whether two runs'
+# settings are mixed, so a stray variable nothing reads cannot refuse a comparison.
+#
+# THE SETTLE RULE IS NOT HERE, though it does change what a run measures. It is compared through
+# `parallelism`, which carries the rule as the sentence a reader sees - and that field is written
+# the same way whether the values arrived as arguments or, in the folders already on disk, as
+# variables. Comparing the variables as well would refuse a folder against its own equal, on the
+# strength of how the number reached the run rather than what the number was.
 COMPARED_VARIABLES = frozenset(
     qualified(name)
     for name in (
@@ -667,9 +672,6 @@ COMPARED_VARIABLES = frozenset(
         "STARTS",
         "WALKED_PROFILE",
         "UNSEEN",
-        "SETTLE_GROUPS",
-        "SETTLE_FACTOR",
-        "SETTLE_MS",
     )
 )
 
@@ -1075,13 +1077,11 @@ def default_workers(memory_per_worker_mb=None):
     on, which is the whole point: a constant picked from one box is silently in the wrong
     place on the next, and in the direction that matters.
 
-    DEGCT_WORKERS=n overrides it outright, including upwards - a person who knows what their machine
-    can take is not second-guessed.
+    WHAT THIS ANSWERS IS THE DEFAULT, not the choice. A driver that lets a person name a worker
+    count takes that count on its command line and only asks this when nothing was named - and it
+    honours what was named, including upwards, because somebody who knows what their machine can
+    take is not second-guessed.
     """
-    named = env("WORKERS", "").strip()
-    if named:
-        return max(1, env_int("WORKERS", 1))
-
     cores = os.cpu_count() or 1
     if not memory_per_worker_mb:
         return cores
@@ -1172,13 +1172,39 @@ class Settling:
         self.window_max_nodes = 0
 
     @classmethod
-    def from_env(cls, ms_fallback):
-        """The rule, with DEGCT_SETTLE_GROUPS, DEGCT_SETTLE_FACTOR and DEGCT_SETTLE_MS applied."""
-        return cls(
-            env_int("SETTLE_GROUPS", SETTLE_GROUPS),
-            env_int("SETTLE_FACTOR", SETTLE_FACTOR),
-            env_int("SETTLE_MS", ms_fallback),
+    def add_arguments(cls, parser, ms_fallback):
+        """Puts `--settle-groups`, `--settle-factor` and `--settle-ms` on a driver's parser.
+
+        HERE RATHER THAN IN EACH DRIVER so that the three names, their help and their defaults are
+        written once: a driver that spelled them itself would be a second place for the default to
+        drift from. Only the absolute arm is the driver's to choose - what "small" means depends on
+        what one group costs - so only that one is a parameter.
+        """
+        parser.add_argument(
+            "--settle-groups",
+            type=int,
+            default=SETTLE_GROUPS,
+            help="how many settled groups in a row end the one-at-a-time phase (default: %(default)s)",
         )
+        parser.add_argument(
+            "--settle-factor",
+            type=int,
+            default=SETTLE_FACTOR,
+            help="a group counts as settled within this many times the cheapest group so far (default: %(default)s)",
+        )
+        parser.add_argument(
+            "--settle-ms",
+            type=int,
+            default=ms_fallback,
+            help=(
+                "a group this cheap counts as settled outright, whatever the cheapest so far is (default: %(default)s)"
+            ),
+        )
+
+    @classmethod
+    def of(cls, args):
+        """The rule the arguments `add_arguments` put on the parser ask for."""
+        return cls(args.settle_groups, args.settle_factor, args.settle_ms)
 
     def reset(self):
         """A group that is not evidence the cost has bottomed out: start counting again."""
