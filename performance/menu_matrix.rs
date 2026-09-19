@@ -48,7 +48,9 @@
 //!
 //! `menu ms` is the whole thing, setup included, because that is what a request costs.
 //! `setup ms` is how much of it was building the layout, the manager, the compiled guards
-//! and the seed rather than searching, so the searching is the difference.
+//! and the seed rather than searching, so the searching is the difference. `layout ms` is the
+//! part of that which was the layout alone - 6 to 10 ms on 761, against a setup of 400 and a
+//! menu of 5,600, which is what a cost nobody had timed turned out to be. See de-mau4.
 //!
 //! `prep ms` is what came BEFORE either of those: building the group's graph and walking its
 //! profile. Every group pays it, whether or not a menu is ever measured, so it is its own
@@ -212,9 +214,24 @@ mod save_world;
 ///
 /// A DRIVER ASKS FOR THESE rather than parsing them off a row, so that a file assembled from
 /// many processes cannot get a header that disagrees with its rows.
-const COLUMNS: [&str; 16] = [
-    "conv", "entries", "options", "offered", "menu_ms", "setup_ms", "index_ms", "graph_ms",
-    "prep_ms", "asked", "rounds", "settled", "partly", "nodes", "starred", "exact",
+const COLUMNS: [&str; 17] = [
+    "conv",
+    "entries",
+    "options",
+    "offered",
+    "menu_ms",
+    "setup_ms",
+    "layout_ms",
+    "index_ms",
+    "graph_ms",
+    "prep_ms",
+    "asked",
+    "rounds",
+    "settled",
+    "partly",
+    "nodes",
+    "starred",
+    "exact",
 ];
 
 /// The groups to measure when nothing is named: the heavy list the matrix has always meant.
@@ -561,6 +578,9 @@ const NOT_MEASURED: &str = "NOT-MEASURED";
 struct Menu {
     took: Duration,
     setup: Duration,
+    /// The part of `setup` that was building the layout, which is the only part de-ct6n
+    /// changed and the part nothing had ever timed. See de-mau4.
+    layout: Duration,
     options: usize,
     asked: usize,
     rounds: usize,
@@ -881,6 +901,9 @@ where
             None,
         );
         let layout = DataLayout::for_group(graph, &world, COUNTER_CAP);
+        // WHAT THE LAYOUT ALONE COST, so that "the cost is in building the layout" is a number
+        // rather than the only unmeasured thing left in setup. See de-mau4.
+        let built_layout = began.elapsed();
         let vars = DataVars::try_new(&layout, &symbols, budget)?;
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
@@ -894,6 +917,7 @@ where
         let novelty = &reachable_novelty;
         let graph = &trimmed.graph;
         let setup = began.elapsed();
+        let layout = built_layout;
 
         // WHAT THE PLUGIN ASKS FOR, taken from the product rather than restated here, so a
         // change to the shipped budget moves this row with it.
@@ -905,6 +929,7 @@ where
 
         let mut counted = Menu {
             setup,
+            layout,
             ..Default::default()
         };
 
@@ -1141,6 +1166,7 @@ fn row(
             offered.to_string(),
             format!("{:.0}", ms(m.took)),
             format!("{:.0}", ms(m.setup)),
+            format!("{:.0}", ms(m.layout)),
             format!("{:.0}", ms(prep.index)),
             format!("{:.0}", ms(prep.graph)),
             format!("{:.0}", ms(prep.total)),
@@ -1168,12 +1194,13 @@ fn row(
                 // NOTHING WAS SET UP: no layout, no manager, no compiled guards. Zero rather
                 // than "?", because it is known and it is none.
                 "0".to_string(),
+                "0".to_string(),
                 format!("{:.0}", ms(prep.index)),
                 format!("{:.0}", ms(prep.graph)),
                 format!("{:.0}", ms(prep.total)),
             ];
             // The rest are answers a measurement would have given, and there was none.
-            cells.extend(COLUMNS.iter().skip(9).map(|_| "?".to_string()));
+            cells.extend(COLUMNS.iter().skip(10).map(|_| "?".to_string()));
             cells
         }
     };
