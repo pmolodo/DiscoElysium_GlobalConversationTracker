@@ -254,6 +254,29 @@ def named_by_components(export, titles, guids):
     return holders
 
 
+#: A dialogue script calling `Obsession("...")`, which is the Lua name for
+#: `OrbitLuaFunctions.Obsession` and reaches `GlobalOrbManager.AddObsession`.
+OBSESSION_RE = re.compile(r'Obsession\(\s*\\?"([^"\\]+)\\?"\s*\)')
+
+
+def named_by_lua(index, titles):
+    """Conversation titles a dialogue script starts by adding an orb for them.
+
+    THE ONLY LUA CALL THAT NAMES A CONVERSATION, and it is a START rather than a link: the orb
+    it adds is a thing the player then picks up, so the conversation begins where no entry
+    links to it. Four calls in the whole database, and two of them are the only conversations a
+    real save displays that nothing else explains.
+    """
+    found = set()
+    for entries in index.values():
+        for entry in entries.values():
+            for source in (entry.get("script") or "", entry.get("guard") or ""):
+                for name in OBSESSION_RE.findall(source):
+                    if name in titles:
+                        found.add(name)
+    return found
+
+
 def named_by_items(database, titles, span=(14789, 36012)):
     """Conversation titles the dialogue database's items table names."""
     found, field = set(), None
@@ -376,12 +399,22 @@ def build(export=EXPORT, index_path=INDEX, database=DATABASE, corpus=CORPUS, out
     item = named_by_items(database, every_title)
     print(f"\nnamed by the items table     {len(item)}")
 
+    lua = named_by_lua(index, every_title)
+    print(f"named by a Lua Obsession     {len(lua)}")
+    for name in sorted(lua):
+        print(f"  {name}")
+
     links = linked_into(index)
     saves, files = corpus_counts(corpus)
     print(f"linked into from elsewhere   {len(links)}")
     print(f"saves scanned                {files}")
 
-    counts = write_dataset(index, titles, (component, HARDCODED + LITERALS + ORB_DIALOGUES, item, links, saves), out)
+    counts = write_dataset(
+        index,
+        titles,
+        (component, HARDCODED + LITERALS + ORB_DIALOGUES, item | lua, links, saves),
+        out,
+    )
     print(f"\nstartable                    {counts['startable']}")
     print(f"reachable (starts + links)   {counts['reachable']}")
     print(f"residue                      {counts['residue']}")
