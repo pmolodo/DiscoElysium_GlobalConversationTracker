@@ -2359,7 +2359,6 @@ pub fn mark_menu_as_shipped<F: Fn(DialogueNodeId) -> Novelty>(
         // NO INERT CUT HERE. `DEGCT_MARKING=hybrid-spent` passes one - see
         // `crate::symbolic::hub::spent_branches` for what it holds and where it may be applied.
         &HashSet::new(),
-        crate::symbolic::menu::Fallback::default(),
     )
 }
 

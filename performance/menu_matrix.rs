@@ -21,11 +21,8 @@
 //! `menu_residue` and `menu_wall` - takes its starts as the menu, and marks the whole menu
 //! against one manager through `bridge::mark_menu_as_shipped`, so each group gets the marking
 //! the product gives it: the onward question first, and the exact marking by branch and bound
-//! only where that marks nothing. `DEGCT_MARKING=hybrid-bnb` names that default;
-//! `DEGCT_MARKING=bnb` puts the exact marking on every group instead, and
-//! `DEGCT_MARKING=hybrid-siblings` puts back the siblings-alone level the shipped rule
-//! leaves out, asking the onward question a second time with the walk forgotten before any
-//! exact search. Both are opt-in comparisons.
+//! only where that marks nothing. `DEGCT_MARKING=hybrid-bnb` names that default, and
+//! `DEGCT_MARKING=bnb` puts the exact marking on every group instead, as an opt-in comparison.
 //!
 //! WITH THE WALK, because the product asks with one. A profile's menu has nobody behind it, so
 //! the walk a player would have been shown is built from the conversation's start before the
@@ -182,7 +179,6 @@
 //! about what the player has been shown, and `=body` does the same but leaves the menu's own
 //! options unseen. It does not repair the contradiction; see [`walked_profile`].
 
-use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use lookahead_engine::bridge::{NodeRef, SnapshotWorld, WorldSnapshot};
@@ -270,9 +266,6 @@ enum Marking {
     /// The exact marking by branch and bound on every group, with no onward question first -
     /// see `menu::mark_menu`. An opt-in comparison: it takes no cut and no walk.
     BranchAndBound,
-    /// The hybrid WITH a siblings-alone level before the exact marking, which the shipped
-    /// rule leaves out - see `menu::Fallback::SiblingsThenExact` and de-l88t.
-    HybridSiblings,
     /// The shipped hybrid with the SPENT BRANCHES cut beside the walk: a branch off a hub the
     /// player is inside whose one-time effects have all fired and which shows nothing unread
     /// cannot be the way on, so it is refused like the walk itself. See de-wi02.
@@ -291,7 +284,6 @@ enum Marking {
 /// What `DEGCT_MARKING` says for each marking.
 const HYBRID_BRANCH_AND_BOUND: &str = "hybrid-bnb";
 const BRANCH_AND_BOUND: &str = "bnb";
-const HYBRID_SIBLINGS: &str = "hybrid-siblings";
 const HYBRID_SPENT: &str = "hybrid-spent";
 const ONWARD: &str = "onward";
 
@@ -313,12 +305,11 @@ fn marking() -> Marking {
     {
         "" | HYBRID_BRANCH_AND_BOUND => Marking::HybridBranchAndBound,
         BRANCH_AND_BOUND => Marking::BranchAndBound,
-        HYBRID_SIBLINGS => Marking::HybridSiblings,
         HYBRID_SPENT => Marking::HybridSpent,
         ONWARD => Marking::Onward,
         other => panic!(
             "DEGCT_MARKING={other:?}: expected {HYBRID_BRANCH_AND_BOUND}, {BRANCH_AND_BOUND}, \
-             {HYBRID_SIBLINGS}, {HYBRID_SPENT} or {ONWARD}"
+             {HYBRID_SPENT} or {ONWARD}"
         ),
     }
 }
@@ -990,18 +981,6 @@ where
                 &marking_budget,
                 &shape,
             ),
-            // THE SAME WALK AND THE SAME CUT as the shipped arm, differing only in what it does
-            // where the onward question stars nothing, so the two are a controlled comparison.
-            Marking::HybridSiblings => menu::mark_menu_hybrid(
-                marking_search,
-                novelty,
-                &contestants,
-                &marking_budget,
-                &shape,
-                &lookahead_engine::bridge::passed_since_hub(graph, &shape, &walk),
-                &HashSet::new(),
-                menu::Fallback::SiblingsThenExact,
-            ),
             // THE SAME WALK CUT AS THE DEFAULT ARM in step 1, and the spent branches given to
             // STEP 2, which is the only place they can do anything. Step 1 already refuses
             // every loop back through a hub, and a spent branch is one, so a cut handed there
@@ -1046,7 +1025,6 @@ where
                     &shape,
                     &cut,
                     &spent,
-                    menu::Fallback::default(),
                 )
             }
             // THROUGH THE PRODUCT'S OWN STEP 1, not a restatement of it: `mark_step_one`
@@ -1059,7 +1037,6 @@ where
                 &marking_budget,
                 &shape,
                 &lookahead_engine::bridge::passed_since_hub(graph, &shape, &walk),
-                menu::Fallback::default(),
             ),
         };
         counted.options = contestants.len();

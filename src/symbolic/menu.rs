@@ -41,9 +41,8 @@ use super::backward::{Backward, Budget as PassBudget, Nearest, Position, Round};
 /// OFF UNLESS `DEGCT_POOLED_ROUNDS` ASKS. The pool was built, verified against
 /// `tests/menu_oracle.rs` and removed - on conversation 761 it answered in 10.1 million diagram
 /// nodes against 92.3 million, and was taken out because the cheap question had made the exact
-/// marking rare enough that nothing slow reached it. It is back behind a switch because that is
-/// no longer so: the siblings step it relied on has gone, and the exact marking now runs on 133
-/// menus of 389 where it ran on 2. See de-y04p.
+/// marking rare enough that nothing slow reached it. It is back behind a switch because the
+/// exact marking now runs on 133 menus of 389. See de-y04p.
 fn pooled_rounds() -> bool {
     crate::core::env::var("POOLED_ROUNDS").as_deref() == Ok("1")
 }
@@ -99,22 +98,6 @@ pub struct Budget {
     pub each: Duration,
 }
 
-/// What a menu falls back to where the onward question stars nothing.
-///
-/// AN ARM, NOT A SETTING. The default is what the product ships and every default measurement
-/// measures; the other is an opt-in comparison, named by `DEGCT_MARKING` in the menu matrix.
-/// See CLAUDE.md on keeping one algorithm everywhere by default.
-#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
-pub enum Fallback {
-    /// The shipped rule: straight to the exact marking, so a route that goes back is offered
-    /// only where the walk's own cut found nothing going on at all.
-    #[default]
-    Exact,
-    /// Ask the onward question a second time with the siblings alone, forgetting the walk,
-    /// before reaching for the exact marking. An opt-in comparison. See de-l88t.
-    SiblingsThenExact,
-}
-
 /// Marks a menu by the cheap question, falling back to the exact one only where it answers
 /// nothing.
 ///
@@ -135,59 +118,26 @@ pub enum Fallback {
 /// a player has to learn: a marker means "onward from here", and the one time it means anything
 /// looser is a menu where onward leads nowhere at all.
 ///
-/// A NUMBER ALWAYS MEANS ONE OF THOSE TWO. "Step 2" is the exact marking above and nothing
-/// else. The section below describes a third question this marking USED to ask, between the
-/// two, and calls it the SIBLINGS STEP rather than giving it a number - because for as long as
-/// it was numbered, "step 2" meant it here and the exact marking everywhere else. That
-/// ambiguity is not hypothetical: it is why de-wi02's cut was handed to the onward question
-/// when it was meant for the exact marking, and why its measurement found nothing.
+/// A LOOSER QUESTION IN BETWEEN IS THE OBVIOUS THIRD STEP, AND IT IS NOT HERE. One could ask
+/// the onward question a second time with the siblings alone, forgetting the walk, and so
+/// answer a menu whose walk cut emptied the first question without paying for an exact search.
+/// What that hands back is exactly what step 1's cut exists to refuse: an option whose only way
+/// to unread content runs back out through the hub the player just came in by. It would point
+/// the player backwards on that menu and onward on every other one, which is a direction nobody
+/// can act on. It also does not reach the case that motivates going back at all - a loop that
+/// sets a variable so a later pass through old territory opens something new - because a cut
+/// that keeps the loop out cannot see what the loop opens. Only step 2 finds that.
 ///
-/// ## The siblings step, which is not here, and why it was taken out
+/// ## What the structural profile does to a comparison taken here
 ///
-/// [`Fallback::SiblingsThenExact`] puts it back, as a comparison. It asks the onward question a
-/// SECOND time with the siblings alone, forgetting the walk, before reaching the exact marking -
-/// which answers a menu whose walk cut emptied the first question without paying for an exact
-/// search. What it hands back there is exactly what step 1's cut exists to refuse: an option
-/// whose only way to unread content runs back out through the hub the player just came in by.
-/// It also does not reach the case that motivates going back at all - a loop that sets a
-/// variable so a later pass through old territory opens something new - because a cut that keeps
-/// the loop out cannot see what the loop opens. Only step 2 finds that.
-///
-/// ## What taking it out did, measured over the whole game (de-l88t, de-u5ab)
-///
-/// Three runs an arm, one machine, asked in a state a playthrough walked to - see
-/// `menu_profile::walked_profile`. Each arm was measured twice, once running first and once
-/// running second, because a whole-game arm is sensitive to how warm the machine already is:
-///
-/// ```text
-///                          sum of medians, first / second      markers
-///   with the siblings step       8,353 / 8,241 ms               1,042
-///   without it                   8,384 / 8,352 ms                 975
-///
-///   menus whose markers moved     40 of 389
-///     strictly fewer                39
-///     strictly more                  1
-/// ```
-///
-/// THE TWO ARMS ARE INDISTINGUISHABLE IN TIME, and the table is laid out to show why rather
-/// than to be averaged: an arm moves further between its own two orderings - 112 ms for the
-/// siblings arm - than the arms' means differ from each other, which is 71 ms. So the timing
-/// says only that taking it out costs nothing measurable. A gap of a few tens of
-/// milliseconds spread over 389 menus is below what this measurement resolves, and reading
-/// one as a result is how a warm cache gets mistaken for an algorithm.
-///
-/// THE MARKERS ARE THE RESULT: sixty-eight loose markers taken away for one gained. Those
-/// counts are exact and repeat - the same 40 menus of 389 move, every time the arms are
-/// compared, which is what a difference in what the marking DECIDES looks like beside a
-/// difference in how long the machine took.
-///
-/// THE OTHER PROFILE SAYS +15.8 PER CENT AND IT IS AN ARTEFACT, which is worth knowing because
-/// the number is large enough to overturn this on sight. `MenuProfile::of` asks each menu with
-/// almost every line called read while the world it hands the engine has been shown NOTHING, and
-/// `state::seed_state` seeds every `once` slot from that world - so every one-time effect in the
-/// group is still pending. On 761 that is the difference between 50 thousand diagram nodes and
-/// 93 million. No save holds it: a player meeting a conversation for the first time has its
-/// onces unfired AND its lines unread, which stars at step 1 immediately.
+/// `MenuProfile::of` asks each menu with almost every line called read while the world it hands
+/// the engine has been shown NOTHING, and `state::seed_state` seeds every `once` slot from that
+/// world - so every one-time effect in the group is still pending while its content is all
+/// supposedly read. No save holds that pair: a player meeting a conversation for the first time
+/// has its onces unfired AND its lines unread, which stars at step 1 immediately. On 761 the
+/// difference is 50 thousand diagram nodes against 93 million, so a change measured there can
+/// look decisive and mean nothing. Measure a change to this rule in a state a playthrough
+/// walked to - see `menu_profile::walked_profile`.
 ///
 /// ## Why, from the whole game
 ///
@@ -240,7 +190,6 @@ pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> Novelty>(
     shape: &GroupShape,
     returned: &HashSet<DialogueNodeId>,
     inert: &HashSet<DialogueNodeId>,
-    fallback: Fallback,
 ) -> MenuAnswer {
     let onward = mark_step_one(
         search.reborrow(),
@@ -249,7 +198,6 @@ pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> Novelty>(
         budget,
         shape,
         returned,
-        fallback,
     );
     if onward.rounds > 0 {
         return onward;
@@ -279,49 +227,30 @@ pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> Novelty>(
 /// ## Why this is a function rather than four lines in the caller
 ///
 /// The cut is NOT simply the walk's. Where the walk cut nothing this menu's options are all it
-/// holds, the onward question with it is the siblings-alone question, and the rule asks that
-/// one instead. A measurement that reimplemented "step 1" as the walk cut alone would select a
-/// different set of menus than actually fall through, and would do it silently.
+/// holds, and the onward question is asked with an empty cut instead. A measurement that
+/// reimplemented "step 1" as the walk cut alone would select a different set of menus than
+/// actually fall through, and would do it silently.
 ///
 /// That is not hypothetical here. de-wi02's arm reimplemented where a cut belonged, put it one
 /// step out, and its measurement found nothing for that reason alone - so the one thing this
 /// module should not have is a second copy of which question gets asked with what.
 pub fn mark_step_one<F: Fn(DialogueNodeId) -> Novelty>(
-    mut search: Search<'_, '_>,
+    search: Search<'_, '_>,
     novelty: &F,
     contestants: &[Contestant],
     budget: &Budget,
     shape: &GroupShape,
     returned: &HashSet<DialogueNodeId>,
-    fallback: Fallback,
 ) -> MenuAnswer {
     // THE WALK'S CUT IS ONLY WORTH ASKING WHERE IT CUTS SOMETHING. An option of this menu is
-    // never cut on the walk's account, so a walk holding nothing else asks exactly what the
-    // siblings-alone question asks, and the comparison arm would ask it twice.
-    let siblings_alone = HashSet::new();
+    // never cut on the walk's account, and `mark_onward` cuts the siblings itself, so a walk
+    // holding nothing but this menu's own options asks the same question an empty cut does.
+    let nothing = HashSet::new();
     let walk_cuts = returned
         .iter()
         .any(|id| !contestants.iter().any(|c| c.position.option == *id));
-    let cuts: Vec<&HashSet<DialogueNodeId>> = match (fallback, walk_cuts) {
-        (Fallback::SiblingsThenExact, true) => vec![returned, &siblings_alone],
-        (Fallback::SiblingsThenExact, false) => vec![&siblings_alone],
-        (Fallback::Exact, true) => vec![returned],
-        // With nothing walked the two questions are the same one, so the arm asks it once and
-        // differs from the shipped rule in nothing.
-        (Fallback::Exact, false) => vec![&siblings_alone],
-    };
-
-    let mut passes = 0;
-    let mut last = blank(contestants);
-    for cut in cuts {
-        let onward = mark_onward(search.reborrow(), novelty, contestants, budget, shape, cut);
-        passes += onward.passes;
-        if onward.rounds > 0 {
-            return MenuAnswer { passes, ..onward };
-        }
-        last = onward;
-    }
-    MenuAnswer { passes, ..last }
+    let cut = if walk_cuts { returned } else { &nothing };
+    mark_onward(search, novelty, contestants, budget, shape, cut)
 }
 
 /// Marks every option that reaches unread content without returning through the menu.
@@ -920,11 +849,7 @@ mod tests {
     enum Which {
         Exact,
         Onward,
-        /// The comparison that keeps a siblings-alone level before the exact marking - see
-        /// [`Fallback::SiblingsThenExact`].
-        HybridSiblings,
-        /// THE SHIPPED RULE: the onward question, then the exact marking - see
-        /// [`Fallback::Exact`].
+        /// THE SHIPPED RULE: the onward question, then the exact marking.
         Hybrid,
     }
 
@@ -1027,38 +952,13 @@ mod tests {
         );
     }
 
-    /// Under [`Fallback::SiblingsThenExact`], the comparison arm: where the walk's cut leaves
-    /// nothing onward - the only unread line is the bird behind the main hub, which every
-    /// kitchen option reaches only by going back out - the menu is asked again with the siblings
-    /// alone, and that answers it without the exact marking ever running.
-    #[test]
-    fn the_siblings_arm_answers_a_walk_that_leaves_nothing_onward() {
-        let graph = kitchen();
-        let returned = returned_after(&graph, &KITCHEN_WALK);
-        let bird_only = [3];
-
-        let arm = marking_returning(
-            &graph,
-            &KITCHEN_MENU,
-            &bird_only,
-            Which::HybridSiblings,
-            &returned,
-        );
-        let siblings = marking(&graph, &KITCHEN_MENU, &bird_only, Which::Onward);
-
-        assert!(arm.rounds > 0, "the siblings-alone level marks something");
-        assert_eq!(starred(&arm), starred(&siblings));
-        assert_eq!(
-            arm.passes, siblings.passes,
-            "the walk's cut asked nothing, and the exact marking did not run"
-        );
-    }
-
-    /// The same menu under the SHIPPED rule, which has no siblings-alone level: it goes on to
-    /// the exact marking instead, and a marker it gives names the entry it claims.
+    /// Where the walk's cut leaves nothing onward - the only unread line is the bird behind the
+    /// main hub, which every kitchen option reaches only by going back out - the rule goes on to
+    /// the exact marking, and a marker it gives names the entry it claims.
     ///
-    /// THE WITNESS IS WHAT TELLS THE TWO APART. Both levels mark the same kitchen options for
-    /// the same bird, so the markers cannot; only the exact marking computes a witness.
+    /// THE WITNESS IS WHAT SAYS WHICH STEP ANSWERED. The onward question marks the same kitchen
+    /// options for the same bird, so the markers cannot tell them apart; only the exact marking
+    /// computes a witness.
     #[test]
     fn the_shipped_rule_goes_on_to_the_exact_marking_instead() {
         let graph = kitchen();
@@ -1171,16 +1071,6 @@ mod tests {
                 Which::Onward => {
                     mark_onward(search, &novelty, contestants, &budget, &shape, returned)
                 }
-                Which::HybridSiblings => mark_menu_hybrid(
-                    search,
-                    &novelty,
-                    contestants,
-                    &budget,
-                    &shape,
-                    returned,
-                    &HashSet::new(),
-                    Fallback::SiblingsThenExact,
-                ),
                 Which::Hybrid => mark_menu_hybrid(
                     search,
                     &novelty,
@@ -1189,7 +1079,6 @@ mod tests {
                     &shape,
                     returned,
                     &HashSet::new(),
-                    Fallback::Exact,
                 ),
             }
         })
