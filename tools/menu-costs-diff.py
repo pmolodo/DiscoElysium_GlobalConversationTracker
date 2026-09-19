@@ -11,6 +11,13 @@ for whether every run agreed. Medians are compared because a single run's millis
 reading of the machine as much as of the search. A median over an even number of runs can fall
 between two readings, so it is read as a number rather than as a whole one.
 
+The nodes columns are printed beside the milliseconds as context, not as a verdict. Nodes is a
+reading of the diagram manager rather than a count of the search, and it moves a little between
+runs of the same code all by itself - measured over three whole-game runs at 7 groups of 299,
+the widest by 0.7%, while every group's marks stood still (de-jitt, and `performance/menu_matrix.rs`
+for why). A nodes difference under about one per cent is therefore not a difference, whichever
+side of the comparison it is on.
+
 ## Refused across different settings
 
 Each folder's `run.json`, which `tools/measure-menus.py` writes, says what the run was: its

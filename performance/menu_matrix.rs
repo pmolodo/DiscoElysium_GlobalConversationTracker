@@ -94,6 +94,20 @@
 //! `nodes` is what the manager holds when the menu ends, which is the number a parallel
 //! split has to clear a group against.
 //!
+//! **IT IS A READING OF THE MANAGER, NOT A COUNT OF THE SEARCH, AND IT MOVES A LITTLE ON ITS
+//! OWN.** What it counts is the unique table, which holds dead nodes until a collection
+//! sweeps them, and a collection that finds another already running declines rather than
+//! waits - so what is left unswept when the menu ends depends on thread timing. Measured over
+//! three whole-game runs (de-jitt): 7 of 299 groups read differently every run - 1030, 602,
+//! 605, 786, 368, 944, 1105 - the widest by 0.7%, while `rounds`, `settled` and `starred`
+//! were identical for all 299. The search decided the same thing each time; only the sweep
+//! landed elsewhere.
+//!
+//! So a difference under about one per cent is not a difference, and a nodes figure quoted to
+//! the last digit is quoting the noise with it. Comparing two branches on this column means
+//! comparing a spread against a spread; `tools/measure-menus.py --runs 3` prints which groups
+//! moved and by how much, for exactly that reason.
+//!
 //! ## What it said, 2026-09-09: the whole game, and two menus that are slow
 //!
 //! 395 menus of eight options, at the player's own 256 MB and the shipped budget, one group

@@ -57,6 +57,9 @@ and summary.txt, the per-run totals and the costliest groups, and prints the sum
 
     DEGCT_WORKERS=1 tools/measure-menus.py --runs 3 all
 
+The summary also says which groups' nodes moved between the runs, and by how much, since that
+column moves a little without the search moving at all. See NODES_NOISE.
+
 A THROW-AWAY RUN COMES FIRST WHERE TIMING IS WHAT IS BEING MEASURED, so --runs 3 takes four and
 --runs 1 takes two. It goes in run-cold, is reported beside the combination and left out of it,
 and is kept on disk rather than deleted. See COLD_FOLDER for the evidence, and
@@ -475,6 +478,14 @@ HARDEST = 10
 # than what it cost, so they should not move between runs at all.
 OUTCOME = ("rounds", "settled", "starred")
 
+# How far nodes may move between runs of the same group before the difference is a difference.
+# Unlike an OUTCOME column, nodes is a cost, and a reading of the manager rather than a count of
+# the search - so it moves a little without the search moving at all. A spread under this is
+# noise, and a nodes figure quoted to the last digit is quoting the noise too.
+NODES_NOISE = 0.01
+# How many of the widest-moving groups the summary names.
+DRIFTIEST = 5
+
 COMBINED_COLUMNS = [
     "conv",
     "runs",
@@ -537,6 +548,29 @@ def cold_line(cold, totals):
     return f"cold run (discarded): {total:,} ms, {total / warmest:.2f}x the fastest kept run at {warmest:,} ms"
 
 
+def nodes_drift_lines(drifting, measured):
+    """Which groups read a different nodes every run, and by how much.
+
+    SAID WHERE THE NUMBER IS READ. nodes is quoted to the last digit throughout this
+    repository - in issues, in menu-costs-diff.py's output, in notes comparing one branch with
+    another - and read as a count of the search, so a group that moves on its own reads as a
+    change that is not there. The summary is where a reader meets the figure, so it is where
+    the figure says how firm it is. See de-jitt.
+    """
+    if not drifting:
+        return [f"nodes: identical in every run for all {measured} measured group(s)"]
+    worst = sorted(drifting, reverse=True)
+    noisy = [group for group in worst if group[0] >= NODES_NOISE]
+    lines = [
+        f"groups whose nodes move between runs: {len(drifting)} of {measured} measured, "
+        f"{len(noisy)} of them by {NODES_NOISE:.0%} or more "
+        "(a smaller spread than that is not a difference)"
+    ]
+    for spread, conversation, low, high in worst[:DRIFTIEST]:
+        lines.append(f"  {conversation:>6}  {low:,} - {high:,}  ({spread:.1%})")
+    return lines
+
+
 def combine(folders, out, cold=None):
     """Folds several runs of the same groups into one table and a summary, and prints it.
 
@@ -556,6 +590,7 @@ def combine(folders, out, cold=None):
     lines = [TAB.join(COMBINED_COLUMNS)]
     measured = []
     unsteady = []
+    drifting = []
     for conversation in conversations:
         rows = [run[conversation] for run in runs if conversation in run]
         times = [int(row[MENU_MS]) for row in rows if row.get(MENU_MS, "").isdigit()]
@@ -570,6 +605,13 @@ def combine(folders, out, cold=None):
         steady = all("|" not in value for value in outcome)
         if not steady:
             unsteady.append(conversation)
+        # NODES IS A READING OF THE MANAGER, NOT A COUNT OF THE SEARCH - what the diagram
+        # manager HOLDS when the menu ends, which depends on when it last collected and so on
+        # allocation timing rather than on the search's shape. Most groups read the same every
+        # run; a few do not, and the number is quoted as exact all over this repository. See
+        # de-jitt.
+        if len(nodes) > 1 and min(nodes) != max(nodes):
+            drifting.append((max(nodes) / min(nodes) - 1, conversation, min(nodes), max(nodes)))
         median = statistics.median(times)
         nodes_median = statistics.median(nodes) if nodes else ""
         lines.append(
@@ -596,6 +638,7 @@ def combine(folders, out, cold=None):
         "total menu_ms by run: " + " / ".join(f"{total:,}" for total in totals),
         f"sum of medians: {number_text(sum(m[0] for m in measured), grouped=True)} ms",
         f"groups whose rounds, settled or starred differ between runs: {unsteady or 'none'}",
+        *nodes_drift_lines(drifting, len(measured)),
         cold_line(cold, totals),
         "",
         f"the {HARDEST} costliest groups by median menu_ms:",
