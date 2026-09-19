@@ -1,0 +1,134 @@
+// SPDX-License-Identifier: MIT
+//! Does what a measurement keeps agree with what this build derives?
+//!
+//! ## Why a test and not an argument
+//!
+//! The matrix driver runs one process per group and every one of them used to read a sixteen
+//! megabyte index, build the group's graph and build its world from the save - the same answers
+//! every time, in 521 processes per pass. Those answers are now kept under the build output and
+//! read back, which takes a whole-game pass from about 150 seconds of work to about 25. See
+//! de-9z1u, `performance/kept.rs` and `performance/prepared.rs`.
+//!
+//! A CACHE NOTHING VERIFIES IS A CACHE NOBODY SHOULD TRUST, and this one sits underneath every
+//! performance number the project produces. The failure it guards against is silent by
+//! construction: a stale value does not crash, it reports numbers for a graph or a world the
+//! current code would not build, and nothing about the run looks unusual.
+//!
+//! ## What this checks, and in what order
+//!
+//! FIRST, THAT IT IS KEPT AT ALL. A second `Shipped` asks for the same group and never reads the
+//! index - `took` stays at zero - which can only happen if the graph came off the disk. A cache
+//! that quietly stopped working would pass every agreement check ever written, because building
+//! everything fresh always agrees with itself.
+//!
+//! THEN, THAT WHAT IS KEPT AGREES. `DEGCT_CACHE_VERIFY=1` makes each kept value be derived again
+//! and compared with what was read back, inside the code that reads it, and a disagreement
+//! panics rather than being reported - see `prepared::verified` and `save_world::verified`.
+
+use std::path::PathBuf;
+
+use lookahead_engine::bridge::SnapshotWorld;
+
+mod common;
+
+#[path = "../performance/prepared.rs"]
+mod prepared;
+
+#[path = "../performance/save_world.rs"]
+mod save_world;
+
+use prepared::Shipped;
+
+/// A handful of groups, small and large: 1494 builds 115 entries and 640 builds 4,064, so a
+/// value whose size is what breaks it has somewhere to show.
+const GROUPS: [i32; 2] = [1494, 640];
+
+/// The whole thing, in one test, because it drives a process-wide environment variable and
+/// Rust runs a file's tests on threads of one process. One test is what makes the order it
+/// depends on the order it gets.
+#[test]
+fn what_is_kept_agrees_with_what_this_build_derives() {
+    let Some(path) = common::shipped_index() else {
+        return;
+    };
+
+    // FILLING IT, and whether this run derives anything is not the point and not asserted: the
+    // cache outlives the process, so a second run of this test finds its own values already
+    // there. What the test is about is what a process that has been told nothing gets.
+    let filling = Shipped::at(path.clone());
+    for group in GROUPS {
+        let (graph, _) = prepared::group_graph(&filling, group).expect("the group builds");
+        let world = save_world::of_save(&graph, group, &filling, save_world::TEMPLATE);
+        assert!(
+            !world.variables.is_empty(),
+            "conversation {group}: a world from the template save answers no variables, so \
+             there is nothing here to keep or to check"
+        );
+    }
+    // READING IT BACK, in a process that has been told nothing. The index is read when the
+    // first thing needs it, so a `took` of zero says nothing did.
+    let kept = Shipped::at(path.clone());
+    for group in GROUPS {
+        let (graph, group_of) = prepared::group_graph(&kept, group).expect("the group builds");
+        assert!(
+            graph.count() > 0,
+            "conversation {group}: a kept graph is empty"
+        );
+        assert!(
+            group_of.contains(&group),
+            "conversation {group}: a kept group does not hold the conversation it is named for"
+        );
+    }
+    assert_eq!(
+        kept.took(),
+        std::time::Duration::ZERO,
+        "a kept graph was not read back: the index was read, which only happens when something \
+         had to be derived"
+    );
+
+    // CHECKING IT. Everything kept is derived again and compared where it is read - and with
+    // verification on, the world's process-local memo is skipped, so every world handed out is
+    // one that was checked.
+    //
+    // SAFETY: this is the only test in this binary, and no thread has been started. The
+    // variable is read by `kept::verifying`, which nothing has called since.
+    unsafe { std::env::set_var("DEGCT_CACHE_VERIFY", "1") };
+
+    let checked = Shipped::at(path);
+    for group in GROUPS {
+        let (graph, _) = prepared::group_graph(&checked, group).expect("the group builds");
+        let world = save_world::of_save(&graph, group, &checked, save_world::TEMPLATE);
+        // A WORLD THAT ANSWERS, so that the comparison inside was over something. The walk a
+        // measurement feeds this to refuses rather than guesses wherever it cannot decide.
+        assert!(
+            !world.variables.is_empty(),
+            "conversation {group}: a checked world answers no variables"
+        );
+        let _ = SnapshotWorld::declaring(world, save_world::declared());
+    }
+    assert!(
+        checked.took() > std::time::Duration::ZERO,
+        "a verifying run derives everything it was given, which means reading the index"
+    );
+
+    // SAFETY: as above, and the value is put back so that nothing else in this process inherits
+    // a verifying cache.
+    unsafe { std::env::remove_var("DEGCT_CACHE_VERIFY") };
+}
+
+/// The cache lives under the build output and nowhere else, since it is derived, it is large,
+/// and it is invalidated by the very thing `target/` is invalidated by.
+#[test]
+fn nothing_is_kept_in_the_repository() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for stray in [
+        "degct-cache",
+        "performance/degct-cache",
+        "tests/degct-cache",
+    ] {
+        assert!(
+            !root.join(stray).exists(),
+            "{stray} is in the repository; kept values belong under the build output"
+        );
+    }
+}

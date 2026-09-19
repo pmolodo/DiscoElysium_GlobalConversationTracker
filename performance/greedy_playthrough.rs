@@ -67,11 +67,15 @@ use std::time::Instant;
 use lookahead_engine::bridge::SnapshotWorld;
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::graph::LookAheadGraph;
-use lookahead_engine::index::{Index, build_group_graph, discover_group, read_index};
+use lookahead_engine::index::{Index, discover_group, read_index};
 use lookahead_engine::walkthrough::{Playthrough, Stage, Stop, roll_escalation};
 
 #[path = "../tests/common/mod.rs"]
 mod common;
+
+#[path = "prepared.rs"]
+mod prepared;
+use prepared::Shipped;
 
 #[path = "save_world.rs"]
 mod save_world;
@@ -280,14 +284,18 @@ fn main() {
         eprintln!("no conversation index; nothing to walk.");
         return;
     };
+    // THE FULL INDEX, not the shipped one, which is why the walk's worlds are keyed on which
+    // index built them - see `save_world::kept_at`.
+    let started = Instant::now();
     let index = read_index(&path).expect("the index reads");
+    let shipped = Shipped::read(path, index, started.elapsed());
 
     let wanted: Vec<i32> = match lookahead_engine::core::env::var("CONVERSATION") {
         Ok(value) => value
             .split(',')
             .filter_map(|part| part.trim().parse().ok())
             .collect(),
-        Err(_) => group_starts(&index),
+        Err(_) => group_starts(shipped.index()),
     };
 
     let folder = out_dir();
@@ -297,14 +305,14 @@ fn main() {
 
     println!("conv\tstage\tconceded\tlegs\tpresses\tshown\tunshown\trefused\tstopped\tms");
     for conversation in wanted {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+        let Ok((graph, _)) = prepared::group_graph(&shipped, conversation) else {
             continue;
         };
         if graph.get(DialogueNodeId::new(conversation, 0)).is_none() {
             continue;
         }
         let world = SnapshotWorld::declaring(
-            save_world::of_save(&graph, conversation, &index, save_world::TEMPLATE),
+            save_world::of_save(&graph, conversation, &shipped, save_world::TEMPLATE),
             save_world::declared(),
         );
 

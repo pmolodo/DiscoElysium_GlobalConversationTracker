@@ -56,10 +56,14 @@
 //! be totalled, and these two can. `graph ms` is the part of it that was the graph build, so
 //! the walk and whatever else precedes the profile is the difference.
 //!
-//! PREPARATION IS MOST OF WHAT A WHOLE-GAME RUN SPENDS: 101 seconds against 7.7 of menu
-//! measuring, over 521 groups, and it barely tracks the group's size - three entries cost
-//! 110 ms and 4,724 cost 297. That is why it is split: a flat cost paid once per group is a
-//! different problem from one that grows with the graph. See de-ealo and de-9z1u.
+//! `index ms` is earlier still: reading the shipped index, which a process does once and only
+//! if something needs it. It is taken OUT of `prep ms` rather than left inside it, so the
+//! columns can be added up - see [`Prep::of`] - and a ZERO there is a group whose graph and
+//! whose world were both kept, which is a group that never needed the index at all.
+//!
+//! WHAT IS FLAT IS WHAT IS LARGE HERE, which is why these are split at all: a cost paid once
+//! per group whatever its size is a different problem from one that grows with the graph, and
+//! the totals say the flat ones dominate. See de-ealo and de-9z1u.
 //!
 //! That is what makes a row saying NO-MENU cost anything at all. Such a row holds the word in
 //! `menu ms`, a `setup ms` of zero because no layout or manager is ever built for it, and a
@@ -171,7 +175,7 @@ use std::time::{Duration, Instant};
 use lookahead_engine::bridge::{NodeRef, SnapshotWorld, WorldSnapshot};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;
-use lookahead_engine::index::{build_group_graph, discover_group, read_index};
+use lookahead_engine::index::{build_group_graph, discover_group};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
@@ -187,6 +191,10 @@ mod common;
 mod menu_profile;
 use menu_profile::MenuProfile;
 
+#[path = "prepared.rs"]
+mod prepared;
+use prepared::Shipped;
+
 #[path = "save_world.rs"]
 mod save_world;
 
@@ -198,9 +206,9 @@ use seen_profile::candidates;
 ///
 /// A DRIVER ASKS FOR THESE rather than parsing them off a row, so that a file assembled from
 /// many processes cannot get a header that disagrees with its rows.
-const COLUMNS: [&str; 15] = [
-    "conv", "entries", "options", "offered", "menu_ms", "setup_ms", "graph_ms", "prep_ms", "asked",
-    "rounds", "settled", "partly", "nodes", "starred", "exact",
+const COLUMNS: [&str; 16] = [
+    "conv", "entries", "options", "offered", "menu_ms", "setup_ms", "index_ms", "graph_ms",
+    "prep_ms", "asked", "rounds", "settled", "partly", "nodes", "starred", "exact",
 ];
 
 /// The groups to measure when nothing is named: the heavy list the matrix has always meant.
@@ -589,13 +597,16 @@ fn main() {
         eprintln!("no shipped index; skipping.");
         return;
     };
-    let index = read_index(&path).expect("the shipped index reads");
+    // NOT READ HERE, and that is the point: a group whose graph and whose world are both kept
+    // never needs the index at all. See `prepared::Shipped`, and `Prep::index` for the column
+    // that says what it cost when something did need it.
+    let shipped = Shipped::at(path);
 
     // ASKED FOR ON ITS OWN, like the header, and for the same reason: a whole-game run has to
     // know which groups there are before it measures any, and a list kept anywhere else can
     // omit a group and never say so. See `group_list`.
     if lookahead_engine::core::env::is_set("GROUPS_ONLY") {
-        for (start, conversations, entries, reachable) in group_list(&index) {
+        for (start, conversations, entries, reachable) in group_list(shipped.index()) {
             println!("{start}\t{conversations}\t{entries}\t{reachable}");
         }
         return;
@@ -619,11 +630,16 @@ fn main() {
         // FROM BEFORE THE GRAPH BUILD, because that is what a row which never measures
         // anything is made of - see [`Prep`].
         let started = Instant::now();
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+        // WHAT THE INDEX HAD ALREADY COST THIS PROCESS, so that what it costs THIS group is the
+        // difference. The index is read when something first needs it, which is inside the
+        // group's own preparation - so without this the read would be counted twice, once in
+        // its own column and again inside `graph` and `total`.
+        let before = shipped.took();
+        let Ok((graph, _)) = prepared::group_graph(&shipped, conversation) else {
             eprintln!("conversation {conversation}: no group builds from it; skipping.");
             continue;
         };
-        let built = started.elapsed();
+        let built = started.elapsed() - (shipped.took() - before);
         let root = DialogueNodeId::new(conversation, 0);
         if graph.get(root).is_none() {
             eprintln!("conversation {conversation}: no entry 0; skipping.");
@@ -646,10 +662,7 @@ fn main() {
                         &graph,
                         0,
                         NO_MENU,
-                        Prep {
-                            graph: built,
-                            total: started.elapsed(),
-                        },
+                        Prep::of(&shipped, before, built, started),
                         None,
                     );
                     continue;
@@ -657,7 +670,7 @@ fn main() {
             }
         } else if let Scenario::FirstMenu = scenario {
             let base = SnapshotWorld::declaring(
-                save_world::of_save(&graph, conversation, &index, save_world::TEMPLATE),
+                save_world::of_save(&graph, conversation, &shipped, save_world::TEMPLATE),
                 save_world::declared(),
             );
             match menu_profile::first_menu_profile(
@@ -686,7 +699,7 @@ fn main() {
                         found.reachable,
                     );
                     let mut world =
-                        save_world::of_save(&graph, conversation, &index, save_world::TEMPLATE);
+                        save_world::of_save(&graph, conversation, &shipped, save_world::TEMPLATE);
                     world.seen = found.seen.iter().copied().map(NodeRef::from).collect();
                     world.variables = found.variables;
                     (
@@ -703,10 +716,7 @@ fn main() {
                         &graph,
                         0,
                         NO_MENU,
-                        Prep {
-                            graph: built,
-                            total: started.elapsed(),
-                        },
+                        Prep::of(&shipped, before, built, started),
                         None,
                     );
                     continue;
@@ -720,7 +730,7 @@ fn main() {
             // cached playthrough run fourteen legs while the profile measured here stopped at
             // seven. See de-qy5t.
             let base = SnapshotWorld::declaring(
-                save_world::of_save(&graph, conversation, &index, save_world::TEMPLATE),
+                save_world::of_save(&graph, conversation, &shipped, save_world::TEMPLATE),
                 save_world::declared(),
             );
             match menu_profile::walked_profile(
@@ -753,7 +763,7 @@ fn main() {
                         found.reachable, found.shown,
                     );
                     let mut world =
-                        save_world::of_save(&graph, conversation, &index, save_world::TEMPLATE);
+                        save_world::of_save(&graph, conversation, &shipped, save_world::TEMPLATE);
                     world.seen = found.seen.iter().copied().map(NodeRef::from).collect();
                     world.variables = found.variables;
                     (
@@ -770,10 +780,7 @@ fn main() {
                         &graph,
                         0,
                         NO_MENU,
-                        Prep {
-                            graph: built,
-                            total: started.elapsed(),
-                        },
+                        Prep::of(&shipped, before, built, started),
                         None,
                     );
                     continue;
@@ -788,10 +795,7 @@ fn main() {
                         &graph,
                         0,
                         NO_MENU,
-                        Prep {
-                            graph: built,
-                            total: started.elapsed(),
-                        },
+                        Prep::of(&shipped, before, built, started),
                         None,
                     );
                     continue;
@@ -801,10 +805,7 @@ fn main() {
 
         // THE GRAPH AND THE WALK ARE BEHIND US, and nothing a menu costs is. Taken here rather
         // than where the row is written, or a measured row's prep would swallow its search.
-        let prep = Prep {
-            graph: built,
-            total: started.elapsed(),
-        };
+        let prep = Prep::of(&shipped, before, built, started);
 
         // WHAT THE PLAYER HAS SEEN, AT BOTH SCOPES, counted rather than described. A scenario is
         // a claim about the novelty distribution, and the row cannot say which claim it made -
@@ -1156,10 +1157,37 @@ where
 /// is the graph build or what follows it. See de-ealo and de-9z1u.
 #[derive(Debug, Clone, Copy)]
 struct Prep {
+    /// Reading the shipped index, where this group's preparation is what needed it read.
+    ///
+    /// ZERO WHERE NOTHING NEEDED IT, which is the whole point: a group whose graph and whose
+    /// world are both kept never asks for the index, and the column says so. It is reported per
+    /// row rather than once because the driver runs one process per group, so a whole-game run
+    /// pays it once per group.
+    index: Duration,
     /// Building the group's graph from the index.
     graph: Duration,
     /// That, and everything else up to the profile being ready to measure against.
     total: Duration,
+}
+
+impl Prep {
+    /// What this group spent, with the index read taken out of it.
+    ///
+    /// TAKEN OUT SO THE COLUMNS CAN BE ADDED UP. The index is read when the first thing needs
+    /// it, which is inside a group's own preparation - so leaving it in would report it twice,
+    /// once in `index` and again inside `graph` and `total`, and no total over the row would
+    /// mean anything.
+    ///
+    /// `before` is what the index had cost this process when this group started, so a process
+    /// measuring several groups charges the read to the one that caused it.
+    fn of(shipped: &Shipped, before: Duration, graph: Duration, started: Instant) -> Self {
+        let index = shipped.took() - before;
+        Self {
+            index,
+            graph,
+            total: started.elapsed() - index,
+        }
+    }
 }
 
 /// One row, as a tab-separated line.
@@ -1184,6 +1212,7 @@ fn row(
             offered.to_string(),
             format!("{:.0}", ms(m.took)),
             format!("{:.0}", ms(m.setup)),
+            format!("{:.0}", ms(prep.index)),
             format!("{:.0}", ms(prep.graph)),
             format!("{:.0}", ms(prep.total)),
             m.asked.to_string(),
@@ -1210,11 +1239,12 @@ fn row(
                 // NOTHING WAS SET UP: no layout, no manager, no compiled guards. Zero rather
                 // than "?", because it is known and it is none.
                 "0".to_string(),
+                format!("{:.0}", ms(prep.index)),
                 format!("{:.0}", ms(prep.graph)),
                 format!("{:.0}", ms(prep.total)),
             ];
             // The rest are answers a measurement would have given, and there was none.
-            cells.extend(COLUMNS.iter().skip(8).map(|_| "?".to_string()));
+            cells.extend(COLUMNS.iter().skip(9).map(|_| "?".to_string()));
             cells
         }
     };

@@ -414,6 +414,19 @@ RUN_FOLDER = "run-{}"
 # KEPT RATHER THAN DELETED, because it is the honest number for a question the combination
 # cannot answer: what a player pays on the FIRST menu of a session, which is the one they
 # notice. `tools/cold-run-effect.py` recomputes the figures above over whatever is on disk.
+#
+# AND IT IS WHAT FILLS THE MEASUREMENT'S OWN CACHE, which is a second reason to take it and a
+# reason the discard has to stay where it is. A group's graph and its world are derived once and
+# kept - see `performance/kept.rs` - so the first pass over the game after a build derives them
+# and the rest read them, and a pass whose counted runs were half derived and half read would
+# be comparing two different amounts of work. The discarded pass takes the deriving, and every
+# counted run is warm BY CONSTRUCTION.
+#
+# THAT MATTERS TO THE MENU COLUMNS TOO, not only to the preparation ones. Whole game 2026-09-19:
+# a warm run measures menus 4 to 15 per cent higher than a deriving one, because workers that no
+# longer spend most of their time preparing are in menus at the same moment as each other. Two
+# folders taken in different cache states are not comparable, and taking the discard is what
+# makes sure they never are.
 COLD_FOLDER = "run-cold"
 
 # What this driver calls itself where the wrapper is not there to be asked, and what it

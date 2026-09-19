@@ -32,10 +32,19 @@ use std::sync::{Mutex, OnceLock};
 
 use lookahead_engine::bridge::{NodeRef, WorldSnapshot};
 use lookahead_engine::graph::LookAheadGraph;
-use lookahead_engine::index::{Index, discover_group};
+use lookahead_engine::index::discover_group;
 
 #[path = "../tests/common/mod.rs"]
 mod common;
+
+#[path = "kept.rs"]
+mod kept;
+
+// THE INCLUDER'S `prepared`, not a copy of it. A module brought in by path is a module of the
+// example that included it, so two copies of this one would be two distinct `Shipped` types and
+// the world a measurement asks for could not be asked with the one it holds. Every example that
+// includes this file declares `mod prepared` beside it.
+use crate::prepared::Shipped;
 
 /// What this process has already built, so it is not built twice.
 ///
@@ -84,23 +93,27 @@ pub const TEMPLATE: &str = "save_template";
 pub fn of_save(
     graph: &LookAheadGraph,
     conversation: i32,
-    index: &Index,
+    shipped: &Shipped,
     save: &str,
 ) -> WorldSnapshot {
     let key = (conversation, save.to_string(), graph.count());
-    if !no_cache()
+    // NOT WHILE VERIFYING, because the memo is what the disk cache would otherwise never be
+    // asked past: a run that asked for the same world twice would check the first answer and
+    // hand back the second unchecked. A verifying run pays for every world it is given.
+    if !kept::no_cache()
+        && !kept::verifying()
         && let Some(held) = memo().lock().expect("the cache is not poisoned").get(&key)
     {
         return held.clone();
     }
 
-    let on_disk = (!no_cache())
-        .then(|| kept_at(graph, conversation, save))
+    let on_disk = (!kept::no_cache())
+        .then(|| kept_at(graph, conversation, shipped, save))
         .flatten();
     let built = match on_disk.as_ref().and_then(|path| read_kept(path)) {
-        Some(held) => held,
+        Some(held) => verified(held, || build_of_save(graph, conversation, shipped, save)),
         None => {
-            let fresh = build_of_save(graph, conversation, index, save);
+            let fresh = build_of_save(graph, conversation, shipped, save);
             if let Some(path) = on_disk.as_ref() {
                 write_kept(path, &fresh);
             }
@@ -108,7 +121,7 @@ pub fn of_save(
         }
     };
 
-    if !no_cache() {
+    if !kept::no_cache() {
         memo()
             .lock()
             .expect("the cache is not poisoned")
@@ -119,65 +132,66 @@ pub fn of_save(
 
 /// Where this world is kept between processes, or `None` where it cannot safely be kept.
 ///
-/// ## Why the key carries the engine and not only the group
+/// THE INDEX IT WAS BUILT FROM IS PART OF THE KEY, not just the group: there are two indexes in
+/// this repository - the shipped one and the full one - and a world built from one answers
+/// differently from a world built from the other. `kept::at` adds the executable, which is the
+/// other thing every kept value depends on.
 ///
-/// A kept world is only valid for the code that built it. `questions_of` and `discover_group`
-/// are engine code, and when either changes, every world kept before it is wrong - SILENTLY,
-/// which is the worst thing a measurement cache can be: a run would report numbers for a world
-/// the current code would not build, and nothing would look unusual.
+/// THE SAVE IS KEYED BY NAME, since a save the game wrote is never edited - that is a rule of
+/// this repository rather than an assumption about this cache - and `DEGCT_NO_CACHE=1` is the
+/// way out if one ever is.
+fn kept_at(
+    graph: &LookAheadGraph,
+    conversation: i32,
+    shipped: &Shipped,
+    save: &str,
+) -> Option<std::path::PathBuf> {
+    kept::at(
+        "worlds",
+        &format!(
+            "{save}\u{1}{conversation}\u{1}{}\u{1}{}",
+            graph.count(),
+            shipped.stamp()?
+        ),
+    )
+}
+
+/// `held`, having checked it against a freshly built world - but only where
+/// `DEGCT_CACHE_VERIFY` asked for that check. See `kept::verifying`.
 ///
-/// So the key covers the executable as well as the inputs. It identifies files by their length
-/// and modification time rather than their contents, which is what `cargo` itself does for
-/// rebuild decisions: hashing the index and the save on every process would cost a good part of
-/// what the cache saves.
-///
-/// Returns `None` if any of that cannot be established, and a world that cannot be keyed is
-/// simply built - the cache is an optimisation and is never the reason an answer is missing.
-fn kept_at(graph: &LookAheadGraph, conversation: i32, save: &str) -> Option<std::path::PathBuf> {
-    let mut key = format!("{save}\u{1}{conversation}\u{1}{}", graph.count());
-    for path in [std::env::current_exe().ok()?, common::shipped_index()?] {
-        let about = std::fs::metadata(&path).ok()?;
-        let when = about
-            .modified()
-            .ok()?
-            .duration_since(std::time::UNIX_EPOCH)
-            .ok()?;
-        key.push('\u{1}');
-        key.push_str(&format!("{}:{}", about.len(), when.as_nanos()));
+/// ON THE ANSWERS, which is what a measurement reads a world for: the variables it holds, what
+/// it calls seen, and which checks pass. A world stale for either reason the key guards against
+/// - another index, another build of the engine - differs in exactly those.
+fn verified(held: WorldSnapshot, fresh: impl FnOnce() -> WorldSnapshot) -> WorldSnapshot {
+    if !kept::verifying() {
+        return held;
     }
-    Some(cache_dir()?.join(format!("{}.json", fingerprint(&key))))
+    let built = fresh();
+    assert_eq!(
+        answers(&held),
+        answers(&built),
+        "a kept world disagrees with the one this build derives"
+    );
+    held
 }
 
-/// FNV-1a, so the name of a kept world does not depend on a hasher whose output is allowed to
-/// change between Rust releases - and a stale name is a stale world.
-fn fingerprint(of: &str) -> String {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in of.as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    format!("{hash:016x}")
-}
-
-/// The folder kept worlds live in, made if it is not there.
+/// What a world answers, rendered so that two of them can be compared.
 ///
-/// UNDER THE BUILD OUTPUT, never in the repository: it is derived, it is large, and it is
-/// invalidated by the very thing `target/` is invalidated by.
-fn cache_dir() -> Option<std::path::PathBuf> {
-    let root = match lookahead_engine::core::env::foreign("CARGO_TARGET_DIR") {
-        Ok(named) if !named.is_empty() => std::path::PathBuf::from(named),
-        _ => std::path::PathBuf::from("target"),
-    };
-    let dir = root.join("degct-cache").join("worlds");
-    std::fs::create_dir_all(&dir).ok()?;
-    Some(dir)
+/// THROUGH SERDE rather than field by field, because the fields are sets and maps that do not
+/// compare: `NodeSet` has no equality of its own, and a `HashMap`'s rendering depends on its
+/// iteration order - so the variables go through a `BTreeMap` first and the sets through their
+/// own serializer, which writes them as runs in conversation order.
+fn answers(world: &WorldSnapshot) -> String {
+    let variables: std::collections::BTreeMap<_, _> = world.variables.iter().collect();
+    serde_json::to_string(&(
+        &variables,
+        &world.seen,
+        &world.checks_pass,
+        &world.checks_fail,
+    ))
+    .expect("a world's answers render")
 }
 
-/// A kept world, or `None` for anything at all going wrong.
-///
-/// A FILE THAT DOES NOT READ IS A FILE TO IGNORE, not one to fail on - it may be half-written
-/// by a process still running, or left by a build that no longer exists. The cost of ignoring
-/// it is building the world; the cost of trusting it is a wrong measurement.
 /// A world as it is kept, which is a world with one map turned inside out.
 ///
 /// ## Why it is not just the world
@@ -200,50 +214,37 @@ struct Kept {
     )>,
 }
 
+/// A kept world, or `None` for anything at all going wrong - see `kept`, which says why a file
+/// that does not read back is ignored rather than failed on.
 fn read_kept(path: &std::path::Path) -> Option<WorldSnapshot> {
-    let held: Kept = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    let held: Kept = kept::read_json(path)?;
     let mut world = held.world;
     world.data = held.data.into_iter().collect();
     Some(world)
 }
 
-/// Keeps a world, through a temporary file so that no reader can see a partial one.
-///
-/// THE DRIVER RUNS GROUPS IN PARALLEL, so two processes can want the same world at the same
-/// moment. Writing in place would let one read what the other is still writing; a rename is
-/// atomic enough that a reader sees the whole file or no file. Two writers racing both produce
-/// the same bytes, so whichever lands last is right.
+/// Keeps a world, with its data map carried beside it - see [`Kept`].
 fn write_kept(path: &std::path::Path, world: &WorldSnapshot) {
     let mut without = world.clone();
     let data = std::mem::take(&mut without.data).into_iter().collect();
-    let Ok(rendered) = serde_json::to_vec(&Kept {
-        world: without,
-        data,
-    }) else {
-        return;
-    };
-    let mine = path.with_extension(format!("{}.part", std::process::id()));
-    if std::fs::write(&mine, rendered).is_ok() && std::fs::rename(&mine, path).is_err() {
-        let _ = std::fs::remove_file(&mine);
-    }
-}
-
-/// Whether `DEGCT_NO_CACHE` says to build everything rather than trusting what was kept.
-///
-/// A CACHE UNDERNEATH A MEASUREMENT HAS TO HAVE A WAY OFF. Every performance number this
-/// repository produces is taken against a world built here, and a cache that cannot be
-/// disabled is one whose correctness can only be argued about.
-fn no_cache() -> bool {
-    lookahead_engine::core::env::var("NO_CACHE").as_deref() == Ok("1")
+    kept::write_json(
+        path,
+        &Kept {
+            world: without,
+            data,
+        },
+    );
 }
 
 fn build_of_save(
     graph: &LookAheadGraph,
     conversation: i32,
-    index: &Index,
+    shipped: &Shipped,
     save: &str,
 ) -> WorldSnapshot {
-    let group: Vec<i32> = discover_group(index, conversation).into_iter().collect();
+    let group: Vec<i32> = discover_group(shipped.index(), conversation)
+        .into_iter()
+        .collect();
     let asked = lookahead_engine::bridge::questions_of(graph, group.clone());
     let holdings = common::fixtures::holdings_in_save(save);
     let checks = common::fixtures::checks_in_save(save, &group)

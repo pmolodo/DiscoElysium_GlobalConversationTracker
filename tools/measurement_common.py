@@ -657,6 +657,12 @@ COMPARED_VARIABLES = frozenset(
     qualified(name)
     for name in (
         "BUDGET_MB",
+        # WHETHER PREPARATION WAS KEPT OR DERIVED AGAIN, which is most of what a row's
+        # index_ms, graph_ms and prep_ms say. The menu columns are the same either way, and
+        # that is exactly why these must not be mixed silently: half a folder taken with a
+        # cache and half without reads as a measurement of nothing.
+        "NO_CACHE",
+        "CACHE_VERIFY",
         "NOLIMIT",
         "SEEN_WORLD",
         "STARTS",

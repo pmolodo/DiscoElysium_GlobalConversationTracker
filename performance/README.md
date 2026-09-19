@@ -111,6 +111,20 @@ label rides as a suffix on the name the run would have had anyway,
 `..._measure-menus_menus__qy5t-before/`, so the folder still carries its transcript's name.
 The same word later resumes the most recent folder carrying it.
 
+### What a run keeps, so it is not derived 521 times
+
+Reading the index, building a group's graph and building its world from the save are the same
+answers in every process of every pass, and they were most of what a pass spent. They are now
+kept under the build output - `target/degct-cache/`, never in the repository - and read back;
+see `performance/kept.rs` and `performance/prepared.rs`, and `index ms` for what a process that
+needed none of them reports.
+
+Every key carries the executable and the files the value came from, so a kept value cannot
+outlive the code that derived it: a rebuild costs one pass at full price and the passes after
+it are the cheap ones. `DEGCT_NO_CACHE=1` derives everything, and `DEGCT_CACHE_VERIFY=1`
+derives everything AND checks it against what was kept, which is what `tests/kept_cache.rs`
+runs over a handful of groups.
+
 A default row is the shipped algorithm, walk included: each profile menu is asked with the walk
 a player would have been shown from the conversation's start (`hub::walk_to_menu`), and the hub
 cut it drives is worked out inside the timing, as a player's request has it worked out. Every
