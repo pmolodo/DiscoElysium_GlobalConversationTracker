@@ -186,6 +186,22 @@ fn ask(
     // first run, and is worth saying so nobody repeats it.
     let cut: HashSet<DialogueNodeId> = HashSet::new();
     let options: HashSet<DialogueNodeId> = profile.starts.iter().copied().collect();
+    let positions: Vec<_> = profile
+        .starts
+        .iter()
+        .map(|&start| {
+            Where::of(
+                graph,
+                start,
+                lookahead_engine::core::types::StartBranch::Either,
+                &seed,
+                &mut compiler,
+                &world,
+                COUNTER_CAP as u32,
+            )
+            .position(start)
+        })
+        .collect();
     let mut targets: Vec<DialogueNodeId> = profile.unseen.iter().copied().collect();
     targets.sort_unstable_by_key(|id| (id.conversation_id, id.entry_id));
 
@@ -200,6 +216,7 @@ fn ask(
     );
 
     let mut rows = Vec::new();
+    let mut distances = Vec::new();
     for target in targets {
         let began = Instant::now();
         let pass = Backward::reaching_any_knowing(
@@ -231,6 +248,43 @@ fn ask(
             began.elapsed().as_millis(),
         ));
         drop(pass);
+
+        // AND THE SAME TARGET ASKED FOR A DISTANCE, which is what the EXACT marking asks once the
+        // onward question has starred nothing. Reachability answers yes or no; this answers how
+        // far, and it has to spread layer by layer until it meets an option or runs out - so the
+        // two numbers side by side say whether the cost is in deciding the question or in
+        // pricing the answer. See `symbolic::menu::mark_menu` and de-zxe0.
+        let began = Instant::now();
+        let near = Backward::nearest(
+            Search {
+                graph,
+                compiler: &mut compiler,
+                world: &world,
+                counter_cap: COUNTER_CAP as u32,
+            },
+            target,
+            &cut,
+            &PassBudget {
+                time: Duration::from_millis(from_env("EACH_MS", EACH_MS as usize) as u64),
+                steps: usize::MAX,
+                ..Default::default()
+            },
+            &known,
+            &positions,
+        );
+        distances.push((
+            target,
+            match near {
+                lookahead_engine::symbolic::backward::Nearest::Found { distance, .. } => {
+                    format!("{distance}")
+                }
+                lookahead_engine::symbolic::backward::Nearest::Unreachable => "none".to_string(),
+                lookahead_engine::symbolic::backward::Nearest::Unfinished { out_of_memory } => {
+                    if out_of_memory { "no room" } else { "gave up" }.to_string()
+                }
+            },
+            began.elapsed().as_millis(),
+        ));
     }
 
     rows.sort_by_key(|row| std::cmp::Reverse(row.8));
@@ -258,10 +312,30 @@ fn ask(
         stopped
     );
     println!(
-        "totals: {} ms, {} diagram nodes, {} steps",
+        "reachability: {} ms, {} diagram nodes, {} steps, for all {} target(s)",
         rows.iter().map(|row| row.8).sum::<u128>(),
         rows.iter().map(|row| row.6).sum::<usize>(),
         rows.iter().map(|row| row.3).sum::<usize>(),
+        rows.len(),
+    );
+
+    // THE SAME TARGETS, PRICED RATHER THAN DECIDED. `mark_menu` asks this once the onward
+    // question has starred nothing, and the two totals beside each other are the answer to
+    // where a menu that settles nothing spends its time.
+    println!("\n{:>12}  {:>9}  {:>8}", "target", "distance", "ms");
+    distances.sort_by_key(|row| std::cmp::Reverse(row.2));
+    for (target, answer, ms) in &distances {
+        println!(
+            "{:>12}  {:>9}  {:>8}",
+            format!("{}:{}", target.conversation_id, target.entry_id),
+            answer,
+            ms
+        );
+    }
+    println!(
+        "distance: {} ms for all {} target(s)",
+        distances.iter().map(|row| row.2).sum::<u128>(),
+        distances.len(),
     );
 }
 
