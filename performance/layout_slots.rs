@@ -16,11 +16,11 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_CONVERSATION=761 tools/run-logged.sh --kind analysis cargo layout-slots -- \
+//! tools/run-logged.sh --kind analysis cargo layout-slots -- \
 //!   cargo run --release --example layout_slots
 //! ```
 //!
-//! `DEGCT_VAR_ORDER` applies, so this also shows what an ordering did.
+//! The shipped variable order applies, so this also shows what an ordering did.
 
 use std::collections::BTreeMap;
 

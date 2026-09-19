@@ -122,7 +122,7 @@
 //!
 //! ## And the bound's slack is CONSTANT within a group, which is de-0jsf.18's answer
 //!
-//! `DEGCT_COMPARE=1` also prints each option's OWN nearest distance - the same marking asked
+//! `--compare` also prints each option's OWN nearest distance - the same marking asked
 //! with no rivals - beside the structural lower bound, which is a zero-one walk over links
 //! with no diagrams at all. The gap between them does not vary:
 //!
@@ -148,7 +148,7 @@
 //! orders the survivors, and costs no diagram work whatsoever. Between them that is a
 //! complete marking without a layered pass anywhere in it.
 //!
-//! THE OBVIOUS OBJECTION IS THE PROFILE, and `DEGCT_SCATTER=1` answers it. The runs above
+//! THE OBVIOUS OBJECTION IS THE PROFILE, and `--scatter` answers it. The runs above
 //! mark the ten DEEPEST entries unread, which clusters the targets: every option's route
 //! shares one long tail and the options differ only near the front, which is exactly where a
 //! structural walk is accurate. A real save's unread lines are spread through the group.
@@ -170,16 +170,16 @@
 //!
 //! ## How to run it
 //!
-//! `DEGCT_COMPARE=1` also runs the exact marking in the same manager and prints which options
+//! `--compare` also runs the exact marking in the same manager and prints which options
 //! it marked, which is the check that says whether the cheap answer is the RIGHT answer: a
 //! marker that separates the options but separates the wrong ones is worse than none.
 //!
 //! ```text
-//! DEGCT_CONVERSATION=761 \
+//! cargo run --release --example onward_or_back -- --conversation 761 \
 //!   tools/run-logged.sh cargo onward -- cargo run --release --example onward_or_back
 //! ```
 //!
-//! `DEGCT_STARTS`, `DEGCT_UNSEEN` and `DEGCT_BUDGET_MB` mean what they mean in `menu_matrix`.
+//! `--starts`, `--unseen` and `--budget-mb` mean what they mean in `menu_matrix`.
 
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
@@ -203,6 +203,9 @@ use lookahead_engine::symbolic::vars::DataVars;
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+#[path = "options.rs"]
+mod options;
+
 #[path = "menu_profile.rs"]
 mod menu_profile;
 use menu_profile::MenuProfile;
@@ -217,36 +220,66 @@ const UNSEEN: usize = 10;
 const COUNTER_CAP: i32 = 16;
 const EACH_MS: u64 = 60_000;
 
+/// What this driver takes.
+///
+/// HANDED DOWN, because the scatter flag, the compare flag and the per-pass ration are read
+/// well below `main` - in `ask` and in `reaches` - and reading them there is how an option
+/// comes to be decided where no caller can see it.
+#[derive(clap::Parser)]
+#[command(about = "Whether the onward question or the backward one answers a menu sooner.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+    #[command(flatten)]
+    starts: options::Starts<STARTS>,
+    #[command(flatten)]
+    unseen: options::Unseen<UNSEEN>,
+    #[command(flatten)]
+    budget: options::Budget<BUDGET_MB>,
+    /// Scatter the unseen entries through the group rather than taking the deepest
+    #[arg(long)]
+    scatter: bool,
+    /// Also ask the question the other way, and report both
+    #[arg(long)]
+    compare: bool,
+    /// What one pass is allowed, in milliseconds
+    #[arg(long = "each-ms", value_name = "MS", default_value_t = EACH_MS)]
+    each_ms: u64,
+}
+
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;
     };
     let index = read_index(&path).expect("the shipped index reads");
-    let budget = DiagramBudget::new(from_env("BUDGET_MB", BUDGET_MB) * 1024 * 1024);
-    for conversation in numbers("CONVERSATION", &CONVERSATIONS) {
+    let budget = DiagramBudget::new(asked.budget.bytes());
+    for conversation in asked.groups.or(&CONVERSATIONS) {
         let Ok((graph, _)) = build_group_graph(&index, conversation) else {
             eprintln!("conversation {conversation}: no group builds from it; skipping.");
             continue;
         };
         let root = DialogueNodeId::new(conversation, 0);
-        let Some(profile) = MenuProfile::of(
-            &graph,
-            root,
-            from_env("UNSEEN", UNSEEN),
-            from_env("STARTS", STARTS),
-        ) else {
+        let Some(profile) = MenuProfile::of(&graph, root, asked.unseen.unseen, asked.starts.starts)
+        else {
             println!("conversation {conversation}: no menu");
             continue;
         };
         isolated::on_its_own_thread(|| {
-            ask(conversation, &graph, &profile, budget);
+            ask(conversation, &graph, &profile, budget, &asked);
             Some(())
         });
     }
 }
 
-fn ask(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget: DiagramBudget) {
+fn ask(
+    conversation: i32,
+    graph: &LookAheadGraph,
+    profile: &MenuProfile,
+    budget: DiagramBudget,
+    asked: &Options,
+) {
     let symbols = graph.symbols().clone();
     let world = SnapshotWorld::declaring(
         WorldSnapshot {
@@ -273,7 +306,7 @@ fn ask(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget:
     // shares a long tail and the options differ only near their own end, which is exactly
     // where a structural walk is accurate. A real save's unread lines are spread through the
     // group, and whether the bound's slack survives that is the question de-0jsf.18 turns on.
-    let unseen: HashSet<_> = if lookahead_engine::core::env::is_set("SCATTER") {
+    let unseen: HashSet<_> = if asked.scatter {
         let mut all: Vec<_> = graph
             .nodes()
             .filter(|n| !n.is_group && !options.contains(&n.id))
@@ -327,6 +360,7 @@ fn ask(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget:
             &seed,
             &shape,
             start,
+            asked,
         );
         let (open_yes, open_ms) = reaches(
             Search {
@@ -340,6 +374,7 @@ fn ask(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget:
             &seed,
             &shape,
             start,
+            asked,
         );
         onward += usize::from(cut_yes);
         at_all += usize::from(open_yes);
@@ -358,7 +393,7 @@ fn ask(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget:
         profile.starts.len()
     );
 
-    if !lookahead_engine::core::env::is_set("COMPARE") {
+    if !asked.compare {
         return;
     }
     // AGAINST THE EXACT MARKING, which is the only thing that says whether the cheap answer
@@ -456,6 +491,7 @@ fn reaches(
     seed: &oxidd::bdd::BDDFunction,
     shape: &GroupShape,
     start: DialogueNodeId,
+    asked: &Options,
 ) -> (bool, u128) {
     let began = Instant::now();
     let position = Where::of(
@@ -477,7 +513,7 @@ fn reaches(
         targets,
         cut,
         &PassBudget {
-            time: Duration::from_millis(from_env("EACH_MS", EACH_MS as usize) as u64),
+            time: Duration::from_millis(asked.each_ms),
             steps: usize::MAX,
             ..Default::default()
         },
@@ -485,23 +521,4 @@ fn reaches(
     );
     let met = pass.stats().met_at.is_some();
     (met, began.elapsed().as_millis())
-}
-
-fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name)
-        .ok()
-        .and_then(|value| value.trim().parse().ok())
-        .unwrap_or(fallback)
-}
-
-fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
-    match lookahead_engine::core::env::var(name) {
-        Ok(named) => named
-            .split(',')
-            .map(str::trim)
-            .filter(|piece| !piece.is_empty())
-            .map(|piece| piece.parse().expect("a number"))
-            .collect(),
-        Err(_) => fallback.to_vec(),
-    }
 }

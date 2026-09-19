@@ -55,7 +55,7 @@ Checked against the code rather than trusted, by `tests/environment_table.rs`: i
 tracked file for a variable spelled out in full or asked for by bare name through the helper for
 its language, compares what it finds with the rows below and with the count in this sentence,
 and fails with the block to paste. So a stale table is a failing test rather than a reader
-looking for a variable that has been renamed. 46 variables.
+looking for a variable that has been renamed. 25 variables.
 
 A TEST RATHER THAN A GENERATOR because what is wanted is enforcement: a build script that
 rewrote this file would dirty the working tree on every build, which every measurement's log
@@ -64,49 +64,28 @@ forgotten.
 
 | `DEGCT_ALL_COMMITTED_SAVES` | `tests/common/mod.rs` |
 | `DEGCT_ARMS` | `tools/measure-residue-arms.sh` |
-| `DEGCT_BUDGET_MB` | `performance/bidirectional_headroom.rs`, `performance/bound_slack.rs`, `performance/cache_split.rs`, `performance/cache_split_menu.rs`, `performance/manager_reuse.rs`, `performance/onward_or_back.rs`, `performance/repeat_question.rs`, `performance/search_residue.rs`, `performance/target_cost.rs`, `tools/measure-residue-arms.sh` |
+| `DEGCT_BUDGET_MB` | `tools/measure-residue-arms.sh` |
 | `DEGCT_CACHE_VERIFY` | `performance/README.md`, `performance/kept.rs`, `performance/prepared.rs`, `performance/save_world.rs`, `tests/kept_cache.rs` |
-| `DEGCT_CEILING` | `performance/greedy_playthrough.rs` |
-| `DEGCT_COMPARE` | `performance/onward_or_back.rs` |
-| `DEGCT_CONVERSATION` | `AGENTS.md`, `CLAUDE.md`, `docs/modelling-gaps.md`, `performance/bidirectional_headroom.rs`, `performance/bound_slack.rs`, `performance/cache_split.rs`, `performance/cache_split_menu.rs`, `performance/greedy_playthrough.rs`, `performance/layout_slots.rs`, `performance/manager_reuse.rs`, `performance/menu_wall.rs`, `performance/nodes_repeat.rs`, `performance/onward_or_back.rs`, `performance/per_start_setup.rs`, `performance/profile_closure.rs`, `performance/redundant_counters.rs`, `performance/repeat_question.rs`, `performance/target_cost.rs`, `performance/workspace_menus.rs`, `src/core/env.rs`, `tests/modelling_gaps.rs`, `tests/reference_oracle.rs`, `tools/degct-env.sh`, `tools/measure-symbolic.sh`, `tools/measurement_common.py` |
-| `DEGCT_EACH_MS` | `performance/onward_or_back.rs`, `performance/target_cost.rs` |
-| `DEGCT_FRESH` | `performance/workspace_menus.rs` |
+| `DEGCT_CONVERSATION` | `AGENTS.md`, `CLAUDE.md`, `docs/modelling-gaps.md`, `src/core/env.rs`, `tests/modelling_gaps.rs`, `tests/reference_oracle.rs`, `tools/degct-env.sh`, `tools/measurement_common.py` |
 | `DEGCT_GIT_INDEX_FILE` | `build.rs` |
-| `DEGCT_GUARD_SNAPSHOT` | `performance/guard_snapshot.rs` |
 | `DEGCT_HEADER` | `tools/measurement_common.py` |
-| `DEGCT_LAYERS` | `performance/bidirectional_headroom.rs` |
 | `DEGCT_LOG_DIR` | `tools/measure-symbolic.sh`, `tools/run-logged.sh` |
 | `DEGCT_MARKING` | `AGENTS.md`, `CLAUDE.md`, `performance/README.md`, `src/bridge.rs`, `tools/measurement_common.py`, `tools/menu-costs-diff.py` |
 | `DEGCT_MEASUREMENT` | `tools/measure-symbolic.sh` |
-| `DEGCT_MEMORY_BUDGET_MB` | `performance/menu_residue.rs` |
 | `DEGCT_MENUS_OUT` | `AGENTS.md`, `CLAUDE.md`, `performance/README.md`, `tools/DegctEnv.psm1`, `tools/degct-env.sh`, `tools/measure-menus.py`, `tools/measurement_common.py` |
-| `DEGCT_MENU_TIME_BUDGET_MS` | `performance/menu_wall.rs` |
 | `DEGCT_NOLIMIT` | `src/core/env.rs`, `tools/DegctEnv.psm1`, `tools/degct-env.sh`, `tools/measurement_common.py` |
 | `DEGCT_NO_CACHE` | `performance/README.md`, `performance/group_list.rs`, `performance/kept.rs`, `performance/prepared.rs`, `performance/save_world.rs` |
 | `DEGCT_OUT` | `tools/degct-env.sh` |
-| `DEGCT_PLAYTHROUGHS_OUT` | `performance/greedy_playthrough.rs` |
 | `DEGCT_POOLED_ROUNDS` | `src/symbolic/menu.rs` |
-| `DEGCT_PROFILE` | `performance/seen_profile.rs` |
-| `DEGCT_REPEATS` | `performance/cache_split.rs`, `performance/per_start_setup.rs`, `performance/repeat_question.rs` |
-| `DEGCT_ROUNDS` | `performance/manager_reuse.rs`, `performance/nodes_repeat.rs`, `performance/workspace_menus.rs` |
-| `DEGCT_ROW_SECONDS` | `performance/cache_split.rs`, `tools/DegctEnv.psm1`, `tools/degct-env.sh` |
+| `DEGCT_ROW_SECONDS` | `tools/DegctEnv.psm1`, `tools/degct-env.sh` |
 | `DEGCT_RUN_KIND` | `AGENTS.md`, `CLAUDE.md`, `tools/measure-menus.py`, `tools/measurement_common.py`, `tools/run-logged.sh` |
 | `DEGCT_RUN_LOG` | `tools/measurement_common.py`, `tools/run-logged.sh` |
 | `DEGCT_RUN_LOG_DIR` | `tools/measure-symbolic.sh`, `tools/measurement_common.py`, `tools/run-logged.sh` |
 | `DEGCT_RUN_NAME` | `tools/measure-symbolic.sh` |
-| `DEGCT_SAVE` | `performance/greedy_playthrough.rs`, `performance/target_cost.rs`, `tests/kim_case_offline.rs` |
-| `DEGCT_SCATTER` | `performance/onward_or_back.rs` |
-| `DEGCT_SEARCHES` | `performance/search_residue.rs`, `tools/measure-residue-arms.sh` |
-| `DEGCT_SEARCH_MS` | `performance/repeat_question.rs` |
-| `DEGCT_SPLITS` | `performance/cache_split.rs`, `performance/cache_split_menu.rs` |
-| `DEGCT_STARTS` | `performance/bidirectional_headroom.rs`, `performance/bound_slack.rs`, `performance/cache_split_menu.rs`, `performance/manager_reuse.rs`, `performance/menu_residue.rs`, `performance/menu_wall.rs`, `performance/onward_or_back.rs`, `performance/per_start_setup.rs`, `performance/target_cost.rs`, `performance/workspace_menus.rs` |
-| `DEGCT_TARGET` | `performance/bidirectional_headroom.rs` |
-| `DEGCT_THREAD` | `performance/search_residue.rs`, `tools/measure-residue-arms.sh` |
-| `DEGCT_TIME_BUDGET_MS` | `performance/menu_residue.rs`, `performance/menu_wall.rs` |
-| `DEGCT_UNSEEN` | `performance/bidirectional_headroom.rs`, `performance/bound_slack.rs`, `performance/cache_split_menu.rs`, `performance/manager_reuse.rs`, `performance/menu_residue.rs`, `performance/nodes_repeat.rs`, `performance/onward_or_back.rs`, `performance/profile_closure.rs`, `performance/target_cost.rs` |
-| `DEGCT_VAR_ORDER` | `performance/layout_slots.rs`, `src/symbolic/var_order.rs` |
-| `DEGCT_VERIFY_REPLAY` | `performance/greedy_playthrough.rs` |
-| `DEGCT_WALKED_PROFILE` | `performance/profile_closure.rs` |
+| `DEGCT_SAVE` | `tests/kim_case_offline.rs` |
+| `DEGCT_SEARCHES` | `tools/measure-residue-arms.sh` |
+| `DEGCT_THREAD` | `tools/measure-residue-arms.sh` |
+| `DEGCT_VAR_ORDER` | `src/symbolic/var_order.rs` |
 | `DEGCT_WEIGH_FRONTS` | `src/symbolic/backward.rs` |
 
 ## Keeping this current

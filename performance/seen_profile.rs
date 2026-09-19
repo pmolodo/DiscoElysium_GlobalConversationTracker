@@ -4,7 +4,7 @@
 //! ## Why this is a module rather than a copy in each file
 //!
 //! The same reason `menu_profile.rs` is one. A row is identified by a conversation and a
-//! profile name, and everything downstream - a resume, a `DEGCT_PROFILE=` on the command line,
+//! profile name, and everything downstream - a resume, a profile named on the command line,
 //! two folders compared against each other - assumes that pair names ONE set of unseen
 //! entries. Two copies of the draw is two chances for it to stop being one set, silently,
 //! because nothing checks and the row would still have a plausible number in it.

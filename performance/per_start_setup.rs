@@ -27,7 +27,7 @@
 //!   cargo run --release --example per_start_setup
 //! ```
 //!
-//! `CONVERSATION` picks the groups, `STARTS` how many options the menu has, `REPEATS` how
+//! `--conversation` picks the groups, `--starts` how many options the menu has, `--repeats` how
 //! many times each is timed - the fastest is reported, since what is wanted is what the
 //! work costs rather than what the machine was doing at the time.
 //!
@@ -74,6 +74,9 @@ use lookahead_engine::symbolic::order::IterationOrder;
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+#[path = "options.rs"]
+mod options;
+
 /// The groups a player actually stands in for a while, which is the matrix's heavy list.
 const CONVERSATIONS: [i32; 5] = [28, 368, 14, 631, 362];
 
@@ -87,16 +90,30 @@ const STARTS: usize = 24;
 /// How many times each group is timed; the fastest is reported.
 const REPEATS: usize = 5;
 
+/// What this driver takes. With no group named it uses the list above.
+#[derive(clap::Parser)]
+#[command(about = "What setting a menu up costs per start, group by group.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+    #[command(flatten)]
+    starts: options::Starts<STARTS>,
+    /// How many times each group is timed; the fastest is reported
+    #[arg(long, value_name = "N", default_value_t = REPEATS)]
+    repeats: usize,
+}
+
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;
     };
     let index = read_index(&path).expect("the shipped index reads");
 
-    let conversations = numbers("CONVERSATION", &CONVERSATIONS);
-    let starts = from_env("STARTS", STARTS).max(1);
-    let repeats = from_env("REPEATS", REPEATS).max(1);
+    let conversations = asked.groups.or(&CONVERSATIONS);
+    let starts = asked.starts.starts.max(1);
+    let repeats = asked.repeats.max(1);
 
     println!("a menu of {starts} starts, best of {repeats}\n");
     println!(
@@ -176,21 +193,4 @@ fn main() {
 
 fn ms(took: Duration) -> f64 {
     took.as_secs_f64() * 1000.0
-}
-
-fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name)
-        .ok()
-        .and_then(|text| text.parse().ok())
-        .unwrap_or(fallback)
-}
-
-fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
-    match lookahead_engine::core::env::var(name) {
-        Ok(text) => text
-            .split(',')
-            .filter_map(|part| part.trim().parse().ok())
-            .collect(),
-        Err(_) => fallback.to_vec(),
-    }
 }

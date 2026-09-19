@@ -38,8 +38,8 @@
 //!   cargo run --release --example menu_wall
 //! ```
 //!
-//! `DEGCT_CONVERSATION=631,368` picks the groups, `DEGCT_STARTS=12` the width, `TIME_BUDGET_MS` the
-//! per-option dial and `MENU_TIME_BUDGET_MS` the wall - which defaults to zero here, because
+//! `--conversation 631,368` picks the groups, `--starts 12` the width, `--time-budget-ms` the
+//! per-option dial and `--menu-time-budget-ms` the wall - which defaults to zero here, because
 //! the question is what a menu costs WITHOUT one. Set it to see the wall bind.
 
 use std::time::Instant;
@@ -51,6 +51,9 @@ use lookahead_engine::service::Service;
 
 #[path = "../tests/common/mod.rs"]
 mod common;
+
+#[path = "options.rs"]
+mod options;
 
 #[path = "menu_profile.rs"]
 mod menu_profile;
@@ -80,17 +83,34 @@ const MENU_WALL_MS: u64 = 3000;
 /// The host's read deadline, which is not a budget: crossing it kills the engine.
 const READ_DEADLINE_MS: u64 = 30000;
 
+/// What this driver takes. With no group named it uses the list above.
+#[derive(clap::Parser)]
+#[command(about = "What a whole menu costs against a wall, group by group.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+    #[command(flatten)]
+    starts: options::Starts<STARTS>,
+    /// What one option is allowed, in milliseconds
+    #[arg(long = "time-budget-ms", value_name = "MS", default_value_t = TIME_BUDGET_MS)]
+    time_budget_ms: u64,
+    /// What the whole menu is allowed, in milliseconds; 0 is no wall
+    #[arg(long = "menu-time-budget-ms", value_name = "MS", default_value_t = 0)]
+    menu_time_budget_ms: u64,
+}
+
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;
     };
     let index = read_index(&path).expect("the shipped index reads");
 
-    let groups = numbers("CONVERSATION", &GROUPS);
-    let starts_wanted = from_env("STARTS", STARTS);
-    let time_budget_ms = from_env("TIME_BUDGET_MS", TIME_BUDGET_MS as usize) as u64;
-    let menu_budget_ms = from_env("MENU_TIME_BUDGET_MS", 0) as u64;
+    let groups = asked.groups.or(&GROUPS);
+    let starts_wanted = asked.starts.starts;
+    let time_budget_ms = asked.time_budget_ms;
+    let menu_budget_ms = asked.menu_time_budget_ms;
 
     println!(
         "a cold menu of up to {starts_wanted} starts per group, per-option budget \
@@ -194,29 +214,4 @@ fn main() {
         MENU_WALL_MS as f64 / ms,
         READ_DEADLINE_MS as f64 / ms,
     );
-}
-
-/// A number from the environment, or the default written down here.
-fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name)
-        .ok()
-        .and_then(|value| value.trim().parse().ok())
-        .unwrap_or(fallback)
-}
-
-/// A comma-separated list from the environment, or the default written down here.
-fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
-    match lookahead_engine::core::env::var(name) {
-        Ok(named) => named
-            .split(',')
-            .map(str::trim)
-            .filter(|piece| !piece.is_empty())
-            .map(|piece| {
-                piece
-                    .parse()
-                    .unwrap_or_else(|_| panic!("{name}={piece:?} is not a number"))
-            })
-            .collect(),
-        Err(_) => fallback.to_vec(),
-    }
 }

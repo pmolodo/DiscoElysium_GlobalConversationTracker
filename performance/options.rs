@@ -43,10 +43,9 @@
 //!
 //! ## What is here is what something embeds
 //!
-//! A group is added when the first driver that needs it arrives, not in anticipation of one. Nine
-//! drivers take a `--budget-mb` whose default IS a constant, so that group belongs here and will
-//! be here as soon as one of them is converted; writing it before then would be a struct with no
-//! caller, which is the thing that had to be deleted from the C# side of this same epic.
+//! A group is added when the first driver that needs it arrives, not in anticipation of one:
+//! a struct with no caller is the thing that had to be deleted from the C# side of this same
+//! epic.
 
 // EACH DRIVER COMPILES THIS FILE OF ITS OWN, through `#[path]`, so a group one driver does not
 // embed - or a helper it does not call - is dead code in that driver and live in the next.
@@ -96,4 +95,19 @@ pub struct Unseen<const DEFAULT: usize> {
     /// How many of the deepest entries the profile treats as unseen.
     #[arg(long, value_name = "N", default_value_t = DEFAULT)]
     pub unseen: usize,
+}
+
+/// WHAT THE DIAGRAM MANAGER MAY SPEND, in megabytes.
+#[derive(Args, Debug, Clone, Copy)]
+pub struct Budget<const DEFAULT_MB: usize> {
+    /// How much memory the diagram manager may commit, in megabytes.
+    #[arg(long = "budget-mb", value_name = "MB", default_value_t = DEFAULT_MB)]
+    pub budget_mb: usize,
+}
+
+impl<const DEFAULT_MB: usize> Budget<DEFAULT_MB> {
+    /// The budget in bytes, which is what `DiagramBudget` takes.
+    pub fn bytes(self) -> usize {
+        self.budget_mb * 1024 * 1024
+    }
 }

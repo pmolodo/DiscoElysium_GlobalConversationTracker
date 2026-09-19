@@ -68,6 +68,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use clap::ValueEnum;
 use lookahead_engine::bridge::{LookAheadRequest, NodeRef, SnapshotWorld, WorldSnapshot, answer};
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::graph::LookAheadGraph;
@@ -81,19 +82,23 @@ use lookahead_engine::symbolic::vars::DataVars;
 #[path = "../tests/common/mod.rs"]
 mod common;
 
-/// The conversation de-fpax dies on. `CONVERSATION` moves it.
+#[path = "options.rs"]
+mod options;
+
+/// The conversation de-fpax dies on, which is the whole point of this measurement and so is
+/// fixed rather than asked for.
 const CONVERSATION: i32 = 28;
 
 /// The counter cap every symbolic measurement in this repository uses.
 const COUNTER_CAP: i32 = 16;
 
-/// How many of the deepest entries are left unseen. `UNSEEN` moves it.
+/// How many of the deepest entries are left unseen. `--unseen` moves it.
 ///
 /// The matrix's adversarial profiles are `deepest-1`, `deepest-5` and `deepest-10`, and its
 /// third row - the one that overflowed - is the last of those.
 const UNSEEN: usize = 10;
 
-/// What the request asks for as its time budget, in milliseconds. `TIME_BUDGET_MS` moves it.
+/// What the request asks for as its time budget, in milliseconds. `--time-budget-ms` moves it.
 ///
 /// ZERO IS WHAT A PLAYER GETS: the plugin's own default, and the value that leaves
 /// `answer::Budget::default` in place - fifty milliseconds forwards, two seconds
@@ -110,7 +115,7 @@ const TIME_BUDGET_MS: u64 = 0;
 /// menu can be rather than a number chosen to break something.
 const STARTS: usize = 24;
 
-/// The request's memory budget in megabytes. `MEMORY_BUDGET_MB` moves it.
+/// The request's memory budget in megabytes. `--memory-budget-mb` moves it.
 ///
 /// SIX GIGABYTES, the budget every matrix row is measured at, because the row that
 /// overflowed was measured here and a probe at a smaller one would be asking about a
@@ -119,19 +124,39 @@ const STARTS: usize = 24;
 ///
 const MEMORY_BUDGET_MB: usize = 6 * 1024;
 
+/// Which arrangement a run measures.
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum Arm {
+    /// Every start in one call, sharing one thread - what a menu does
+    OneRequest,
+    /// One call per start, a thread each - the arrangement known to survive
+    OneEach,
+    /// What a thread per start would COST: the diagram side rebuilt, once per start
+    Price,
+}
+
+/// What this driver takes.
+#[derive(clap::Parser)]
+#[command(about = "What a menu leaves behind, under each arrangement of its starts.")]
+struct Options {
+    /// Which arrangement to measure
+    #[arg(value_enum)]
+    arm: Arm,
+    #[command(flatten)]
+    starts: options::Starts<STARTS>,
+    #[command(flatten)]
+    unseen: options::Unseen<UNSEEN>,
+    /// What the whole menu is allowed, in milliseconds; 0 is no wall
+    #[arg(long = "time-budget-ms", value_name = "MS", default_value_t = TIME_BUDGET_MS)]
+    time_budget_ms: u64,
+    /// What the diagram manager may commit, in megabytes
+    #[arg(long = "memory-budget-mb", value_name = "MB", default_value_t = MEMORY_BUDGET_MB)]
+    memory_budget_mb: usize,
+}
+
 fn main() {
-    let arm = std::env::args().nth(1).unwrap_or_default();
-    if !["one-request", "one-each", "price"].contains(&arm.as_str()) {
-        eprintln!(
-            "usage: menu_residue <one-request|one-each|price>\n\n  \
-             one-request  every start in one call, sharing one thread - what a menu does\n  \
-             one-each     one call per start, a thread each - the arrangement known to \
-             survive\n  \
-             price        what a thread per start would COST: the diagram side rebuilt, \
-             once per start"
-        );
-        std::process::exit(2);
-    }
+    let asked = <Options as clap::Parser>::parse();
+    let arm = asked.arm;
 
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
@@ -150,7 +175,7 @@ fn main() {
     }
 
     let ranked = deepest_first(&graph, root);
-    let unseen_count = from_env("UNSEEN", UNSEEN);
+    let unseen_count = asked.unseen.unseen;
     let unseen: Vec<NodeRef> = ranked
         .iter()
         .take(unseen_count)
@@ -171,7 +196,7 @@ fn main() {
     // Shallowest FIRST among those that qualify, because that is what an option in a menu
     // is: an entry with the group's depth still in front of it.
     let reaching = can_reach(&graph, &unseen);
-    let wanted = from_env("STARTS", STARTS);
+    let wanted = asked.starts.starts;
     let starts: Vec<NodeRef> = ranked
         .iter()
         .rev()
@@ -187,8 +212,8 @@ fn main() {
         unseen.len(),
     );
 
-    let time_budget_ms = from_env("TIME_BUDGET_MS", TIME_BUDGET_MS as usize) as u64;
-    let memory_budget_mb = from_env("MEMORY_BUDGET_MB", MEMORY_BUDGET_MB);
+    let time_budget_ms = asked.time_budget_ms;
+    let memory_budget_mb = asked.memory_budget_mb;
 
     println!(
         "conversation {CONVERSATION}: {} entries, {} starts, {} deepest unseen, \
@@ -197,7 +222,12 @@ fn main() {
         starts.len(),
         unseen.len(),
     );
-    println!("arm: {arm}\n");
+    println!(
+        "arm: {}\n",
+        arm.to_possible_value()
+            .expect("every arm is a named value")
+            .get_name()
+    );
 
     // WITH A WALK, as the product asks, to whichever options the call carries - see
     // `hub::walk_to_menu`. Every request is built before the clock starts, since the walk
@@ -239,7 +269,7 @@ fn main() {
     let began = std::time::Instant::now();
     let mut work = Work::default();
 
-    if arm == "price" {
+    if arm == Arm::Price {
         // WHAT A THREAD PER START WOULD COST, and it is NOT what `one-each` measures: that
         // arm goes through `bridge::answer`, which rebuilds the whole group GRAPH per call -
         // the guard and action parse for every entry - where a thread per start inside one
@@ -288,7 +318,7 @@ fn main() {
         return;
     }
 
-    if arm == "one-request" {
+    if arm == Arm::OneRequest {
         // FLUSHED BEFORE THE CALL, because the call may not return: a stack overflow is not
         // a panic and nothing after it runs, so a line buffered here would be lost with the
         // process and the log would not say how far it got.
@@ -354,14 +384,6 @@ impl Work {
             .collect::<Vec<_>>()
             .join(", ")
     }
-}
-
-/// A number from the environment, or the default written down here.
-fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name)
-        .ok()
-        .and_then(|value| value.trim().parse().ok())
-        .unwrap_or(fallback)
 }
 
 fn flush() {

@@ -34,7 +34,7 @@
 //!   cargo run --release --example repeat_question
 //! ```
 //!
-//! `CONVERSATION` picks the groups, `BUDGET_MB` the allowance, `REPEATS` how many times
+//! `--conversation` picks the groups, `--budget-mb` the allowance, `--repeats` how many times
 //! each is timed - the fastest is reported, since what is wanted is what the work costs
 //! rather than what the machine was doing at the time.
 //!
@@ -117,6 +117,9 @@ use lookahead_engine::symbolic::vars::DataVars;
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+#[path = "options.rs"]
+mod options;
+
 /// The counter cap every symbolic measurement in this repository uses.
 const COUNTER_CAP: i32 = 16;
 
@@ -137,17 +140,34 @@ const SEARCH_MS: u64 = 250;
 /// How many times each group is timed; the fastest is reported.
 const REPEATS: usize = 3;
 
+/// What this driver takes. With no group named it uses the list above.
+#[derive(clap::Parser)]
+#[command(about = "What asking the same question again costs, group by group.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+    #[command(flatten)]
+    budget: options::Budget<BUDGET_MB>,
+    /// How many times each group is timed; the fastest is reported
+    #[arg(long, value_name = "N", default_value_t = REPEATS)]
+    repeats: usize,
+    /// What one search is allowed, in milliseconds
+    #[arg(long = "search-ms", value_name = "MS", default_value_t = SEARCH_MS)]
+    search_ms: u64,
+}
+
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;
     };
     let index = read_index(&path).expect("the shipped index reads");
 
-    let conversations = numbers("CONVERSATION", &CONVERSATIONS);
-    let budget = DiagramBudget::new(from_env("BUDGET_MB", BUDGET_MB) * 1024 * 1024);
-    let repeats = from_env("REPEATS", REPEATS).max(1);
-    let search = Duration::from_millis(from_env("SEARCH_MS", SEARCH_MS as usize) as u64);
+    let conversations = asked.groups.or(&CONVERSATIONS);
+    let budget = DiagramBudget::new(asked.budget.bytes());
+    let repeats = asked.repeats.max(1);
+    let search = Duration::from_millis(asked.search_ms);
 
     println!(
         "{} MB, search capped at {} ms, best of {repeats}\n",
@@ -263,29 +283,4 @@ fn main() {
          built it and only for\none world snapshot. The search column is capped and is a \
          floor, not a cost."
     );
-}
-
-/// A number from the environment, or the default written down here.
-fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name)
-        .ok()
-        .and_then(|value| value.trim().parse().ok())
-        .unwrap_or(fallback)
-}
-
-/// A comma-separated list from the environment, or the default written down here.
-fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
-    match lookahead_engine::core::env::var(name) {
-        Ok(named) => named
-            .split(',')
-            .map(str::trim)
-            .filter(|piece| !piece.is_empty())
-            .map(|piece| {
-                piece
-                    .parse()
-                    .unwrap_or_else(|_| panic!("{name}={piece:?} is not a number"))
-            })
-            .collect(),
-        Err(_) => fallback.to_vec(),
-    }
 }

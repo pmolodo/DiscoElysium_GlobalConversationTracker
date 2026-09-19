@@ -36,8 +36,8 @@
 //!   cargo run --release --example cache_split
 //! ```
 //!
-//! `CONVERSATION` picks the groups, `SPLITS` the splits, `BUDGET_MB` the total, and
-//! `REPEATS` how many times each row is timed - the fastest is reported, since what is
+//! `--conversation` picks the groups, `--split` the splits, `--budget-mb` the total, and
+//! `--repeats` how many times each row is timed - the fastest is reported, since what is
 //! wanted is what the work costs rather than what the machine was doing at the time.
 //!
 //! ONE THREAD PER SEARCH, through `symbolic::isolated`: a manager built on a thread that
@@ -112,19 +112,22 @@ use lookahead_engine::symbolic::vars::DataVars;
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+#[path = "options.rs"]
+mod options;
+
 /// The counter cap every symbolic measurement in this repository uses.
 const COUNTER_CAP: i32 = 16;
 
-/// The groups that cost something, which is the matrix's heavy list. `CONVERSATION` moves it.
+/// The groups that cost something, which is the matrix's heavy list. `--conversation` moves it.
 const CONVERSATIONS: [i32; 4] = [28, 368, 14, 631];
 
 /// The splits to sweep, as nodes per cache entry - so a SMALLER number is a BIGGER cache.
 ///
-/// `SPLITS` moves it. Four is what everything ships with and is in the middle on purpose:
+/// `--split` moves it. Four is what everything ships with and is in the middle on purpose:
 /// the question is which way to move, not whether to move.
 const SPLITS: [usize; 5] = [64, 16, 8, 4, 2];
 
-/// The total allowance every row is held to, in megabytes. `BUDGET_MB` moves it.
+/// The total allowance every row is held to, in megabytes. `--budget-mb` moves it.
 ///
 /// THE GROUP-SIZED 512 rather than a measurement's six gigabytes, because the trade is only
 /// visible where the budget BINDS - and as of 2026-09-09 it does not bind here even at this,
@@ -136,15 +139,34 @@ const BUDGET_MB: usize = 512;
 /// How long one search may run before it is a gave-up.
 ///
 /// Long enough that the cap is not what the rows are measuring, short enough that a sweep
-/// of twenty of them fits in an afternoon. `ROW_SECONDS` moves it.
+/// of twenty of them fits in an afternoon. `--row-seconds` moves it.
 const ROW_SECONDS: u64 = 120;
 
-/// How many times each row is timed. `REPEATS` moves it.
+/// How many times each row is timed. `--repeats` moves it.
 ///
 /// THE FASTEST IS REPORTED. What is wanted is what the work costs, and a slow run is a
 /// machine doing something else - which is noise in one direction only, so a minimum is the
 /// honest summary rather than a mean.
 const REPEATS: usize = 3;
+
+/// What this driver takes. With no group or split named it uses the lists above.
+#[derive(clap::Parser)]
+#[command(about = "What splitting the computed-table cache costs, group by group.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+    #[command(flatten)]
+    budget: options::Budget<BUDGET_MB>,
+    /// Which cache splits to sweep; repeat the flag or comma-separate
+    #[arg(long = "split", value_name = "N", value_delimiter = ',')]
+    splits: Vec<usize>,
+    /// How many times each group is timed; the fastest is reported
+    #[arg(long, value_name = "N", default_value_t = REPEATS)]
+    repeats: usize,
+    /// How long one row may take, in seconds
+    #[arg(long = "row-seconds", value_name = "S", default_value_t = ROW_SECONDS)]
+    row_seconds: u64,
+}
 
 /// What one row did.
 ///
@@ -163,6 +185,7 @@ struct Row {
 }
 
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;
@@ -170,14 +193,15 @@ fn main() {
     let index = read_index(&path).expect("the shipped index reads");
     let world = common::measurement_save();
 
-    let conversations = numbers("CONVERSATION", &CONVERSATIONS);
-    let splits = numbers("SPLITS", &SPLITS.map(|s| s as i32))
-        .into_iter()
-        .map(|s| s as usize)
-        .collect::<Vec<_>>();
-    let total = from_env("BUDGET_MB", BUDGET_MB) * 1024 * 1024;
-    let repeats = from_env("REPEATS", REPEATS).max(1);
-    let cap = Duration::from_secs(from_env("ROW_SECONDS", ROW_SECONDS as usize) as u64);
+    let conversations = asked.groups.or(&CONVERSATIONS);
+    let splits: Vec<usize> = if asked.splits.is_empty() {
+        SPLITS.to_vec()
+    } else {
+        asked.splits.clone()
+    };
+    let total = asked.budget.bytes();
+    let repeats = asked.repeats.max(1);
+    let cap = Duration::from_secs(asked.row_seconds);
 
     println!(
         "{} MB total, {} s a row, best of {repeats}",
@@ -320,29 +344,4 @@ fn verdict(stats: &lookahead_engine::symbolic::backward::BackwardStats) -> &'sta
 fn flush() {
     use std::io::Write;
     let _ = std::io::stdout().flush();
-}
-
-/// A number from the environment, or the default written down here.
-fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name)
-        .ok()
-        .and_then(|value| value.trim().parse().ok())
-        .unwrap_or(fallback)
-}
-
-/// A comma-separated list from the environment, or the default written down here.
-fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
-    match lookahead_engine::core::env::var(name) {
-        Ok(named) => named
-            .split(',')
-            .map(str::trim)
-            .filter(|piece| !piece.is_empty())
-            .map(|piece| {
-                piece
-                    .parse()
-                    .unwrap_or_else(|_| panic!("{name}={piece:?} is not a number"))
-            })
-            .collect(),
-        Err(_) => fallback.to_vec(),
-    }
 }

@@ -99,11 +99,11 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_CONVERSATION=761 \
+//! cargo run --release --example bound_slack -- --conversation 761 \
 //!   tools/run-logged.sh cargo bound-slack -- cargo run --release --example bound_slack
 //! ```
 //!
-//! `DEGCT_STARTS`, `DEGCT_UNSEEN` and `DEGCT_BUDGET_MB` mean what they mean in
+//! `--starts`, `--unseen` and `--budget-mb` mean what they mean in
 //! `menu_matrix`, so a reading here lines up with a row there.
 
 use std::collections::HashSet;
@@ -127,6 +127,9 @@ use oxidd::BooleanFunction;
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+#[path = "options.rs"]
+mod options;
+
 #[path = "menu_profile.rs"]
 mod menu_profile;
 use menu_profile::MenuProfile;
@@ -148,17 +151,32 @@ struct Refused {
     guard_empty: usize,
 }
 
+/// What this driver takes. With no group named it uses the list above.
+#[derive(clap::Parser)]
+#[command(about = "How much slack the bound leaves, group by group.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+    #[command(flatten)]
+    starts: options::Starts<STARTS>,
+    #[command(flatten)]
+    unseen: options::Unseen<UNSEEN>,
+    #[command(flatten)]
+    budget: options::Budget<BUDGET_MB>,
+}
+
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;
     };
     let index = read_index(&path).expect("the shipped index reads");
-    let budget = DiagramBudget::new(from_env("BUDGET_MB", BUDGET_MB) * 1024 * 1024);
-    let starts_wanted = from_env("STARTS", STARTS);
-    let unseen_wanted = from_env("UNSEEN", UNSEEN);
+    let budget = DiagramBudget::new(asked.budget.bytes());
+    let starts_wanted = asked.starts.starts;
+    let unseen_wanted = asked.unseen.unseen;
 
-    for conversation in numbers("CONVERSATION", &CONVERSATIONS) {
+    for conversation in asked.groups.or(&CONVERSATIONS) {
         let Ok((graph, _)) = build_group_graph(&index, conversation) else {
             eprintln!("conversation {conversation}: no group builds from it; skipping.");
             continue;
@@ -442,27 +460,4 @@ fn shortest_route(
     }
     route.reverse();
     route
-}
-
-fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name)
-        .ok()
-        .and_then(|value| value.trim().parse().ok())
-        .unwrap_or(fallback)
-}
-
-fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
-    match lookahead_engine::core::env::var(name) {
-        Ok(named) => named
-            .split(',')
-            .map(str::trim)
-            .filter(|piece| !piece.is_empty())
-            .map(|piece| {
-                piece
-                    .parse()
-                    .unwrap_or_else(|_| panic!("{name}={piece:?} is not a number"))
-            })
-            .collect(),
-        Err(_) => fallback.to_vec(),
-    }
 }

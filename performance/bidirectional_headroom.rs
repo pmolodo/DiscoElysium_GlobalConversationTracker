@@ -123,11 +123,12 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_CONVERSATION=761 DEGCT_BUDGET_MB=6144 DEGCT_TARGET=1168:266 \
-//!   tools/run-logged.sh cargo bidirectional -- cargo run --release --example bidirectional_headroom
+//! tools/run-logged.sh cargo bidirectional -- \
+//!   cargo run --release --example bidirectional_headroom -- \
+//!   --conversation 761 --budget-mb 6144 --target 1168:266
 //! ```
 //!
-//! `DEGCT_LAYERS` caps the walk, `DEGCT_STARTS` and `DEGCT_UNSEEN` mean what they mean in
+//! `--layers` caps the walk, `--starts` and `--unseen` mean what they mean in
 //! `menu_matrix`, so a reading here lines up with a row there.
 
 use std::collections::{HashMap, HashSet};
@@ -150,6 +151,9 @@ use oxidd::bdd::BDDFunction;
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+#[path = "options.rs"]
+mod options;
+
 #[path = "menu_profile.rs"]
 mod menu_profile;
 use menu_profile::MenuProfile;
@@ -161,35 +165,67 @@ const UNSEEN: usize = 10;
 const COUNTER_CAP: i32 = 16;
 const LAYERS: usize = 26;
 
+/// What this driver takes.
+///
+/// HANDED DOWN RATHER THAN READ WHERE IT IS WANTED: `walk` needs the layer cap and
+/// `wanted_target` needs the target, and both sit well below `main`. One parameter carries
+/// either, and the next option to arrive changes no signature at all.
+#[derive(clap::Parser)]
+#[command(about = "How much headroom a bidirectional search has, layer by layer, on one group.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+    #[command(flatten)]
+    starts: options::Starts<STARTS>,
+    #[command(flatten)]
+    unseen: options::Unseen<UNSEEN>,
+    #[command(flatten)]
+    budget: options::Budget<BUDGET_MB>,
+    /// How many layers to walk before stopping
+    #[arg(long, value_name = "N", default_value_t = LAYERS)]
+    layers: usize,
+    /// Which entry to watch for, as `conversation:entry`; the profile's first unread otherwise
+    #[arg(long, value_name = "CONV:ENTRY")]
+    target: Option<String>,
+}
+
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;
     };
     let index = read_index(&path).expect("the shipped index reads");
-    let budget = DiagramBudget::new(from_env("BUDGET_MB", BUDGET_MB) * 1024 * 1024);
-    let conversation = from_env("CONVERSATION", CONVERSATION as usize) as i32;
+    let budget = DiagramBudget::new(asked.budget.bytes());
+    let conversation = asked
+        .groups
+        .conversations
+        .first()
+        .copied()
+        .unwrap_or(CONVERSATION);
     let Ok((graph, _)) = build_group_graph(&index, conversation) else {
         eprintln!("conversation {conversation}: no group builds from it.");
         return;
     };
     let root = DialogueNodeId::new(conversation, 0);
-    let Some(profile) = MenuProfile::of(
-        &graph,
-        root,
-        from_env("UNSEEN", UNSEEN),
-        from_env("STARTS", STARTS),
-    ) else {
+    let Some(profile) = MenuProfile::of(&graph, root, asked.unseen.unseen, asked.starts.starts)
+    else {
         eprintln!("conversation {conversation}: no menu.");
         return;
     };
     isolated::on_its_own_thread(|| {
-        walk(conversation, &graph, &profile, budget);
+        walk(conversation, &graph, &profile, budget, &asked);
         Some(())
     });
 }
 
-fn walk(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget: DiagramBudget) {
+fn walk(
+    conversation: i32,
+    graph: &LookAheadGraph,
+    profile: &MenuProfile,
+    budget: DiagramBudget,
+    asked: &Options,
+) {
     let symbols = graph.symbols().clone();
     let world = SnapshotWorld::declaring(
         WorldSnapshot {
@@ -208,7 +244,7 @@ fn walk(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget
         .with_world(&world)
         .with_constant_clock(DataLayout::group_passes_time(graph));
     let seed = seed_of(graph, &world, &vars).expect("room for a seed");
-    let target = wanted_target(graph, profile);
+    let target = wanted_target(graph, profile, asked);
 
     // LAYER ZERO IS WHERE THE PLAYER STANDS: every option's entries, holding what entering
     // that option leaves. Unioned across the options, because the backward pass races them
@@ -245,7 +281,7 @@ fn walk(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget
         "layer", "touched", "carried", "nodes", "ms", "at target"
     );
 
-    let cap = from_env("LAYERS", LAYERS);
+    let cap = asked.layers;
     for layer in 0..cap {
         if here.is_empty() {
             println!("   front died at layer {layer}");
@@ -356,9 +392,11 @@ fn widen(
 }
 
 /// The target to watch for, named as `conversation:entry` or the profile's first unread.
-fn wanted_target(graph: &LookAheadGraph, profile: &MenuProfile) -> DialogueNodeId {
-    if let Ok(named) = lookahead_engine::core::env::var("TARGET") {
-        let (conversation, entry) = named.split_once(':').expect("TARGET is conversation:entry");
+fn wanted_target(graph: &LookAheadGraph, profile: &MenuProfile, asked: &Options) -> DialogueNodeId {
+    if let Some(named) = asked.target.as_deref() {
+        let (conversation, entry) = named
+            .split_once(':')
+            .expect("--target is conversation:entry");
         return DialogueNodeId::new(
             conversation.trim().parse().expect("a conversation number"),
             entry.trim().parse().expect("an entry number"),
@@ -373,11 +411,4 @@ fn wanted_target(graph: &LookAheadGraph, profile: &MenuProfile) -> DialogueNodeI
         .map(|n| n.id)
         .min_by_key(|id| (id.conversation_id, id.entry_id))
         .expect("the profile marks something unread")
-}
-
-fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name)
-        .ok()
-        .and_then(|value| value.trim().parse().ok())
-        .unwrap_or(fallback)
 }

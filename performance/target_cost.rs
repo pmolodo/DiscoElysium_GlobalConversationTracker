@@ -42,13 +42,13 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_CONVERSATION=761 tools/run-logged.sh --kind analysis cargo target-cost -- \
-//!   cargo run --release --example target_cost
+//! tools/run-logged.sh --kind analysis cargo target-cost -- \
+//!   cargo run --release --example target_cost -- --conversation 761
 //! ```
 //!
-//! `DEGCT_UNSEEN` says how many of the structurally deepest entries count as targets, which is
-//! what makes this the link-deepest-X profile; `DEGCT_EACH_MS` bounds one pass, and a pass that
-//! runs out says so in `fixed` rather than being dropped. `DEGCT_SAVE` names the save the world
+//! `--unseen` says how many of the structurally deepest entries count as targets, which is
+//! what makes this the link-deepest-X profile; `--each-ms` bounds one pass, and a pass that
+//! runs out says so in `fixed` rather than being dropped. `--save` names the save the world
 //! is built from, and the default is the one 761's expensive arm was measured against.
 
 use std::collections::HashSet;
@@ -71,6 +71,9 @@ use lookahead_engine::symbolic::vars::DataVars;
 
 #[path = "../tests/common/mod.rs"]
 mod common;
+
+#[path = "options.rs"]
+mod options;
 
 #[path = "menu_profile.rs"]
 mod menu_profile;
@@ -101,33 +104,59 @@ const BUDGET_MB: usize = 256;
 
 const COUNTER_CAP: i32 = 16;
 
+/// What this driver takes.
+///
+/// HANDED DOWN to `ask`, which reads the per-pass ration twice and sits below `main`.
+#[derive(clap::Parser)]
+#[command(about = "What each target of a menu costs to answer, one row apiece.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+    #[command(flatten)]
+    starts: options::Starts<STARTS>,
+    #[command(flatten)]
+    unseen: options::Unseen<UNSEEN>,
+    #[command(flatten)]
+    budget: options::Budget<BUDGET_MB>,
+    /// Which save the walked profile is built from
+    #[arg(long, value_name = "NAME", default_value = save_world::TEMPLATE)]
+    save: String,
+    /// What one pass is allowed, in milliseconds
+    #[arg(long = "each-ms", value_name = "MS", default_value_t = EACH_MS)]
+    each_ms: u64,
+}
+
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;
     };
     let shipped = Shipped::at(path);
-    let budget = DiagramBudget::new(from_env("BUDGET_MB", BUDGET_MB) * 1024 * 1024);
-    let save = lookahead_engine::core::env::var("SAVE")
-        .unwrap_or_else(|_| save_world::TEMPLATE.to_string());
+    let budget = DiagramBudget::new(asked.budget.bytes());
+    let save = asked.save.clone();
 
-    for conversation in numbers("CONVERSATION", &CONVERSATIONS) {
+    for conversation in asked.groups.or(&CONVERSATIONS) {
         let Ok((graph, _)) = build_group_graph(shipped.index(), conversation) else {
             eprintln!("conversation {conversation}: no group builds from it; skipping.");
             continue;
         };
         let root = DialogueNodeId::new(conversation, 0);
-        let Some(profile) = MenuProfile::of(
-            &graph,
-            root,
-            from_env("UNSEEN", UNSEEN),
-            from_env("STARTS", STARTS),
-        ) else {
+        let Some(profile) = MenuProfile::of(&graph, root, asked.unseen.unseen, asked.starts.starts)
+        else {
             println!("conversation {conversation}: no menu");
             continue;
         };
         isolated::on_its_own_thread(|| {
-            ask(conversation, &graph, &profile, &shipped, &save, budget);
+            ask(
+                conversation,
+                &graph,
+                &profile,
+                &shipped,
+                &save,
+                budget,
+                &asked,
+            );
             Some(())
         });
     }
@@ -141,6 +170,7 @@ fn ask(
     shipped: &Shipped,
     save: &str,
     budget: DiagramBudget,
+    asked: &Options,
 ) {
     let symbols = graph.symbols().clone();
     // A WORLD THAT ANSWERS, which is the whole point: a default world decides nothing, so every
@@ -229,7 +259,7 @@ fn ask(
             &[target],
             &cut,
             &PassBudget {
-                time: Duration::from_millis(from_env("EACH_MS", EACH_MS as usize) as u64),
+                time: Duration::from_millis(asked.each_ms),
                 steps: usize::MAX,
                 ..Default::default()
             },
@@ -265,7 +295,7 @@ fn ask(
             target,
             &cut,
             &PassBudget {
-                time: Duration::from_millis(from_env("EACH_MS", EACH_MS as usize) as u64),
+                time: Duration::from_millis(asked.each_ms),
                 steps: usize::MAX,
                 ..Default::default()
             },
@@ -337,23 +367,4 @@ fn ask(
         distances.iter().map(|row| row.2).sum::<u128>(),
         distances.len(),
     );
-}
-
-fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name)
-        .ok()
-        .and_then(|value| value.trim().parse().ok())
-        .unwrap_or(fallback)
-}
-
-fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
-    match lookahead_engine::core::env::var(name) {
-        Ok(named) => named
-            .split(',')
-            .map(str::trim)
-            .filter(|piece| !piece.is_empty())
-            .filter_map(|piece| piece.parse().ok())
-            .collect(),
-        Err(_) => fallback.to_vec(),
-    }
 }

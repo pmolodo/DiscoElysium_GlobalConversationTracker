@@ -14,7 +14,7 @@
 //!
 //! ## How
 //!
-//! `DEGCT_GUARD_SNAPSHOT=<path> cargo run --release --example guard_snapshot`
+//! `cargo run --release --example guard_snapshot -- --out <path>`
 //!
 //! It is kept rather than deleted because the next person to touch the parser wants it, and
 //! it costs nothing while nothing runs it.

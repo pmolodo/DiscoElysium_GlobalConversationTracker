@@ -27,7 +27,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_CONVERSATION=761 tools/run-logged.sh --kind analysis cargo redundant -- \
+//! tools/run-logged.sh --kind analysis cargo redundant -- \
 //!   cargo run --release --example redundant_counters
 //! ```
 //!

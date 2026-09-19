@@ -10,7 +10,7 @@
 //! a player's menu costs.
 //!
 //! Both arms are that same call. The difference is only whether the workspace is allowed to
-//! serve: `DEGCT_FRESH=1` sends every request for a DIFFERENT group in rotation, so the workspace
+//! serve: `--fresh` sends every request for a DIFFERENT group in rotation, so the workspace
 //! is replaced each time and every request pays what it always paid.
 //!
 //! ## What it said, 2026-09-07: about twice as fast per menu
@@ -77,8 +77,8 @@
 //!   cargo run --release --example workspace_menus
 //! ```
 //!
-//! `DEGCT_CONVERSATION=14,368,631` picks the groups, the FIRST of which is the one a kept
-//! session stands in. `DEGCT_ROUNDS` is how many menus, and `DEGCT_STARTS` how wide each is.
+//! `--conversation 14,368,631` picks the groups, the FIRST of which is the one a kept
+//! session stands in. `--rounds` is how many menus, and `--starts` how wide each is.
 
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
@@ -90,6 +90,9 @@ use lookahead_engine::service::Service;
 
 #[path = "../tests/common/mod.rs"]
 mod common;
+
+#[path = "options.rs"]
+mod options;
 
 #[path = "menu_profile.rs"]
 mod menu_profile;
@@ -104,7 +107,24 @@ const ROUNDS: usize = 12;
 /// How many starts each request carries.
 const STARTS: usize = 8;
 
+/// What this driver takes. With no group named it uses the list above.
+#[derive(clap::Parser)]
+#[command(about = "What a kept workspace saves a session of menus, against never serving one.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+    #[command(flatten)]
+    starts: options::Starts<STARTS>,
+    /// How many menus a session asks
+    #[arg(long, value_name = "N", default_value_t = ROUNDS)]
+    rounds: usize,
+    /// Send every request for a DIFFERENT group in rotation, so the workspace is never served
+    #[arg(long)]
+    fresh: bool,
+}
+
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;
@@ -112,11 +132,9 @@ fn main() {
     let index = read_index(&path).expect("the shipped index reads");
     let service = Service::open(&path, None).expect("the engine opens");
 
-    let rounds = from_env("ROUNDS", ROUNDS);
-    let starts_wanted = from_env("STARTS", STARTS);
-    let fresh = lookahead_engine::core::env::var("FRESH")
-        .map(|on| on.trim() != "0")
-        .unwrap_or(false);
+    let rounds = asked.rounds;
+    let starts_wanted = asked.starts.starts;
+    let fresh = asked.fresh;
 
     // The starts and quarry for each group, worked out once so neither arm pays for it.
     //
@@ -131,8 +149,8 @@ fn main() {
     let mut menus: Vec<(i32, Vec<NodeRef>, Vec<NodeRef>, Vec<NodeRef>, Vec<NodeRef>)> = Vec::new();
     // THE FIRST ONE IS THE SESSION, since the kept arm stands in `menus[0]` throughout and
     // the rest are only there to defeat the workspace in the fresh arm. So
-    // `DEGCT_CONVERSATION=14,368,631` measures a session in conversation 14.
-    for conversation in conversations() {
+    // `--conversation 14,368,631` measures a session in conversation 14.
+    for conversation in asked.groups.or(&CONVERSATIONS) {
         let Ok((graph, _)) = build_group_graph(&index, conversation) else {
             continue;
         };
@@ -187,7 +205,7 @@ fn main() {
     // WHAT TO READ IT FOR IS THE SHAPE. A curve that flattens is a session that has reached
     // whatever it is going to hold, and the cap is then a question about the plateau. One
     // still climbing at the last round has not been run long enough to say anything, and
-    // DEGCT_ROUNDS is how to run it longer.
+    // `--rounds` is how to run it longer.
     let cap = lookahead_engine::symbolic::budget::DiagramBudget::new(
         lookahead_engine::symbolic::budget::DiagramBudget::DEFAULT_MEMORY_BUDGET,
     )
@@ -255,31 +273,4 @@ fn main() {
         took_each.len() - 1,
         after_first.as_secs_f64() * 1000.0 / (took_each.len() - 1).max(1) as f64,
     );
-}
-
-/// The groups to walk, the first of which is the one a kept session stands in.
-fn conversations() -> Vec<i32> {
-    match lookahead_engine::core::env::var("CONVERSATION") {
-        Ok(named) => named
-            .split(',')
-            .map(str::trim)
-            .filter(|piece| !piece.is_empty())
-            .map(|piece| {
-                piece.parse().unwrap_or_else(|_| {
-                    panic!(
-                        "{}={piece:?} is not a conversation id",
-                        lookahead_engine::core::env::qualified("CONVERSATION")
-                    )
-                })
-            })
-            .collect(),
-        Err(_) => CONVERSATIONS.to_vec(),
-    }
-}
-
-fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name)
-        .ok()
-        .and_then(|text| text.trim().parse().ok())
-        .unwrap_or(fallback)
 }

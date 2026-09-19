@@ -50,13 +50,13 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_CONVERSATION=761 \
-//!   tools/run-logged.sh cargo playthrough -- cargo run --release --example greedy_playthrough
+//! tools/run-logged.sh cargo playthrough -- \
+//!   cargo run --release --example greedy_playthrough -- --conversation 761
 //! ```
 //!
-//! With no `DEGCT_CONVERSATION` it walks every group the index holds, which is the point of
-//! caching it. `DEGCT_CEILING` bounds one leg's search in walk positions and
-//! `DEGCT_PLAYTHROUGHS_OUT` names the folder.
+//! With no `--conversation` it walks every group the index holds, which is the point of
+//! caching it. `--ceiling` bounds one leg's search in walk positions and `--out` names the
+//! folder.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
@@ -73,6 +73,9 @@ use lookahead_engine::walkthrough::{Playthrough, Stage, Stop, roll_escalation};
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+#[path = "options.rs"]
+mod options;
+
 #[path = "prepared.rs"]
 mod prepared;
 use prepared::Shipped;
@@ -87,14 +90,27 @@ mod save_world;
 /// says so in its row rather than costing the whole run.
 const CEILING: usize = 200_000;
 
-fn out_dir() -> PathBuf {
-    lookahead_engine::core::env::var("PLAYTHROUGHS_OUT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("analysis/outputs/playthroughs"))
-}
+/// Where the walks are written when nothing names another folder.
+const PLAYTHROUGHS_OUT: &str = "analysis/outputs/playthroughs";
 
-fn ceiling() -> usize {
-    lookahead_engine::core::env::number("CEILING", CEILING)
+/// What this driver takes.
+#[derive(clap::Parser)]
+#[command(about = "A greedy playthrough of each group, and what it leaves unshown.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+    /// Where to write the walks
+    #[arg(long = "out", value_name = "DIR", default_value = PLAYTHROUGHS_OUT)]
+    out: PathBuf,
+    /// Which save each walk starts from
+    #[arg(long, value_name = "NAME", default_value = save_world::TEMPLATE)]
+    save: String,
+    /// What one leg's search may spend, in walk positions
+    #[arg(long, value_name = "N", default_value_t = CEILING)]
+    ceiling: usize,
+    /// Also replay every session and report on stderr whether it still walks
+    #[arg(long = "verify-replay")]
+    verify_replay: bool,
 }
 
 /// One canonical start per distinct group, smallest first.
@@ -280,6 +296,7 @@ fn row_of(graph: &LookAheadGraph, done: &Playthrough) -> serde_json::Value {
 }
 
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::conversation_index() else {
         eprintln!("no conversation index; nothing to walk.");
         return;
@@ -290,15 +307,13 @@ fn main() {
     let index = read_index(&path).expect("the index reads");
     let shipped = Shipped::read(path, index, started.elapsed());
 
-    let wanted: Vec<i32> = match lookahead_engine::core::env::var("CONVERSATION") {
-        Ok(value) => value
-            .split(',')
-            .filter_map(|part| part.trim().parse().ok())
-            .collect(),
-        Err(_) => group_starts(shipped.index()),
+    let wanted: Vec<i32> = if asked.groups.conversations.is_empty() {
+        group_starts(shipped.index())
+    } else {
+        asked.groups.conversations.clone()
     };
 
-    let folder = out_dir();
+    let folder = asked.out.clone();
     fs::create_dir_all(&folder).expect("the output folder is writable");
     let file = folder.join("playthroughs.jsonl");
     let mut out = fs::File::create(&file).expect("the output file is writable");
@@ -312,25 +327,24 @@ fn main() {
         if graph.get(DialogueNodeId::new(conversation, 0)).is_none() {
             continue;
         }
-        // THE TEMPLATE UNLESS `DEGCT_SAVE` NAMES ANOTHER, as `target_cost` reads it. A walk is
+        // THE TEMPLATE UNLESS `--save` NAMES ANOTHER, as `target_cost` reads it. A walk is
         // only as good as the world it walks, and the template is the fair common denominator
         // rather than a state anyone reached - on 761 it leaves 2,219 of 2,263 entries
         // unreachable. Naming a save taken from a real playthrough asks the same question of a
         // world a player was actually in.
-        let save = lookahead_engine::core::env::var("SAVE")
-            .unwrap_or_else(|_| save_world::TEMPLATE.to_string());
+        let save = asked.save.clone();
         let world = SnapshotWorld::declaring(
             save_world::of_save(&graph, conversation, &shipped, &save),
             save_world::declared(),
         );
 
         let began = Instant::now();
-        let stages = roll_escalation(&graph, &world, conversation, ceiling());
+        let stages = roll_escalation(&graph, &world, conversation, asked.ceiling);
         let elapsed = began.elapsed().as_millis();
 
         // ON STDERR AND ONLY WHERE ASKED FOR, because it re-walks every session and the answer
         // is about the dataset rather than about this group.
-        if lookahead_engine::core::env::is_set("VERIFY_REPLAY") {
+        if asked.verify_replay {
             for stage in &stages {
                 let (tried, replayed, why) =
                     sessions_replay(&graph, &world, conversation, &stage.walk);

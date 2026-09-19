@@ -13,7 +13,7 @@
 //! walk, so a walk reached everything before it. LINK-DEEPEST-X is picked by edge depth off the
 //! dialogue graph with nothing vouching for it, and that is what this checks. The expectation is
 //! that the deepest entries are mostly leaves and lead nowhere - but "mostly" is not a reason,
-//! and what rests on it is whether `DEGCT_WALKED_PROFILE=synthetic-menu` measures a world or a
+//! and what rests on it is whether the synthetic-menu scenario measures a world or a
 //! fiction. See de-5sdm.
 //!
 //! ## What it computes
@@ -28,7 +28,7 @@
 //!
 //! ## How to run it
 //!
-//! It takes the groups to check rather than enumerating them - `DEGCT_CONVERSATION`, or the
+//! It takes the groups to check rather than enumerating them - `--conversation`, or the
 //! first column of standard input, which is what `group_list` writes:
 //!
 //! ```text
@@ -36,7 +36,7 @@
 //! tools/run-logged.sh --kind analysis cargo profile-closure -- cargo run --release --example profile_closure < groups.tsv
 //! ```
 //!
-//! One line per group, worst first, and a closing count. `DEGCT_UNSEEN` sets X:
+//! One line per group, worst first, and a closing count. `--unseen` sets X:
 //!
 //! ```text
 //! conv    reachable   unseen   blocked   worst
@@ -66,6 +66,9 @@ use lookahead_engine::graph::LookAheadGraph;
 
 #[path = "../tests/common/mod.rs"]
 mod common;
+
+#[path = "options.rs"]
+mod options;
 
 #[path = "prepared.rs"]
 mod prepared;
@@ -131,21 +134,18 @@ fn blocked_by(
     Some((whole.len(), profile.unseen.len(), blocked))
 }
 
-/// Which groups to check: `DEGCT_CONVERSATION` where it is set, otherwise the first column of
+/// Which groups to check: whatever `--conversation` named, otherwise the first column of
 /// whatever is on standard input.
 ///
 /// IT DOES NOT ENUMERATE THE GAME, because `group_list` does and enumerating is a different job
 /// from checking - the same division `menu_matrix` keeps. Taking the list rather than deriving
 /// it also means this checks exactly the groups a measurement would be taken on, which is the
 /// only set the question is about.
-fn asked_about() -> Vec<i32> {
+fn asked_about(named: &[i32]) -> Vec<i32> {
     use std::io::BufRead;
 
-    if let Ok(value) = lookahead_engine::core::env::var("CONVERSATION") {
-        return value
-            .split(',')
-            .filter_map(|part| part.trim().parse().ok())
-            .collect();
+    if !named.is_empty() {
+        return named.to_vec();
     }
     std::io::stdin()
         .lock()
@@ -159,21 +159,30 @@ fn asked_about() -> Vec<i32> {
         .collect()
 }
 
+/// What this driver takes. With no group named it reads them from standard input, which is how a
+/// measurement's own list reaches it.
+#[derive(clap::Parser)]
+#[command(about = "Whether each group's walked profile is a state a playthrough could leave.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+    #[command(flatten)]
+    unseen: options::Unseen<UNSEEN>,
+}
+
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; nothing to check.");
         return;
     };
     let shipped = Shipped::at(path);
-    let unseen_wanted = lookahead_engine::core::env::var("UNSEEN")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(UNSEEN);
+    let unseen_wanted = asked.unseen.unseen;
 
-    let asked = asked_about();
-    if asked.is_empty() {
+    let groups = asked_about(&asked.groups.conversations);
+    if groups.is_empty() {
         eprintln!(
-            "no groups named. Set DEGCT_CONVERSATION, or feed this the group enumeration:\n  \
+            "no groups named. Pass --conversation, or feed this the group enumeration:\n  \
              cargo run --release --example group_list > groups.tsv\n  \
              cargo run --release --example profile_closure < groups.tsv"
         );
@@ -182,7 +191,7 @@ fn main() {
 
     println!("conv\treachable\tunseen\tblocked\tworst");
     let mut rows: Vec<(usize, i32, usize, usize, Vec<DialogueNodeId>)> = Vec::new();
-    for conversation in asked {
+    for conversation in groups {
         let Ok(group) = prepared::group_graph(&shipped, conversation) else {
             eprintln!("conversation {conversation}: no group builds from it; skipping.");
             continue;

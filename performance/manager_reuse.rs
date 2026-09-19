@@ -99,6 +99,9 @@ use lookahead_engine::symbolic::vars::DataVars;
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+#[path = "options.rs"]
+mod options;
+
 #[path = "menu_profile.rs"]
 mod menu_profile;
 use menu_profile::MenuProfile;
@@ -122,18 +125,41 @@ const STARTS: usize = 8;
 /// How many entries are unseen at the deep end.
 const UNSEEN: usize = 10;
 
+/// What this driver takes. One group, since it reuses one group's manager.
+#[derive(clap::Parser)]
+#[command(about = "What reusing a manager across rounds saves, on one group.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+    #[command(flatten)]
+    starts: options::Starts<STARTS>,
+    #[command(flatten)]
+    unseen: options::Unseen<UNSEEN>,
+    #[command(flatten)]
+    budget: options::Budget<BUDGET_MB>,
+    /// How many rounds to run
+    #[arg(long, value_name = "N", default_value_t = ROUNDS)]
+    rounds: usize,
+}
+
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;
     };
     let index = read_index(&path).expect("the shipped index reads");
 
-    let conversation = from_env("CONVERSATION", CONVERSATION as usize) as i32;
-    let budget = DiagramBudget::new(from_env("BUDGET_MB", BUDGET_MB) * 1024 * 1024);
-    let rounds = from_env("ROUNDS", ROUNDS);
-    let starts_wanted = from_env("STARTS", STARTS);
-    let unseen_wanted = from_env("UNSEEN", UNSEEN);
+    let conversation = asked
+        .groups
+        .conversations
+        .first()
+        .copied()
+        .unwrap_or(CONVERSATION);
+    let budget = DiagramBudget::new(asked.budget.bytes());
+    let rounds = asked.rounds;
+    let starts_wanted = asked.starts.starts;
+    let unseen_wanted = asked.unseen.unseen;
 
     let Ok((graph, _)) = build_group_graph(&index, conversation) else {
         eprintln!("conversation {conversation}'s group does not build; skipping.");
@@ -273,11 +299,4 @@ fn main() {
 fn flush() {
     use std::io::Write;
     let _ = std::io::stdout().flush();
-}
-
-fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name)
-        .ok()
-        .and_then(|text| text.trim().parse().ok())
-        .unwrap_or(fallback)
 }

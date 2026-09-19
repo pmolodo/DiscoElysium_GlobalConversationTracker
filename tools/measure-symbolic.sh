@@ -71,12 +71,14 @@ for conversation in "${CONVERSATIONS[@]}"; do
     log="${DEGCT_LOG_DIR}/${DEGCT_RUN_NAME}-${conversation}.log"
     echo "=== conversation ${conversation} ==="
 
-    # BOTH WAYS, FOR AS LONG AS THE DRIVERS DISAGREE. A converted driver takes
-    # `--conversation`; one that has not been converted yet still reads DEGCT_CONVERSATION and
-    # ignores an argument it does not parse. Naming the group only one way would measure the
-    # wrong groups silently on whichever half is not yet converted. The variable goes when the
-    # last driver takes the flag - de-3dx9.4.3.
-    DEGCT_CONVERSATION="${conversation}" cargo run --release --quiet \
+    # NAMED ON THE COMMAND LINE, which every driver under performance/ now takes.
+    #
+    # A DRIVER THAT TAKES NO GROUP IS REFUSED HERE, loudly, by its own argument parser. That is
+    # the right answer rather than a nuisance: this script runs one process PER CONVERSATION, so
+    # a measurement that does not vary by group would run the identical thing several times and
+    # write several identical logs. It used to do exactly that, silently, because the variable
+    # such a driver never read cost nothing to set.
+    cargo run --release --quiet \
         --example "${DEGCT_MEASUREMENT}" -- ${STAGE:+"$STAGE"} \
         --conversation "${conversation}" >"${log}" 2>&1
     status=$?

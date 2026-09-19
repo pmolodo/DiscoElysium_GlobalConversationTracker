@@ -32,8 +32,8 @@
 //!   cargo run --release --example nodes_repeat
 //! ```
 //!
-//! `DEGCT_CONVERSATION=1030` picks the group, `DEGCT_ROUNDS=5` how many times the search is run, and
-//! `DEGCT_UNSEEN=1` how many of the deepest entries are unseen - `deepest-1` by default, which is
+//! `--conversation 1030` picks the group, `--rounds 5` how many times the search is run, and
+//! `--unseen 1` how many of the deepest entries are unseen - `deepest-1` by default, which is
 //! the profile the control run moved most on.
 
 use std::collections::HashSet;
@@ -49,6 +49,9 @@ use lookahead_engine::symbolic::vars::DataVars;
 
 #[path = "../tests/common/mod.rs"]
 mod common;
+
+#[path = "options.rs"]
+mod options;
 
 #[path = "seen_profile.rs"]
 mod seen_profile;
@@ -69,7 +72,21 @@ const COUNTER_CAP: i32 = 16;
 /// What the in-game columns get, which is the player's own allowance.
 const MEMORY: usize = 256 * 1024 * 1024;
 
+/// What this driver takes. One group, since it repeats one group's search.
+#[derive(clap::Parser)]
+#[command(about = "Whether repeating one group's search reads the same node count each time.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+    #[command(flatten)]
+    unseen: options::Unseen<UNSEEN>,
+    /// How many times to run the search
+    #[arg(long, value_name = "N", default_value_t = ROUNDS)]
+    rounds: usize,
+}
+
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;
@@ -77,9 +94,14 @@ fn main() {
     let index = read_index(&path).expect("the index reads");
     let world = common::measurement_save();
 
-    let conversation = from_env_i32("CONVERSATION", CONVERSATION);
-    let rounds = from_env("ROUNDS", ROUNDS);
-    let unseen_wanted = from_env("UNSEEN", UNSEEN);
+    let conversation = asked
+        .groups
+        .conversations
+        .first()
+        .copied()
+        .unwrap_or(CONVERSATION);
+    let rounds = asked.rounds;
+    let unseen_wanted = asked.unseen.unseen;
 
     let Ok((graph, _)) = build_group_graph(&index, conversation) else {
         eprintln!("conversation {conversation} builds no group; skipping.");
@@ -204,18 +226,4 @@ fn main() {
          the runs\nputs the move on the per-process hash seed rather than on the manager's \
          reclaiming.",
     );
-}
-
-fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name)
-        .ok()
-        .and_then(|value| value.trim().parse().ok())
-        .unwrap_or(fallback)
-}
-
-fn from_env_i32(name: &str, fallback: i32) -> i32 {
-    lookahead_engine::core::env::var(name)
-        .ok()
-        .and_then(|value| value.trim().parse().ok())
-        .unwrap_or(fallback)
 }

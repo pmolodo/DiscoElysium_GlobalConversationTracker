@@ -105,6 +105,9 @@ use lookahead_engine::symbolic::vars::DataVars;
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+#[path = "options.rs"]
+mod options;
+
 #[path = "menu_profile.rs"]
 mod menu_profile;
 use menu_profile::MenuProfile;
@@ -128,27 +131,47 @@ const SPLITS: [usize; 5] = [64, 16, 8, 4, 2];
 const STARTS: usize = 24;
 const UNSEEN: usize = 10;
 
+/// What this driver takes. With no group named it uses the list above, and with no split named
+/// the sweep above.
+#[derive(clap::Parser)]
+#[command(about = "What splitting the computed-table cache costs a whole menu.")]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+    #[command(flatten)]
+    starts: options::Starts<STARTS>,
+    #[command(flatten)]
+    unseen: options::Unseen<UNSEEN>,
+    #[command(flatten)]
+    budget: options::Budget<BUDGET_MB>,
+    /// Which cache splits to sweep; repeat the flag or comma-separate
+    #[arg(long = "split", value_name = "N", value_delimiter = ',')]
+    splits: Vec<usize>,
+}
+
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;
     };
     let index = read_index(&path).expect("the shipped index reads");
 
-    let budget_mb = from_env("BUDGET_MB", BUDGET_MB);
-    let splits = numbers("SPLITS", &SPLITS.map(|split| split as i32))
-        .into_iter()
-        .map(|split| split.max(1) as usize)
-        .collect::<Vec<_>>();
-    let starts_wanted = from_env("STARTS", STARTS);
-    let unseen_wanted = from_env("UNSEEN", UNSEEN);
+    let budget_mb = asked.budget.budget_mb;
+    let splits: Vec<usize> = if asked.splits.is_empty() {
+        SPLITS.to_vec()
+    } else {
+        asked.splits.iter().map(|split| (*split).max(1)).collect()
+    };
+    let starts_wanted = asked.starts.starts;
+    let unseen_wanted = asked.unseen.unseen;
 
     println!(
         "{budget_mb} MB held, {starts_wanted} starts, {unseen_wanted} deepest unseen, \
          one manager per menu\n"
     );
 
-    for conversation in numbers("CONVERSATION", &CONVERSATIONS) {
+    for conversation in asked.groups.or(&CONVERSATIONS) {
         let Ok((graph, _)) = build_group_graph(&index, conversation) else {
             eprintln!("conversation {conversation}'s group does not build; skipping.");
             continue;
@@ -269,21 +292,4 @@ where
 
         Some((began.elapsed(), found))
     })
-}
-
-fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name)
-        .ok()
-        .and_then(|text| text.trim().parse().ok())
-        .unwrap_or(fallback)
-}
-
-fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
-    match lookahead_engine::core::env::var(name) {
-        Ok(text) => text
-            .split(',')
-            .filter_map(|part| part.trim().parse().ok())
-            .collect(),
-        Err(_) => fallback.to_vec(),
-    }
 }
