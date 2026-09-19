@@ -21,11 +21,9 @@ down - conversation 28's deepest entries overflow the stack inside a recursive d
 operation - and with every group in one process the first crash destroys every group after
 it. A crash here is a RESULT for that group, recorded as CRASHED, and costs nothing else.
 
-`all` ASKS THE MENU MATRIX WHICH GROUPS EXIST, DEGCT_GROUPS_ONLY=1, rather than keeping a
-list here, so what is in a run is decided by the index and nothing else. 901 of the game's
-1,422 groups reach nothing from their start and are skipped from the enumeration rather than
-by 901 processes that each build a graph to find the same nothing. The enumeration arrives
-heaviest-first, which is what the serial phase below rests on.
+`all` ASKS `performance/group_list.rs` WHICH GROUPS ARE WORTH MEASURING rather than keeping a
+list here, so what is in a run is decided by the index and nothing else. The enumeration
+arrives heaviest-first, which is what the serial phase below rests on.
 
 THE HEAVY GROUPS ARE MEASURED ONE AT A TIME, because workers and timings pull opposite ways:
 groups in parallel finish the run several times sooner and make every millisecond column a
@@ -82,8 +80,18 @@ WHAT COUNTS AS DONE:
 
     a row       measured, whatever it says. Done.
     CRASHED     the group took its process down. That IS the answer for that group.
-    NO-MENU     no start of the group has anything worth hunting beyond it. Done.
     NOT-MEASURED  the machine could not supply the budget. NOT done - it is re-run.
+
+WHAT IS NEVER ASKED ABOUT. A group with nothing to measure is not in the run at all. Measured
+2026-09-19: of the game's 1,422 conversations, 901 reach nothing from their start, and 92 of the
+521 groups that remain contain no menu anywhere they reach. Both are facts about the DIALOGUE,
+both are answers to the one question `group_list` answers, and both are kept - so the game is
+enumerated once rather than in every run.
+
+WHAT A RUN STILL MEETS is a group it cannot build its profile in: that depends on the world it
+walks into and how many of the deepest entries it was told to treat as unread, so it is a
+finding rather than a fact. The measurement says so on stderr and writes no row. 130 of the 429
+under the current default. A run therefore holds only rows that are measurements. See de-ealo.
 """
 
 import argparse
@@ -117,8 +125,11 @@ from measurement_common import (  # noqa: E402
 # Core functions
 ###############################################################################
 
-# The example this drives, which is also what it asks for the group list.
+# The example this drives, and the one it asks which groups are worth measuring. Two commands
+# because they are two jobs: `menu_matrix` only ever measures a menu, and `group_list` only ever
+# enumerates. See `performance/group_list.rs`.
 MENUS = "menu_matrix"
+GROUPS = "group_list"
 
 # A verdict that means the row was never taken, so a resume takes it again.
 RETRY = "NOT-MEASURED"
@@ -126,8 +137,6 @@ RETRY = "NOT-MEASURED"
 # The verdict for a group whose process died, written by this driver.
 CRASHED = "CRASHED"
 
-# The verdict for a group with no menu worth asking about.
-NO_MENU = "NO-MENU"
 
 # The column a menu's cost is in, and where a verdict goes instead for an unmeasured group.
 MENU_MS = "menu_ms"
@@ -198,25 +207,29 @@ class Run:
         """The column names, off the header this run's rows were written under."""
         return self.rows.read_text(encoding="utf-8", errors="replace").splitlines()[0].split(TAB)
 
-    def groups(self):
-        """Every group with something to measure, heaviest first, from the menu matrix."""
-        answer = common.ask(self.menus, {qualified("GROUPS_ONLY"): "1"})
+    def groups(self, groups):
+        """Every group worth measuring, heaviest first, asked of `groups`.
+
+        WHAT IS WORTH MEASURING IS THE MEASUREMENT'S TO DECIDE, and it answers in one list: a
+        group that reaches nothing from its start is not in it, and neither is one already known
+        to have no menu under these settings. Neither is a measurement waiting to be taken, and a
+        driver that spawned a process for them would be asking a question whose answer is already
+        written down. See `performance/group_list.rs`, which also says why it is a command of its
+        own rather than a mode of the measurement.
+        """
+        answer = common.ask(groups, {})
         if answer.returncode != 0:
             refuse(f"the group enumeration failed:\n{answer.stderr}", code=1)
 
         common.write_lf(self.folder / "groups.tsv", answer.stdout)
 
-        wanted, empty = [], 0
+        wanted = []
         for line in answer.stdout.splitlines():
             cells = line.split(TAB)
             if len(cells) < 4 or not cells[0].lstrip("-").isdigit():
                 continue
-            start, reachable = int(cells[0]), int(cells[3])
-            if reachable > 0:
-                wanted.append(start)
-            else:
-                empty += 1
-        return wanted, empty
+            wanted.append(int(cells[0]))
+        return wanted
 
     def measure(self, conversation):
         """One group, in a process of its own."""
@@ -236,10 +249,11 @@ class Run:
 
 
 def menu_cost(cells, columns):
-    """What one group's row says about its cost: (ms, complete), or None for a NO-MENU group.
+    """What one group's row says about its cost: (ms, complete).
 
-    See the module doc for why a crash resets the settle count and a group with no menu does
-    not.
+    See the module doc for why a crash resets the settle count. A group this run could not build
+    a profile for leaves no row at all, so it never reaches here: it neither counts towards
+    settling nor resets it, which is what it always meant.
     """
     if CRASHED in cells:
         return 0, False
@@ -247,8 +261,6 @@ def menu_cost(cells, columns):
     if at >= len(cells):
         return 0, False
     cell = cells[at]
-    if cell == NO_MENU:
-        return None
     if not cell.isdigit():
         return 0, False
     return int(cell), True
@@ -267,16 +279,17 @@ def serial_phase(run, conversations, recorded, workers, settle, reap):
         else:
             rows, errors = run.measure(conversation)
             reap(conversation, (rows, errors))
-            first = rows.splitlines()[0] if rows.strip() else f"{conversation}\t{CRASHED}"
-            cells = first.split(TAB)
+            if not rows.strip():
+                # NO ROW AND NO CRASH: this run could not build a profile here, so nothing was
+                # measured and nothing failed. It neither counts towards settling nor resets it,
+                # which is what a group with nothing to measure has always done.
+                continue
+            cells = rows.splitlines()[0].split(TAB)
 
         if workers <= 1:
             continue
 
-        cost = menu_cost(cells, columns)
-        if cost is None:
-            continue
-        menu_ms, complete = cost
+        menu_ms, complete = menu_cost(cells, columns)
         if not complete:
             settle.reset()
             continue
@@ -304,21 +317,24 @@ def cost_of(rows):
     """
     cells = rows.strip().split(TAB)
     if len(cells) < 2:
-        return ""
+        # NO ROW AT ALL is what a group with no menu leaves: it is not a measurement, so it is
+        # not written as one, and the next run will not ask about it - see `Run.groups`.
+        return "nothing to measure"
     verdict = cells[MENU_MS_COLUMN] if len(cells) > MENU_MS_COLUMN else ""
     return f"{verdict} ms" if verdict.isdigit() else verdict
 
 
-def measure(out, conversations, workers, menus, digest):
+def measure(out, conversations, workers, menus, digest, groups):
     run = Run(out, menus, digest)
     run.header()
 
     if conversations == ["all"]:
-        conversations, empty = run.groups()
-        print(f"{len(conversations)} group(s) with rows; {empty} reach nothing and are skipped")
+        conversations = run.groups(groups)
+        print(f"{len(conversations)} group(s) to measure")
 
     recorded = run.recorded()
-    todo = [c for c in conversations if c not in recorded]
+    already = recorded
+    todo = [c for c in conversations if c not in already]
     if recorded:
         print(f"{len(recorded)} already measured in {run.folder}; {len(todo)} to go")
 
@@ -357,9 +373,9 @@ def measure(out, conversations, workers, menus, digest):
             if errors.strip():
                 handle.write(f"=== {conversation} ===\n{errors}")
 
-    serial_done = serial_phase(run, conversations, recorded, workers, settle, reap)
+    serial_done = serial_phase(run, conversations, already, workers, settle, reap)
 
-    remaining = [c for c in conversations[serial_done:] if c not in recorded]
+    remaining = [c for c in conversations[serial_done:] if c not in already]
     if remaining:
         run_groups(remaining, run.measure, workers, reap)
 
@@ -695,6 +711,10 @@ def main(argv=None):
     menus, did = build_measurement(MENUS, folder=out)
     digest = did["sha256"]
     common.add_build_record(out, did)
+    # THE ENUMERATION IS ITS OWN COMMAND, so it is its own build. Not part of the pass's
+    # digest check: it decides WHICH groups are measured, and the check is about the binary
+    # whose milliseconds the rows carry.
+    groups, _ = build_measurement(GROUPS, folder=out, quiet=True)
     try:
         # ONE RUN AFTER ANOTHER, never side by side: two runs at once would each be measuring
         # how busy the other made the machine. Each keeps its own folder, so a resume picks up
@@ -706,7 +726,7 @@ def main(argv=None):
         if takes_cold_run(kind):
             cold = out / COLD_FOLDER
             print(f"\n=== cold run (discarded from the combination) -> {cold} ===")
-            measure(cold, named, workers, menus, digest)
+            measure(cold, named, workers, menus, digest, groups)
         else:
             print(f"\n=== {kind}: no cold run, its columns do not time ===")
 
@@ -714,7 +734,7 @@ def main(argv=None):
         for number in range(1, args.runs + 1):
             folder = out / RUN_FOLDER.format(number)
             print(f"\n=== run {number} of {args.runs} -> {folder} ===")
-            measure(folder, named, workers, menus, digest)
+            measure(folder, named, workers, menus, digest, groups)
             folders.append(folder)
         combine(folders, out, cold=cold)
         return 0

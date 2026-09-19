@@ -92,10 +92,13 @@ when N is more than one writes `combined.tsv` - each group's median, min and max
 whether its outcome agreed across runs - and `summary.txt`, the per-run totals and the
 costliest groups, beside them.
 
-`all` asks the measurement which groups exist - `DEGCT_GROUPS_ONLY=1`, one canonical start per
-distinct group, most reachable first - so nothing decides what is in the run except the
-index. The groups that reach nothing from their start are skipped from that list rather than
-by a process each.
+`all` asks `group_list` which groups are worth measuring - one canonical start per distinct
+group, most reachable first - so nothing decides what is in the run except the index. A group
+that reaches nothing from its start is not in that list, and neither is one already known to
+have no menu: both are answers to the same question, and neither is a measurement waiting to be
+taken. It is a command of its own rather than a mode of the measurement, because enumerating the
+game and timing a menu in it are different jobs, and its answer is kept - transparently, the way
+a memo is, except on disk.
 
 The heavy groups are measured one at a time and the rest several at once, and the driver
 decides where that switch is from what it has just measured; see the driver's module doc and
@@ -119,9 +122,16 @@ kept under the build output - `target/degct-cache/`, never in the repository - a
 see `performance/kept.rs` and `performance/prepared.rs`, and `index ms` for what a process that
 needed none of them reports.
 
-Every key carries the executable and the files the value came from, so a kept value cannot
-outlive the code that derived it: a rebuild costs one pass at full price and the passes after
-it are the cheap ones. `DEGCT_NO_CACHE=1` derives everything, and `DEGCT_CACHE_VERIFY=1`
+What `group_list` answers is kept as well - what each group reaches, and whether anything it
+reaches offers the player a choice - and that one is keyed on the CONVERSATIONS rather than on
+the code, because it is a fact about the dialogue: the engine reads it, it does not decide what
+is in it. So it survives a rebuild, and a regenerated index that says the same thing keeps it.
+The cost of such a key is that a change to how the fact is DERIVED goes unnoticed by it, which
+is what `prepared::DERIVATION` is for: bump it when the meaning changes.
+
+The values that ARE the code's - the parsed index, a group's graph - carry it in their key, so a
+kept value cannot outlive the code that derived it: a rebuild costs one pass at full price and
+the passes after it are the cheap ones. `DEGCT_NO_CACHE=1` derives everything, and `DEGCT_CACHE_VERIFY=1`
 derives everything AND checks it against what was kept, which is what `tests/kept_cache.rs`
 runs over a handful of groups.
 
@@ -182,11 +192,14 @@ opposite things, so the run keeps them apart:
 
 - `CRASHED` is a RESULT. The group took its process down; its stderr in `menus.log` says how,
   and that is a fact about the search.
-- `NO-MENU` is a result about the GROUP: no start of it has anything worth hunting beyond it,
-  so there was never a menu to mark.
 - `NOT-MEASURED` is not a result at all. The machine could not supply the budget, so nothing
   ran and there is nothing to learn - the group is taken again by the next run pointed at the
   same folder.
+
+Two things that are NOT rows, and used to share the word `NO-MENU` between them: a group that
+contains no menu anywhere it reaches, which is a fact about the dialogue and keeps such a group
+out of the list entirely; and a profile this run could not build, which depends on the world it
+walked and what it was told to treat as unread, and is said on stderr while nothing is written.
 
 That last distinction has to be asked BEFORE the memory is spent, because spending it has no
 failure path: the diagram manager preallocates its node store with `Vec::with_capacity`,

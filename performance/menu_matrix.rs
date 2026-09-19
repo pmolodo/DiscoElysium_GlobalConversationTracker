@@ -65,10 +65,23 @@
 //! per group whatever its size is a different problem from one that grows with the graph, and
 //! the totals say the flat ones dominate. See de-ealo and de-9z1u.
 //!
-//! That is what makes a row saying NO-MENU cost anything at all. Such a row holds the word in
-//! `menu ms`, a `setup ms` of zero because no layout or manager is ever built for it, and a
-//! `prep ms` of whatever the graph build and the walk took. A quarter of a whole-game run's
-//! rows are NO-MENU and what they spent was otherwise unwritten. See de-ealo.
+//! ## What is not a row, and the distinction that was being lost
+//!
+//! EVERY ROW IS A MEASUREMENT. Two things that are not:
+//!
+//! A GROUP WITH NO MENU IN IT, which is a fact about the dialogue - nothing it reaches offers the
+//! player anything - found by edge analysis in `performance/group_list.rs` and never asked about
+//! here, because such a group is not in the list this measures.
+//!
+//! A PROFILE THIS RUN COULD NOT BUILD, which is a finding about the run: the profile is walked,
+//! in a world, with as many of the deepest entries called unread as the run was told. The same
+//! group can refuse under one question and answer under another. It is reported on stderr - see
+//! [`no_profile`] - and nothing is written, because there is nothing to write.
+//!
+//! THE TWO WERE ONE WORD, "NO-MENU", in a column where a measurement goes. That made a per-run
+//! finding look like a property of the group, and a quarter of every whole-game run's rows were
+//! it. They are not even the same size: 92 of the game's 521 groups contain no menu at all,
+//! while 130 of the 429 that do refuse the profile the current default asks for. See de-ealo.
 //!
 //! `asked` is passes run across the whole menu: one worklist pass per round to ask whether
 //! anything is still reachable, and one single-target pass per target the branch and bound
@@ -144,10 +157,8 @@
 //! `DEGCT_HEADER=1` prints the column names and measures nothing, which is how a driver
 //! writing one file out of many processes gets a header without parsing a row.
 //!
-//! `DEGCT_GROUPS_ONLY=1` prints one line per distinct group in the game - `start`,
-//! `conversations`, `entries`, `reachable`, most reachable first - and measures nothing. It is
-//! how `tools/measure-menus.py all` learns which groups there are, and a zero in `reachable` is
-//! how it skips a group with nothing to measure. See [`group_list`].
+//! WHICH GROUPS THERE ARE IS A DIFFERENT COMMAND, `performance/group_list.rs`, which is how
+//! `tools/measure-menus.py all` learns what to measure.
 //!
 //! `DEGCT_STARTS` sets the menu's width, `DEGCT_UNSEEN` how many of the deepest entries are
 //! unread, and `DEGCT_BUDGET_MB` what the manager is given.
@@ -169,13 +180,12 @@
 //! about what the player has been shown, and `=body` does the same but leaves the menu's own
 //! options unseen. It does not repair the contradiction; see [`walked_profile`].
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use lookahead_engine::bridge::{NodeRef, SnapshotWorld, WorldSnapshot};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;
-use lookahead_engine::index::{build_group_graph, discover_group};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
@@ -197,10 +207,6 @@ use prepared::Shipped;
 
 #[path = "save_world.rs"]
 mod save_world;
-
-#[path = "seen_profile.rs"]
-mod seen_profile;
-use seen_profile::candidates;
 
 /// The columns, written down here and nowhere else.
 ///
@@ -550,9 +556,6 @@ const COUNTER_CAP: i32 = 16;
 /// A verdict for a row that could not be measured, which is not a slow row.
 const NOT_MEASURED: &str = "NOT-MEASURED";
 
-/// A verdict for a group with no menu to ask about, which is not an empty one.
-const NO_MENU: &str = "NO-MENU";
-
 /// What one menu cost.
 #[derive(Default)]
 struct Menu {
@@ -605,12 +608,6 @@ fn main() {
     // ASKED FOR ON ITS OWN, like the header, and for the same reason: a whole-game run has to
     // know which groups there are before it measures any, and a list kept anywhere else can
     // omit a group and never say so. See `group_list`.
-    if lookahead_engine::core::env::is_set("GROUPS_ONLY") {
-        for (start, conversations, entries, reachable) in group_list(shipped.index()) {
-            println!("{start}\t{conversations}\t{entries}\t{reachable}");
-        }
-        return;
-    }
 
     let budget = DiagramBudget::new(
         from_env(
@@ -635,11 +632,12 @@ fn main() {
         // group's own preparation - so without this the read would be counted twice, once in
         // its own column and again inside `graph` and `total`.
         let before = shipped.took();
-        let Ok((graph, _)) = prepared::group_graph(&shipped, conversation) else {
+        let Ok(group) = prepared::group_graph(&shipped, conversation) else {
             eprintln!("conversation {conversation}: no group builds from it; skipping.");
             continue;
         };
         let built = started.elapsed() - (shipped.took() - before);
+        let graph = group.graph;
         let root = DialogueNodeId::new(conversation, 0);
         if graph.get(root).is_none() {
             eprintln!("conversation {conversation}: no entry 0; skipping.");
@@ -657,14 +655,7 @@ fn main() {
             match MenuProfile::of(&graph, root, unseen_wanted, starts_wanted) {
                 Some(found) => (found.on_a_fresh_save(), None),
                 None => {
-                    row(
-                        conversation,
-                        &graph,
-                        0,
-                        NO_MENU,
-                        Prep::of(&shipped, before, built, started),
-                        None,
-                    );
+                    no_profile(conversation);
                     continue;
                 }
             }
@@ -711,14 +702,7 @@ fn main() {
                     )
                 }
                 None => {
-                    row(
-                        conversation,
-                        &graph,
-                        0,
-                        NO_MENU,
-                        Prep::of(&shipped, before, built, started),
-                        None,
-                    );
+                    no_profile(conversation);
                     continue;
                 }
             }
@@ -775,14 +759,7 @@ fn main() {
                     )
                 }
                 None => {
-                    row(
-                        conversation,
-                        &graph,
-                        0,
-                        NO_MENU,
-                        Prep::of(&shipped, before, built, started),
-                        None,
-                    );
+                    no_profile(conversation);
                     continue;
                 }
             }
@@ -790,14 +767,7 @@ fn main() {
             match MenuProfile::of(&graph, root, unseen_wanted, starts_wanted) {
                 Some(found) => (found, None),
                 None => {
-                    row(
-                        conversation,
-                        &graph,
-                        0,
-                        NO_MENU,
-                        Prep::of(&shipped, before, built, started),
-                        None,
-                    );
+                    no_profile(conversation);
                     continue;
                 }
             }
@@ -856,68 +826,8 @@ fn main() {
                 prep,
                 None,
             ),
-        }
+        };
     }
-}
-
-/// Every distinct group in the game, most reachable first, as `(start, conversations,
-/// entries, reachable)`.
-///
-/// A CANONICAL START IS NOT SIMPLY THE SMALLEST MEMBER. `discover_group` is the FORWARD closure
-/// of a start, not an equivalence relation, so the smallest conversation in a group may reach
-/// only part of it - a group of {3, 5} where 5 leads to 3 and 3 leads nowhere has `closure(3) =
-/// {3}`. The start named is the smallest one whose own closure IS the whole set, which is the
-/// only kind of start that reproduces the group it came from.
-///
-/// `reachable` counts the entries a profile could be built from, and a zero is how a run skips
-/// a group with nothing to measure - see [`reachable_from`].
-///
-/// ORDERED BY WHAT A RUN CAN SEE, not by how big the group is: `entries` counts everything in a
-/// group's conversations whether anything can walk to it or not, and a group can hold 4,035
-/// entries and reach 32. Ties go by start, so the list is the same list every time it is asked
-/// for, which a resume depends on.
-fn group_list(index: &lookahead_engine::index::Index) -> Vec<(i32, usize, usize, usize)> {
-    let mut conversations: Vec<i32> = index.keys().copied().collect();
-    conversations.sort_unstable();
-
-    let mut canonical: HashMap<BTreeSet<i32>, i32> = HashMap::new();
-    for &conversation in &conversations {
-        let group: BTreeSet<i32> = discover_group(index, conversation).into_iter().collect();
-        // Ascending, so the first start to produce a set is the smallest that reaches it.
-        canonical.entry(group).or_insert(conversation);
-    }
-
-    let mut groups: Vec<(i32, usize, usize, usize)> = canonical
-        .into_iter()
-        .map(|(group, start)| {
-            let entries = group.iter().map(|id| index[id].entries.len()).sum();
-            (start, group.len(), entries, reachable_from(index, start))
-        })
-        .collect();
-    groups.sort_unstable_by(|a, b| b.3.cmp(&a.3).then(a.0.cmp(&b.0)));
-    groups
-}
-
-/// How many entries a profile could be built from in `start`'s group: reachable from entry 0,
-/// not the start, and not groups - see `seen_profile::candidates`.
-///
-/// ON STDERR, the reason a group has none, so the group list stays a clean TSV and a driver can
-/// still keep why each group was skipped.
-fn reachable_from(index: &lookahead_engine::index::Index, start: i32) -> usize {
-    let Ok((graph, _)) = build_group_graph(index, start) else {
-        eprintln!("conversation {start}: no group builds from it; skipping.");
-        return 0;
-    };
-    let root = DialogueNodeId::new(start, 0);
-    if graph.get(root).is_none() {
-        eprintln!("conversation {start}: no entry 0; skipping.");
-        return 0;
-    }
-    let reachable = candidates(&graph, root).len();
-    if reachable == 0 {
-        eprintln!("conversation {start}: nothing is reachable from its start; skipping.");
-    }
-    reachable
 }
 
 /// One menu: every option answered against one manager, warmed by the menu itself.
@@ -1190,7 +1100,26 @@ impl Prep {
     }
 }
 
-/// One row, as a tab-separated line.
+/// This run could not build the profile it wanted in this group: said on stderr, and measured
+/// as nothing.
+///
+/// NOT "NO MENU", WHICH IS A DIFFERENT AND STRONGER CLAIM. Whether a group contains a menu at all
+/// is a property of the dialogue, answered by edge analysis in `performance/group_list.rs`, and a
+/// group that has none never reaches this code. What is refused HERE is the adversarial profile:
+/// it is built under a walk, in a world, with as many of the deepest entries called unread as
+/// this run was told to - so the same group can refuse under one question and answer under
+/// another. Calling that "no menu" is what made a per-run finding look like a fact.
+///
+/// NOT A ROW EITHER, because a row is a measurement and this is the absence of one.
+fn no_profile(conversation: i32) {
+    eprintln!(
+        "conversation {conversation}: no profile can be built here - nothing it reaches is worth \
+         hunting under this unseen set and this walk. Measuring nothing."
+    );
+}
+
+/// One row, as a tab-separated line: printed, and handed back for a caller that wants to keep
+/// it.
 ///
 /// `why` is a word for a row that was not measured, and empty for one that was. It goes in
 /// the `menu_ms` column rather than in a column of its own, so a row that says nothing says
@@ -1203,7 +1132,7 @@ fn row(
     why: &str,
     prep: Prep,
     measured: Option<&Menu>,
-) {
+) -> String {
     let cells: Vec<String> = match measured {
         Some(m) => vec![
             conversation.to_string(),
@@ -1248,7 +1177,9 @@ fn row(
             cells
         }
     };
-    println!("{}", cells.join("\t"));
+    let line = cells.join("\t");
+    println!("{line}");
+    line
 }
 
 fn ms(took: Duration) -> f64 {

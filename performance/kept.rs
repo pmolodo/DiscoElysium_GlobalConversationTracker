@@ -72,8 +72,69 @@ pub fn verifying() -> bool {
 /// because it is the one input no caller could be trusted to remember and the one whose absence
 /// from a key is silent.
 pub fn at(kind: &str, about: &str) -> Option<PathBuf> {
-    let key = format!("{about}\u{1}{}", stamp(&std::env::current_exe().ok()?)?);
+    let key = format!("{about}\u{1}{}", code()?);
     Some(folder(kind)?.join(format!("{}.{kind}", fingerprint(&key))))
+}
+
+/// Where a fact about the DIALOGUE ITSELF is kept, which the code has no part in.
+///
+/// WHAT THE DATA DECIDES, THE DATA KEYS. Whether a group has a walkable start, and whether it
+/// has a menu, are properties of the conversations - the engine reads them, it does not decide
+/// them - so such a fact survives a rebuild, and the dialogue database is stable for months at a
+/// time. The values that DO depend on the code - a graph the engine built, an index packed into
+/// this build's idea of a record - go through [`at`] instead.
+pub fn at_data(kind: &str, about: &str) -> Option<PathBuf> {
+    Some(folder(kind)?.join(format!("{}.{kind}", fingerprint(about))))
+}
+
+/// What identifies the code a kept value was derived by.
+///
+/// ## Why not simply this executable
+///
+/// A fact one command works out and another reads - what a measurement learnt about a group,
+/// read by the command that enumerates the groups - would be keyed differently by each of them,
+/// and neither would ever see the other's answer. So the key names the CODE rather than the
+/// binary that happens to be running.
+///
+/// ## What it covers
+///
+/// THE ENGINE, through the stamp `build.rs` writes beside the build output: a hash of every
+/// library source, so it moves when the library does and not when it is merely relinked.
+///
+/// AND EVERY MEASUREMENT SOURCE, by length and modification time. The decisions kept here are
+/// not all the library's - whether a group has a menu is `menu_profile`'s and `menu_matrix`'s -
+/// and a list of the few files that happen to decide today is a list that rots silently the
+/// first time one moves. The whole directory cannot.
+///
+/// IT OVER-INVALIDATES ON PURPOSE. Touching any measurement source throws away everything kept,
+/// which costs one pass at full price - the same price the rebuild it implies costs anyway - and
+/// the alternative is a kept value from code that no longer exists.
+fn code() -> Option<String> {
+    let mut key = std::fs::read_to_string(engine_stamp()?).ok()?;
+    let mut sources: Vec<PathBuf> =
+        std::fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("performance"))
+            .ok()?
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|path| path.extension().is_some_and(|kind| kind == "rs"))
+            .collect();
+    sources.sort();
+    for source in sources {
+        key.push('\u{1}');
+        key.push_str(source.file_name()?.to_str()?);
+        key.push_str(&stamp(&source)?);
+    }
+    Some(key)
+}
+
+/// Where the engine's own build stamp is: beside the build output, written by `build.rs`.
+///
+/// FOUND FROM THIS EXECUTABLE rather than from `CARGO_TARGET_DIR`, since an example sits in
+/// `<target>/<profile>/examples/` and a test in `<target>/<profile>/deps/`, and the stamp is
+/// one directory above either.
+fn engine_stamp() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let stamp = exe.parent()?.parent()?.join("lookahead_engine.built.json");
+    stamp.is_file().then_some(stamp)
 }
 
 /// What says whether a file is the same file: its length and when it was last written.

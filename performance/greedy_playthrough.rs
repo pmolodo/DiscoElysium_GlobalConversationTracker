@@ -305,9 +305,10 @@ fn main() {
 
     println!("conv\tstage\tconceded\tlegs\tpresses\tshown\tunshown\trefused\tstopped\tms");
     for conversation in wanted {
-        let Ok((graph, _)) = prepared::group_graph(&shipped, conversation) else {
+        let Ok(group) = prepared::group_graph(&shipped, conversation) else {
             continue;
         };
+        let graph = group.graph;
         if graph.get(DialogueNodeId::new(conversation, 0)).is_none() {
             continue;
         }

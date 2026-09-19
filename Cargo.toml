@@ -192,6 +192,13 @@ path = "performance/bidirectional_headroom.rs"
 name = "greedy_playthrough"
 path = "performance/greedy_playthrough.rs"
 
+# Which groups can be measured at all, which every whole-game driver asks before it measures
+# anything. Its own command rather than a mode of the measurement, since enumerating the game
+# and timing a menu in it are different jobs.
+[[example]]
+name = "group_list"
+path = "performance/group_list.rs"
+
 [[example]]
 name = "onward_or_back"
 path = "performance/onward_or_back.rs"

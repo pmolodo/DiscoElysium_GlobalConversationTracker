@@ -50,28 +50,29 @@ that started this was a local.
 
 Generated from the code rather than maintained by hand, by `tools/env-table.py`: it greps each
 tracked file for a variable spelled out in full or asked for by bare name through the helper
-for its language, so it says what the code actually asks for. 50 variables.
+for its language, so it says what the code actually asks for. 51 variables.
 
 | `DEGCT_ALL_COMMITTED_SAVES` | `tests/common/mod.rs` |
 | `DEGCT_ARMS` | `tools/measure-residue-arms.sh` |
 | `DEGCT_BUDGET_MB` | `performance/bidirectional_headroom.rs`, `performance/bound_slack.rs`, `performance/cache_split.rs`, `performance/cache_split_menu.rs`, `performance/manager_reuse.rs`, `performance/menu_matrix.rs`, `performance/onward_or_back.rs`, `performance/repeat_question.rs`, `performance/search_residue.rs`, `tools/measure-residue-arms.sh` |
+| `DEGCT_CACHE_VERIFY` | `performance/README.md`, `performance/kept.rs`, `performance/prepared.rs`, `performance/save_world.rs`, `tests/kept_cache.rs` |
 | `DEGCT_CEILING` | `performance/greedy_playthrough.rs` |
 | `DEGCT_COMPARE` | `performance/onward_or_back.rs` |
-| `DEGCT_CONVERSATION` | `AGENTS.md`, `CLAUDE.md`, `docs/modelling-gaps.md`, `performance/README.md`, `performance/backward_support.rs`, `performance/bidirectional_headroom.rs`, `performance/bound_slack.rs`, `performance/cache_split.rs`, `performance/cache_split_menu.rs`, `performance/counter_widths.rs`, `performance/greedy_playthrough.rs`, `performance/layout_shape.rs`, `performance/layout_slots.rs`, `performance/manager_reuse.rs`, `performance/menu_matrix.rs`, `performance/menu_wall.rs`, `performance/nodes_repeat.rs`, `performance/onward_or_back.rs`, `performance/per_start_setup.rs`, `performance/redundant_counters.rs`, `performance/repeat_question.rs`, `performance/variable_order.rs`, `performance/workspace_menus.rs`, `src/core/env.rs`, `tests/modelling_gaps.rs`, `tests/reference_oracle.rs`, `tools/degct-env.sh`, `tools/measure-menus.py`, `tools/measure-symbolic.sh`, `tools/measurement_common.py` |
+| `DEGCT_CONVERSATION` | `AGENTS.md`, `CLAUDE.md`, `docs/modelling-gaps.md`, `performance/README.md`, `performance/backward_support.rs`, `performance/bidirectional_headroom.rs`, `performance/bound_slack.rs`, `performance/cache_split.rs`, `performance/cache_split_menu.rs`, `performance/counter_widths.rs`, `performance/greedy_playthrough.rs`, `performance/layout_shape.rs`, `performance/layout_slots.rs`, `performance/manager_reuse.rs`, `performance/menu_matrix.rs`, `performance/menu_wall.rs`, `performance/nodes_repeat.rs`, `performance/onward_or_back.rs`, `performance/per_start_setup.rs`, `performance/prepared.rs`, `performance/redundant_counters.rs`, `performance/repeat_question.rs`, `performance/variable_order.rs`, `performance/workspace_menus.rs`, `src/core/env.rs`, `tests/modelling_gaps.rs`, `tests/reference_oracle.rs`, `tools/degct-env.sh`, `tools/measure-menus.py`, `tools/measure-symbolic.sh`, `tools/measurement_common.py` |
 | `DEGCT_EACH_MS` | `performance/onward_or_back.rs` |
 | `DEGCT_FRESH` | `performance/workspace_menus.rs` |
 | `DEGCT_GIT_INDEX_FILE` | `build.rs` |
-| `DEGCT_GROUPS_ONLY` | `performance/README.md`, `performance/menu_matrix.rs`, `tools/measure-menus.py` |
 | `DEGCT_GUARD_SNAPSHOT` | `performance/guard_snapshot.rs` |
-| `DEGCT_HEADER` | `performance/menu_matrix.rs`, `tools/measure-menus.py`, `tools/measurement_common.py` |
+| `DEGCT_HEADER` | `performance/menu_matrix.rs`, `performance/prepared.rs`, `tools/measure-menus.py`, `tools/measurement_common.py` |
 | `DEGCT_LAYERS` | `performance/bidirectional_headroom.rs` |
-| `DEGCT_LOG_DIR` | `tools/measure-symbolic.sh`, `tools/run-logged.sh` |
+| `DEGCT_LOG_DIR` | `performance/prepared.rs`, `tools/measure-symbolic.sh`, `tools/run-logged.sh` |
 | `DEGCT_MARKING` | `AGENTS.md`, `CLAUDE.md`, `performance/README.md`, `performance/menu_matrix.rs`, `src/bridge.rs`, `src/symbolic/menu.rs`, `tools/measure-menus.py`, `tools/measurement_common.py`, `tools/menu-costs-diff.py` |
 | `DEGCT_MEASUREMENT` | `tools/measure-symbolic.sh` |
 | `DEGCT_MEMORY_BUDGET_MB` | `performance/menu_residue.rs` |
-| `DEGCT_MENUS_OUT` | `performance/README.md`, `tools/DegctEnv.psm1`, `tools/degct-env.sh`, `tools/measure-menus.py`, `tools/measurement_common.py` |
+| `DEGCT_MENUS_OUT` | `AGENTS.md`, `CLAUDE.md`, `performance/README.md`, `performance/prepared.rs`, `tests/kept_cache.rs`, `tools/DegctEnv.psm1`, `tools/degct-env.sh`, `tools/measure-menus.py`, `tools/measurement_common.py` |
 | `DEGCT_MENU_TIME_BUDGET_MS` | `performance/menu_wall.rs` |
 | `DEGCT_NOLIMIT` | `performance/menu_matrix.rs`, `src/GlobalConversationTracker.Core/DegctEnvironment.cs`, `src/core/env.rs`, `tools/DegctEnv.psm1`, `tools/degct-env.sh`, `tools/measurement_common.py` |
+| `DEGCT_NO_CACHE` | `performance/README.md`, `performance/group_list.rs`, `performance/kept.rs`, `performance/prepared.rs`, `performance/save_world.rs` |
 | `DEGCT_OUT` | `tools/degct-env.sh` |
 | `DEGCT_PLAYTHROUGHS_OUT` | `performance/greedy_playthrough.rs` |
 | `DEGCT_POOLED_ROUNDS` | `src/symbolic/menu.rs` |
@@ -79,29 +80,29 @@ for its language, so it says what the code actually asks for. 50 variables.
 | `DEGCT_REPEATS` | `performance/cache_split.rs`, `performance/per_start_setup.rs`, `performance/repeat_question.rs` |
 | `DEGCT_ROUNDS` | `performance/manager_reuse.rs`, `performance/nodes_repeat.rs`, `performance/workspace_menus.rs` |
 | `DEGCT_ROW_SECONDS` | `performance/cache_split.rs`, `tools/DegctEnv.psm1`, `tools/degct-env.sh` |
-| `DEGCT_RUN_KIND` | `AGENTS.md`, `CLAUDE.md`, `tools/measure-menus.py`, `tools/run-logged.sh` |
-| `DEGCT_RUN_LOG` | `tools/measurement_common.py`, `tools/run-logged.sh` |
-| `DEGCT_RUN_LOG_DIR` | `tools/measure-symbolic.sh`, `tools/measurement_common.py`, `tools/run-logged.sh` |
+| `DEGCT_RUN_KIND` | `AGENTS.md`, `CLAUDE.md`, `performance/prepared.rs`, `tools/measure-menus.py`, `tools/measurement_common.py`, `tools/run-logged.sh` |
+| `DEGCT_RUN_LOG` | `performance/prepared.rs`, `tools/measurement_common.py`, `tools/run-logged.sh` |
+| `DEGCT_RUN_LOG_DIR` | `performance/prepared.rs`, `tools/measure-symbolic.sh`, `tools/measurement_common.py`, `tools/run-logged.sh` |
 | `DEGCT_RUN_NAME` | `tools/measure-symbolic.sh` |
 | `DEGCT_SAVE` | `tests/kim_case_offline.rs` |
 | `DEGCT_SCATTER` | `performance/onward_or_back.rs` |
 | `DEGCT_SEARCHES` | `performance/search_residue.rs`, `tools/measure-residue-arms.sh` |
 | `DEGCT_SEARCH_MS` | `performance/repeat_question.rs` |
 | `DEGCT_SEEN_WORLD` | `performance/greedy_playthrough.rs`, `performance/menu_matrix.rs` |
-| `DEGCT_SETTLE_FACTOR` | `tools/measure-menus.py`, `tools/measurement_common.py` |
-| `DEGCT_SETTLE_GROUPS` | `tools/measure-menus.py`, `tools/measurement_common.py` |
-| `DEGCT_SETTLE_MS` | `tools/measure-menus.py`, `tools/measurement_common.py` |
+| `DEGCT_SETTLE_FACTOR` | `performance/prepared.rs`, `tools/measure-menus.py`, `tools/measurement_common.py` |
+| `DEGCT_SETTLE_GROUPS` | `performance/prepared.rs`, `tools/measure-menus.py`, `tools/measurement_common.py` |
+| `DEGCT_SETTLE_MS` | `performance/prepared.rs`, `tools/measure-menus.py`, `tools/measurement_common.py` |
 | `DEGCT_SPLITS` | `performance/cache_split.rs`, `performance/cache_split_menu.rs` |
 | `DEGCT_STARTS` | `performance/bidirectional_headroom.rs`, `performance/bound_slack.rs`, `performance/cache_split_menu.rs`, `performance/manager_reuse.rs`, `performance/menu_matrix.rs`, `performance/menu_residue.rs`, `performance/menu_wall.rs`, `performance/onward_or_back.rs`, `performance/per_start_setup.rs`, `performance/workspace_menus.rs` |
 | `DEGCT_TARGET` | `performance/bidirectional_headroom.rs` |
 | `DEGCT_THREAD` | `performance/search_residue.rs`, `tools/measure-residue-arms.sh` |
 | `DEGCT_TIME_BUDGET_MS` | `performance/menu_residue.rs`, `performance/menu_wall.rs` |
-| `DEGCT_UNSEEN` | `performance/bidirectional_headroom.rs`, `performance/bound_slack.rs`, `performance/cache_split_menu.rs`, `performance/manager_reuse.rs`, `performance/menu_matrix.rs`, `performance/menu_residue.rs`, `performance/nodes_repeat.rs`, `performance/onward_or_back.rs` |
+| `DEGCT_UNSEEN` | `performance/bidirectional_headroom.rs`, `performance/bound_slack.rs`, `performance/cache_split_menu.rs`, `performance/manager_reuse.rs`, `performance/menu_matrix.rs`, `performance/menu_residue.rs`, `performance/nodes_repeat.rs`, `performance/onward_or_back.rs`, `tests/kept_cache.rs` |
 | `DEGCT_VAR_ORDER` | `performance/layout_slots.rs`, `src/symbolic/var_order.rs` |
 | `DEGCT_VERIFY_REPLAY` | `performance/greedy_playthrough.rs` |
 | `DEGCT_WALKED_PROFILE` | `performance/menu_matrix.rs` |
 | `DEGCT_WEIGH_FRONTS` | `src/symbolic/backward.rs` |
-| `DEGCT_WORKERS` | `performance/README.md`, `tools/measure-menus.py`, `tools/measurement_common.py` |
+| `DEGCT_WORKERS` | `performance/README.md`, `performance/prepared.rs`, `tools/measure-menus.py`, `tools/measurement_common.py` |
 
 ## Keeping this current
 

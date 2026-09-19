@@ -57,7 +57,9 @@ fn what_is_kept_agrees_with_what_this_build_derives() {
     // there. What the test is about is what a process that has been told nothing gets.
     let filling = Shipped::at(path.clone());
     for group in GROUPS {
-        let (graph, _) = prepared::group_graph(&filling, group).expect("the group builds");
+        let graph = prepared::group_graph(&filling, group)
+            .expect("the group builds")
+            .graph;
         let world = save_world::of_save(&graph, group, &filling, save_world::TEMPLATE);
         assert!(
             !world.variables.is_empty(),
@@ -69,14 +71,19 @@ fn what_is_kept_agrees_with_what_this_build_derives() {
     // first thing needs it, so a `took` of zero says nothing did.
     let kept = Shipped::at(path.clone());
     for group in GROUPS {
-        let (graph, group_of) = prepared::group_graph(&kept, group).expect("the group builds");
+        let held = prepared::group_graph(&kept, group).expect("the group builds");
         assert!(
-            graph.count() > 0,
+            held.graph.count() > 0,
             "conversation {group}: a kept graph is empty"
         );
         assert!(
-            group_of.contains(&group),
+            held.conversations.contains(&group),
             "conversation {group}: a kept group does not hold the conversation it is named for"
+        );
+        assert!(
+            !held.content.is_empty(),
+            "conversation {group}: a kept group has no content stamp, so nothing about the \
+             dialogue could ever be kept for it"
         );
     }
     assert_eq!(
@@ -96,7 +103,9 @@ fn what_is_kept_agrees_with_what_this_build_derives() {
 
     let checked = Shipped::at(path);
     for group in GROUPS {
-        let (graph, _) = prepared::group_graph(&checked, group).expect("the group builds");
+        let graph = prepared::group_graph(&checked, group)
+            .expect("the group builds")
+            .graph;
         let world = save_world::of_save(&graph, group, &checked, save_world::TEMPLATE);
         // A WORLD THAT ANSWERS, so that the comparison inside was over something. The walk a
         // measurement feeds this to refuses rather than guesses wherever it cannot decide.
