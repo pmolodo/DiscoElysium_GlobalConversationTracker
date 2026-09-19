@@ -935,8 +935,18 @@ namespace GlobalConversationTracker.TestProbe
                 return false;
             }
 
-            if (waiting != DialogueWaitProbe.Waiting.Continue
-                || TestProbePlugin.LinesShown <= _answered)
+            // AN ANSWERED LINE IS SOMETHING A SETTLE CAN STOP ON, and something an advance
+            // cannot: the one is asking where the interface came to rest, the other is asking
+            // to be taken somewhere, and a line whose continue has already been pressed is an
+            // answer to the first and no progress towards the second.
+            //
+            // A settle that insisted on an UNanswered line could not stop at all when the
+            // advance before it landed on a line with nothing behind it - the seed above makes
+            // `_answered` equal to the count in exactly that case - so it reset on every poll
+            // and ran out of polls holding the answer it was asked for. See de-vkj4.
+            bool asking = waiting == DialogueWaitProbe.Waiting.Continue;
+            bool unanswered = TestProbePlugin.LinesShown > _answered;
+            if (!asking || !(unanswered || _loopCommand == SettleCommand))
             {
                 _settled = 0;
                 return true;
