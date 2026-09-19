@@ -32,7 +32,7 @@ THE TOOL NAME CANNOT DECIDE IT, which is why it is said rather than inferred: `c
 full-suite` measures correctness and `cargo walk-1467` measures timing, and both are cargo.
 Only the caller knows which.
 
-**THE KIND DECIDES MORE THAN THE TREE: only `measure` pays the cold-run tax.** A throw-away
+**THE KIND DECIDES MORE THAN THE TREE: only `performance` pays the cold-run tax.** A throw-away
 first pass protects a comparison between TIMINGS, and a test or an analysis pass produces none -
 so they skip it and cost half as much. The kind reaches the driver as `DEGCT_RUN_KIND`, and a
 perf tool pressed into deriving a dataset says so itself:
