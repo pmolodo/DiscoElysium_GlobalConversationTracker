@@ -237,8 +237,20 @@ def named_by_components(export, titles, guids):
             owner = guids.get(script.group(1), f"guid:{script.group(1)}")
             for line in document:
                 field = FIELD_RE.match(line)
-                if field and field.group(2).strip().strip("'\"") in titles:
-                    holders[(owner, field.group(1))].add(field.group(2).strip().strip("'\""))
+                if not field:
+                    continue
+                value = field.group(2).strip().strip("'\"")
+                if value in titles:
+                    holders[(owner, field.group(1))].add(value)
+                    continue
+                # A PREFIX IS A RULE RATHER THAN A NAME, and it starts every conversation it
+                # matches. `CreateOrbs` walks the whole database and builds a SenseOrb for each
+                # title beginning with its `LocationPrefix`, so the field holds no conversation
+                # name at all and an exact match finds it only by accident - which is why
+                # `WHIRLING F2 ORB / speed hangover` read as started by nothing while 689 of 927
+                # saves had displayed it.
+                if owner == "CreateOrbs" and field.group(1) == "LocationPrefix" and len(value) >= 5:
+                    holders[(owner, field.group(1))].update(title for title in titles if title.startswith(value))
     return holders
 
 
