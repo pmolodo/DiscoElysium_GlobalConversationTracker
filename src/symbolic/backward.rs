@@ -2031,23 +2031,25 @@ fn weight_of(weigh: Weigh, carry: &HashMap<DialogueNodeId, BDDFunction>) -> usiz
 /// 761 the forward side carries 8 entries at its first layer and 251 at its fifteenth, while
 /// the diagram those entries hold runs from 35,906 nodes to 17.4 million.
 ///
-/// MEASURED ON ONE COMMIT, 2026-09-18, the two profiles disagree and not by a little:
+/// MEASURED THREE RUNS A CELL, the two profiles disagree, and one of them disagrees far
+/// harder than the other:
 ///
 /// ```text
 ///                                          nodes-weighted   entries-weighted
-/// 761, link-deepest-10, limits off              9,914 ms          17,472 ms
-/// whole game, walk-deepest-10, limits on        7,851 ms           7,424 ms
-///   - over the 36 groups the choice bit on      2,007 ms           1,726 ms
+/// 761, synthetic-menu, limits off               9,105 ms          16,322 ms
+/// whole game, walk-deepest-10, limits on        6,911 ms           6,900 ms
+///   - over the 10 groups the choice bit on        465 ms             416 ms
 /// ```
 ///
-/// Weighing by nodes is worth 1.76x on the deep adversarial profile and costs 14 per cent on
-/// the menus of the game as played, where it loses on 30 groups and wins on 5. 3560c2c made it
-/// unconditional on the strength of a third profile again - `synthetic-menu` with five unread,
-/// where it was worth 17.6 per cent - which is how a switch becomes a decision it has not
-/// earned.
+/// Weighing by nodes is worth 1.8x on the deep adversarial profile and costs FORTY-NINE
+/// MILLISECONDS on the menus of the game as played - over ten groups of 299, and 40 ms of the
+/// 49 in one of them, conversation 605. The whole-game totals are inside their own run-to-run
+/// spread, so the game says nothing either way and the ten groups say what little it says. A
+/// switch on evidence that thin is worth keeping only because the deep profile's 1.8x is not
+/// thin at all, and points the other way.
 ///
 /// AND THE NODE COUNT IS NOT THE COST. Entries-weighting carries 1.1 per cent MORE diagram
-/// nodes over those 36 groups and takes 14 per cent LESS time. The same inversion turned up
+/// nodes over those groups and takes less time with it. The same inversion turned up
 /// twice more the same day: the pooled scheduler carries 4.5 per cent fewer nodes for 10.7 per
 /// cent more time, and a variable order that cut the guards' span by 92 per cent cost 57 per
 /// cent more (de-2knp). A front's node count is what this steers by, and it is a poor proxy for
@@ -2078,9 +2080,47 @@ fn weight_of(weigh: Weigh, carry: &HashMap<DialogueNodeId, BDDFunction>) -> usiz
 /// overhead the scheduler pays - it is what keeps the two fronts balanced, and an unbalanced
 /// pair is dearer on both counts at once.
 ///
-/// So the inversions want some other explanation, and a better estimate of what a front costs
-/// to GROW - the operations the next layer will take, rather than the size of the result it
-/// already holds - is the question left standing. See de-t329.
+/// ## AND IT IS NOT THE SIZE ESTIMATE EITHER, MEASURED
+///
+/// The question left standing was whether a front should be weighed by what growing it will
+/// COST - the operations the next layer takes - rather than by the size of the result it
+/// already holds. Four such estimates were built and swept, on the same two profiles:
+///
+/// ```text
+///                                                761, limits off   whole game
+///   the fan: how many neighbours the next
+///     layer visits, summed over the front             15,864 ms     6,906 ms
+///   distinct sets, rather than their summed
+///     nodes                                           15,828 ms     7,044 ms
+///   the fan weighted by each entry's own set,
+///     which is the operations AND their size           9,203 ms     6,871 ms
+///   what the last layer ADDED, as the guess at
+///     what the next one will add                      12,309 ms     6,880 ms
+///   ---------------------------------------------------------------------------
+///   nodes, which ships                                 9,105 ms     6,911 ms
+///   entries                                           16,322 ms     6,900 ms
+/// ```
+///
+/// Three runs a cell for the fan-weighted and last-layer rows, one for the other two, whose
+/// diagram totals on 761 are the entry count's to the node and so say what they are without a
+/// second reading. The whole-game column is inside its own run-to-run spread whichever measure
+/// takes it, exactly as the pair above it is.
+///
+/// NOT ONE OF THEM IS A NEW ANSWER, and the node counts say why rather than the clock. The
+/// fan-weighted estimate schedules 761 IDENTICALLY to plain nodes - 6,444,119 diagram nodes
+/// under both, every run - and differs on 2 groups of 299 in the whole game, worth nothing;
+/// it is the node count with a multiplier that never changes the comparison, plus the cost of
+/// working the multiplier out. The fan alone and the distinct-set count are the ENTRY count
+/// restated: 16,719,710 nodes on 761, to the node, under all three.
+///
+/// The last-layer estimate is the only one that schedules anything its own way, and it is a
+/// fourth inversion rather than a fix: 15 per cent FEWER diagram nodes than nodes-weighting on
+/// 761 for 35 per cent more time.
+///
+/// SO THE FRONT'S SHAPE IS NOT WHERE THE ANSWER IS. Three estimates collapse onto the two
+/// measures already here, the fourth trades nodes for time the wrong way again, and what
+/// separates the arms on 761 is a factor of 1.8 that none of them touches. Whatever explains
+/// the inversions is not a property of the front being weighed. See de-ftde.
 ///
 /// The default stays [`Self::Nodes`], which is what the pooled search has always used, because
 /// the pooled search is itself opt-in - see `symbolic::menu::pooled_rounds` - and where it IS
