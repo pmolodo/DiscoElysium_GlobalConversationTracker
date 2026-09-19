@@ -1,0 +1,31 @@
+{
+  "_format": "expanded-save-diff",
+  "_formatVersion": 1,
+  "base": "../../save_template.ntwtf",
+  "members": [
+    {
+      "diff": "at-the-pinball.states.lua.diff",
+      "kind": "text",
+      "name": "at-the-pinball.states.lua",
+      "suffix": ".states.lua"
+    },
+    {
+      "diff": "at-the-pinball.1st.ntwtf.json",
+      "kind": "json",
+      "name": "at-the-pinball.1st.ntwtf.json",
+      "suffix": ".1st.ntwtf.json"
+    },
+    {
+      "diff": "at-the-pinball.2nd.ntwtf.json",
+      "kind": "json",
+      "name": "at-the-pinball.2nd.ntwtf.json",
+      "suffix": ".2nd.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-the-pinball.FOW.json",
+      "suffix": ".FOW.json"
+    }
+  ]
+}

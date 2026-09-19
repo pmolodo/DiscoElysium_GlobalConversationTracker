@@ -1,0 +1,41 @@
+{
+  "_base": "../../save_template.ntwtf/save_template.1st.ntwtf.json",
+  "_changes": {
+    "areaId": "Whirling-int-f1",
+    "fowUnrevealersStatusCache": {
+      "fog-boytoy-kitchen": "ACTIVE",
+      "fog-cryptozoo": "ACTIVE",
+      "fog-doomed-back": "ACTIVE",
+      "fog-doomed-f1_curtains": "ACTIVE",
+      "fog-doomed-gym": "ACTIVE",
+      "fog-doomed-main": "ACTIVE",
+      "fog-doomed-stairs": "UNSEEN",
+      "fog-doomed-storage": "ACTIVE",
+      "fog-doomed-tower": "ACTIVE",
+      "fog-evrart-office": "ACTIVE",
+      "fog-main": "ACTIVE",
+      "fog-whirling-backstage": "ACTIVE",
+      "fog-whirling-kitchen": "ACTIVE",
+      "fog-whirling-rifles": "ACTIVE",
+      "fog-whirling-union": "ACTIVE",
+      "fow_capeside-apps_bathroom": "ACTIVE",
+      "fow_capeside-apps_cunos": "ACTIVE",
+      "fow_capeside-apps_destroyed": "ACTIVE",
+      "fow_capeside-apps_empty": "ACTIVE",
+      "fow_capeside-apps_hobo": "ACTIVE",
+      "fow_capeside-apps_mazov": "ACTIVE",
+      "fow_church": "UNSEEN",
+      "fow_wcw-left": "UNSEEN",
+      "fow_wcw-right": "UNSEEN"
+    },
+    "partyState": {
+      "hasHangover": false,
+      "isKimAbandoned": false,
+      "isKimInParty": true,
+      "kimLastArrivalLocation": 3,
+      "timeSinceKimWentSleepingInHisRoom": 2775
+    }
+  },
+  "_format": "json-diff",
+  "_formatVersion": 1
+}
