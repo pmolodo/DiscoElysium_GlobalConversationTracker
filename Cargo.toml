@@ -169,6 +169,10 @@ name = "variable_order"
 path = "performance/variable_order.rs"
 
 [[example]]
+name = "layout_slots"
+path = "performance/layout_slots.rs"
+
+[[example]]
 name = "nodes_repeat"
 path = "performance/nodes_repeat.rs"
 
