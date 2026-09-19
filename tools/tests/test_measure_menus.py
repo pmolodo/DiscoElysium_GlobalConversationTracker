@@ -194,6 +194,27 @@ class OptionsReachTheRun(unittest.TestCase):
         """None rather than a number, so `default_workers` is what decides."""
         self.assertIsNone(self.parse("368").workers)
 
+    def test_a_run_that_names_no_arm_asks_for_none(self):
+        """So the driver's own default is what a default run measures."""
+        self.assertEqual(menus.driver_arguments(None, []), [])
+
+    def test_the_arm_reaches_the_driver(self):
+        self.assertEqual(menus.driver_arguments("onward", []), ["--marking", "onward"])
+
+    def test_pass_through_arguments_travel_with_the_arm(self):
+        self.assertEqual(
+            menus.driver_arguments("onward", ["--starts", "3"]),
+            ["--marking", "onward", "--starts", "3"],
+        )
+
+    def test_pass_through_arguments_are_split_the_way_a_shell_would(self):
+        """So a quoted value with a space in it survives, whichever shell was in the way."""
+        parsed = self.parse("--driver", "--nolimit --save 'a name with spaces'", "368")
+        self.assertEqual(
+            menus.shlex.split(parsed.driver),
+            ["--nolimit", "--save", "a name with spaces"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

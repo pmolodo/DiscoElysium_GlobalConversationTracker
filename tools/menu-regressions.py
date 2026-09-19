@@ -32,7 +32,7 @@ run is refused because its tag is already there.
 - A RUN RECORD, since without one nothing can say whether a later run was measured the same way.
 - A CLEAN TREE. A baseline stands for a commit a later run can be measured against again, and a
   dirty tree is code no commit holds.
-- THE SHIPPED ALGORITHM, no `measurement_common.ALGORITHM_VARIABLES` set. A regression is the
+- THE SHIPPED ALGORITHM, which is a run that named no marking of its own. A regression is the
   product getting slower; an opt-in arm measured as a baseline would make every later default run
   look like a change.
 
@@ -85,13 +85,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from measurement_common import (  # noqa: E402  (after the path is set)
-    ALGORITHM_VARIABLES,
     COMBINED,
     LOGS,
     OUT,
     RUN_RECORD,
     SUMMARY,
     algorithm_differences,
+    algorithm_of,
     git,
     hardware_differences,
     median_ms,
@@ -155,10 +155,9 @@ def mark(folder, baselines, note):
     if not code.get("revision") or code.get("dirty"):
         problems.append("it was measured on a tree with uncommitted changes, which no commit holds")
 
-    environment = record.get("environment") or {}
-    arms = [f"{name}={environment[name]}" for name in sorted(ALGORITHM_VARIABLES) if name in environment]
-    if arms:
-        problems.append(f"it measured an opt-in algorithm ({', '.join(arms)}) rather than the shipped one")
+    arm = algorithm_of(record)
+    if arm is not None:
+        problems.append(f"it measured an opt-in algorithm ({arm}) rather than the shipped one")
 
     fewest = min(int(row["runs"]) for row in read_combined(folder).values())
     if fewest < MIN_RUNS:

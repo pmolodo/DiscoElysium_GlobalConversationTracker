@@ -680,6 +680,9 @@ COMPARED_VARIABLES = frozenset(
 # `algorithm_differences`. A resume still refuses one: a folder must not hold two algorithms' rows.
 ALGORITHM_VARIABLES = frozenset({qualified("MARKING")})
 
+# What a run record calls the marking it measured, now that a driver takes it as an argument.
+ALGORITHM_DETAIL = "marking"
+
 # Driver details a comparison does not hold two folders to.
 #
 # `groups` says WHICH groups were measured rather than how, and a comparison takes the groups both
@@ -689,7 +692,12 @@ ALGORITHM_VARIABLES = frozenset({qualified("MARKING")})
 # touches a counted row: the discarded pass is discarded, and what is left was measured the same
 # way either side. They are recorded so a folder says whether it took one, not so that a folder
 # taken before this existed refuses every folder taken after it.
-UNCOMPARED_DETAILS = frozenset({"groups", "kind", "cold"})
+#
+# `marking` says WHICH ALGORITHM was measured, and comparing two algorithms is often the very
+# point of a comparison, so it is REPORTED by `algorithm_differences` rather than refused here. A
+# resume still refuses one, through the algorithm line of the resume check rather than through
+# the settings.
+UNCOMPARED_DETAILS = frozenset({"groups", "kind", "cold", ALGORITHM_DETAIL})
 
 
 def settings_of(record):
@@ -823,18 +831,34 @@ def hardware_differences(first, second, available_tolerance=AVAILABLE_MEMORY_TOL
     return differ
 
 
-def algorithm_differences(first, second):
-    """Which algorithm variables two run records disagree about, one `field: before -> after` line each.
+def algorithm_of(record):
+    """Which marking a run measured, or None where it took its driver's default.
 
-    An unset variable is the driver's default algorithm, and is shown as None.
+    ASKED OF THE DETAILS FIRST AND THE ENVIRONMENT SECOND, because a driver takes this as an
+    argument now and every folder already in performance/logs recorded it as DEGCT_MARKING. Both
+    are read for as long as those folders are worth comparing against, which is the whole reason
+    they are kept - a reading that cannot be compared with the ones before it is a reading that
+    has to be taken again.
     """
-    a = (first.get("environment") or {}) if first else {}
-    b = (second.get("environment") or {}) if second else {}
-    return [
-        f"{name}: {a.get(name)!r} -> {b.get(name)!r}"
-        for name in sorted(ALGORITHM_VARIABLES)
-        if a.get(name) != b.get(name)
-    ]
+    if not record:
+        return None
+    details = record.get("details") or {}
+    if details.get(ALGORITHM_DETAIL) is not None:
+        return details[ALGORITHM_DETAIL]
+    environment = record.get("environment") or {}
+    for name in sorted(ALGORITHM_VARIABLES):
+        if name in environment:
+            return environment[name]
+    return None
+
+
+def algorithm_differences(first, second):
+    """Whether two run records disagree about the algorithm, as one `before -> after` line.
+
+    A run that took its driver's default is shown as None, whichever way it was asked.
+    """
+    a, b = algorithm_of(first), algorithm_of(second)
+    return [] if a == b else [f"{ALGORITHM_DETAIL}: {a!r} -> {b!r}"]
 
 
 def setting_differences(first, second):
@@ -974,11 +998,23 @@ def binary_digest(path):
     return digest.hexdigest()
 
 
-def ask(binary, extra_env, base_env=None):
-    """One question put to the measurement, answered on stdout."""
+def ask(binary, extra_env, base_env=None, args=()):
+    """One question put to the measurement, answered on stdout.
+
+    `args` is what the driver takes on its command line, which is where an option belongs: it is
+    self-documenting, `--help` shows it, and the recorded command line says what was asked. The
+    environment is still here for what a WRAPPER hands down to a command it does not parse - see
+    `env_for_child` - and for drivers that have not been converted yet.
+    """
     env = dict(base_env if base_env is not None else os.environ)
     env.update(extra_env)
-    return subprocess.run([str(binary)], capture_output=True, text=True, env=env, errors="replace")
+    return subprocess.run(
+        [str(binary), *[str(argument) for argument in args]],
+        capture_output=True,
+        text=True,
+        env=env,
+        errors="replace",
+    )
 
 
 # HOW MUCH OF THE MACHINE A RUN LEAVES ALONE.

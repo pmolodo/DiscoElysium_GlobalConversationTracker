@@ -67,7 +67,7 @@ and is kept on disk rather than deleted. See COLD_FOLDER for the evidence, and
 
 IT IS A TAX ON TIMINGS ONLY. This is a performance tool, and asking it for a DATASET rather than
 a number is an ordinary thing to want - which groups fall through to step 2, say, via
-DEGCT_MARKING=onward. Those columns read the same cold as warm, so say what the run measures and
+`--marking onward`. Those columns read the same cold as warm, so say what the run measures and
 skip the extra pass:
 
     tools/measure-menus.py --kind analysis --runs 1 all
@@ -98,6 +98,7 @@ under the current default. A run therefore holds only rows that are measurements
 """
 
 import argparse
+import shlex
 import statistics
 import sys
 
@@ -118,7 +119,6 @@ from measurement_common import (  # noqa: E402
     default_workers,
     env,
     progress_line,
-    qualified,
     refuse,
     run_groups,
 )
@@ -154,10 +154,27 @@ MENU_MS_COLUMN = 4
 SETTLE_MS = 100
 
 
+def driver_arguments(marking, driver):
+    """What every group's process is asked, beyond which group it is.
+
+    THE DRIVER OWNS ITS OWN OPTIONS, which is why everything but the arm is passed through
+    unread: this tool would otherwise carry a copy of `menu_matrix`'s interface, and a copy is a
+    thing to keep in step. A misspelt option is refused by the driver, on the first group.
+
+    THE ARM IS NAMED SEPARATELY because it is the one option this tool has to understand: a run
+    record says which algorithm it measured, and `measurement_common.algorithm_of` reads it back
+    to decide whether two folders may be compared and whether a run can stand as a baseline.
+    """
+    return [*(["--marking", marking] if marking else []), *driver]
+
+
 class Run:
     """One folder of rows, and what has already been written into it."""
 
-    def __init__(self, out, menus, digest):
+    def __init__(self, out, menus, digest, marking=None, driver=()):
+        # HELD RATHER THAN REBUILT where it is needed, so every group in a run is measured under
+        # the same arm by construction.
+        self.asked = driver_arguments(marking, driver)
         self.folder = Path(out)
         self.folder.mkdir(parents=True, exist_ok=True)
         self.rows = self.folder / "menus.tsv"
@@ -202,7 +219,7 @@ class Run:
         """Writes the column names, asked of the measurement rather than written here."""
         if self.rows.exists():
             return
-        answer = common.ask(self.menus, {qualified("HEADER"): "1"})
+        answer = common.ask(self.menus, {}, args=["--header"])
         common.write_lf(self.rows, answer.stdout)
 
     def columns(self):
@@ -237,7 +254,8 @@ class Run:
         """One group, in a process of its own."""
         answer = common.ask(
             self.menus,
-            common.env_for_child(CONVERSATION=str(conversation)),
+            {},
+            args=["--conversation", conversation, *self.asked],
         )
         if answer.returncode != 0 and not answer.stdout.strip():
             # A CRASH IS THIS GROUP'S ANSWER, written as a row so a resume does not take it
@@ -326,8 +344,8 @@ def cost_of(rows):
     return f"{verdict} ms" if verdict.isdigit() else verdict
 
 
-def measure(out, conversations, workers, settle, menus, digest, groups):
-    run = Run(out, menus, digest)
+def measure(out, conversations, workers, settle, menus, digest, groups, marking, driver):
+    run = Run(out, menus, digest, marking, driver)
     run.header()
 
     if conversations == ["all"]:
@@ -659,7 +677,7 @@ def combine(folders, out, cold=None):
 ###############################################################################
 
 
-def record_run(out, workers, settle, runs, named, kind):
+def record_run(out, workers, settle, runs, named, kind, marking, driver):
     """Writes what this run is - see `measurement_common.write_run_record` - into its folder.
 
     PARALLELISM IS THE PART THAT CHANGES WHAT THE ROWS SAY: groups measured side by side pay a flat
@@ -674,7 +692,16 @@ def record_run(out, workers, settle, runs, named, kind):
     # WHETHER A COLD RUN WAS TAKEN, readable later without counting folders. The wrapper's
     # DEGCT_RUN_KIND is recorded with every other DEGCT_ variable, but --kind overrides it and
     # an unwrapped run has neither, so the decision itself is written down rather than inferred.
-    common.write_run_record(out, parallelism, runs=runs, groups=named, kind=kind, cold=takes_cold_run(kind))
+    common.write_run_record(
+        out,
+        parallelism,
+        runs=runs,
+        groups=named,
+        kind=kind,
+        cold=takes_cold_run(kind),
+        marking=marking,
+        driver=driver or None,
+    )
 
 
 def get_parser():
@@ -715,6 +742,23 @@ def get_parser():
             "the cores, or what the free memory affords, whichever is smaller"
         ),
     )
+    parser.add_argument(
+        "--marking",
+        default=None,
+        help=(
+            "which marking to measure, passed straight to the driver, which is what knows the "
+            "arms and refuses a misspelt one; the default is the shipped algorithm"
+        ),
+    )
+    parser.add_argument(
+        "--driver",
+        default="",
+        metavar="ARGS",
+        help=(
+            "arguments to pass every group's driver, as one quoted string, e.g. "
+            "--driver='--nolimit --starts 24'; see `menu_matrix --help` for what it takes"
+        ),
+    )
     Settling.add_arguments(parser, SETTLE_MS)
     return parser
 
@@ -751,7 +795,10 @@ def main(argv=None):
     # second-guessed, and a run told `--workers 1` gets one whatever the cores say.
     workers = args.workers if args.workers is not None else default_workers()
     settle = Settling.of(args)
-    record_run(out, workers, settle, args.runs, named, kind)
+    # SPLIT THE WAY A SHELL WOULD, so `--driver="--save a name with spaces"` means what it looks
+    # like it means whichever shell, or none, was between the person and this process.
+    driver = shlex.split(args.driver)
+    record_run(out, workers, settle, args.runs, named, kind, args.marking, driver)
 
     # BUILT ONCE FOR THE WHOLE PASS, BEFORE THE FIRST RUN, so every run of it is the same
     # binary BY CONSTRUCTION. Building per run made that a matter of nobody having touched the
@@ -784,7 +831,7 @@ def main(argv=None):
         if takes_cold_run(kind):
             cold = out / COLD_FOLDER
             print(f"\n=== cold run (discarded from the combination) -> {cold} ===")
-            measure(cold, named, workers, settle, menus, digest, groups)
+            measure(cold, named, workers, settle, menus, digest, groups, args.marking, driver)
         else:
             print(f"\n=== {kind}: no cold run, its columns do not time ===")
 
@@ -792,7 +839,7 @@ def main(argv=None):
         for number in range(1, args.runs + 1):
             folder = out / RUN_FOLDER.format(number)
             print(f"\n=== run {number} of {args.runs} -> {folder} ===")
-            measure(folder, named, workers, settle, menus, digest, groups)
+            measure(folder, named, workers, settle, menus, digest, groups, args.marking, driver)
             folders.append(folder)
         combine(folders, out, cold=cold)
         return 0

@@ -21,7 +21,7 @@
 //! `menu_residue` and `menu_wall` - takes its starts as the menu, and marks the whole menu
 //! against one manager through `bridge::mark_menu_as_shipped`, so each group gets the marking
 //! the product gives it: the onward question first, and the exact marking by branch and bound
-//! only where that marks nothing. `DEGCT_MARKING=hybrid-bnb` names that default.
+//! only where that marks nothing. `--marking hybrid-bnb` names that default.
 //!
 //! WITH THE WALK, because the product asks with one. A profile's menu has nobody behind it, so
 //! the walk a player would have been shown is built from the conversation's start before the
@@ -162,26 +162,26 @@
 //! it and a crash on one group should not cost the rest:
 //!
 //! ```text
-//! DEGCT_CONVERSATION=631 \
+//! --conversation 631 \
 //!   tools/run-logged.sh cargo menu-matrix -- cargo run --release --example menu_matrix
 //! ```
 //!
-//! `DEGCT_HEADER=1` prints the column names and measures nothing, which is how a driver
+//! `--header` prints the column names and measures nothing, which is how a driver
 //! writing one file out of many processes gets a header without parsing a row.
 //!
 //! WHICH GROUPS THERE ARE IS A DIFFERENT COMMAND, `performance/group_list.rs`, which is how
 //! `tools/measure-menus.py all` learns what to measure.
 //!
-//! `DEGCT_STARTS` sets the menu's width, `DEGCT_UNSEEN` how many of the deepest entries are
-//! unread, and `DEGCT_BUDGET_MB` what the manager is given.
+//! `--starts` sets the menu's width, `--unseen` how many of the deepest entries are
+//! unread, and `--budget-mb` what the manager is given.
 //!
-//! `DEGCT_NOLIMIT=1` takes the limits off: a 6144 MB manager and a five-minute wall, which is
+//! `--nolimit` takes the limits off: a 6144 MB manager and a five-minute wall, which is
 //! also each pass's ration.
 //!
-//! EVERY ROW IS WALK-DEEPEST-X BY DEFAULT, where X is `DEGCT_UNSEEN`: each menu is asked in a
+//! EVERY ROW IS WALK-DEEPEST-X BY DEFAULT, where X is `--unseen`: each menu is asked in a
 //! state a greedy playthrough reached, with the deepest entries THAT WALK REACHES still to come.
 //! The world it hands the engine IS the walk's own, so there is one account of what the player
-//! has read rather than two that can disagree. `DEGCT_WALKED_PROFILE=menu` asks instead about
+//! has read rather than two that can disagree. `--walked-profile menu` asks instead about
 //! the menu the player is standing at; it is the more honest profile and the weaker
 //! measurement, and `menu_profile::Starts` carries the numbers.
 //!
@@ -211,6 +211,9 @@ use lookahead_engine::symbolic::{menu, seen_state_search};
 
 #[path = "../tests/common/mod.rs"]
 mod common;
+
+#[path = "options.rs"]
+mod options;
 
 #[path = "menu_profile.rs"]
 mod menu_profile;
@@ -255,65 +258,95 @@ const CONVERSATIONS: [i32; 6] = [362, 368, 631, 14, 28, 1030];
 /// that one moved and the row would quietly stop being what it claims to be.
 const BUDGET_MB: usize = DiagramBudget::DEFAULT_MEMORY_BUDGET / (1024 * 1024);
 
-/// What `DEGCT_NOLIMIT` gives the manager: a measurement's six gigabytes rather than a
-/// player's allowance. `DEGCT_BUDGET_MB` still overrides it.
+/// What `--nolimit` gives the manager: a measurement's six gigabytes rather than a
+/// player's allowance. `--budget-mb` still overrides it.
 const NOLIMIT_BUDGET_MB: usize = 6144;
 
-/// What `DEGCT_NOLIMIT` gives the menu, as a wall AND as each pass's ration.
+/// What `--nolimit` gives the menu, as a wall AND as each pass's ration.
 ///
 /// BOTH, because one pass to a deep target can carry most of a round's work, so a per-pass
 /// ration shorter than the wall would stop it where the wall would not. Five minutes, so that the
 /// row says where the search stops rather than where a player's patience would.
 const NOLIMIT_TIME: Duration = Duration::from_secs(300);
 
-/// Which save a walked profile is built from: the template, or what `DEGCT_SAVE` names.
+/// Everything this driver takes on its command line.
 ///
-/// THE TEMPLATE IS THE FAIR COMMON DENOMINATOR - the blank slate every committed scenario is a
-/// diff over, so no group is favoured by a save that happens to suit it. What it is not is a
-/// state anybody reached: on 761 a walk from it shows 44 entries of 2,263, where a walk from a
-/// real playthrough's save shows 144. Naming a save asks the same question of a world a player
-/// was actually in, and `target_cost` already reads this variable.
-fn save() -> String {
-    lookahead_engine::core::env::var("SAVE").unwrap_or_else(|_| save_world::TEMPLATE.to_string())
+/// ONE STRUCT, HANDED DOWN, rather than each function asking the world for what it needs. `menu`
+/// below takes six explicit parameters and still read two options out of the environment from
+/// inside the thread the search runs on, which is how an option comes to be decided somewhere no
+/// caller can see. A struct threads one argument and carries all of them, so a function that
+/// needs another option later gains a field rather than a parameter.
+/// A FIELD'S DOC COMMENT IS ITS `--help` TEXT, which is why every one below is a single line and
+/// the reasoning sits in ordinary `//` comments beside it. `clap` prints a doc comment verbatim,
+/// so the dense rationale this file is written in would arrive at whoever typed `--help` as
+/// several paragraphs about why a struct is shaped the way it is.
+#[derive(clap::Parser, Debug, Clone)]
+#[command(
+    about = "One row per group: what a whole menu costs and what it marks.",
+    long_about = None
+)]
+struct Options {
+    #[command(flatten)]
+    groups: options::Groups,
+
+    #[command(flatten)]
+    starts: options::Starts<STARTS>,
+
+    #[command(flatten)]
+    unseen: options::Unseen<UNSEEN>,
+
+    // NOT `options::Budget`, whose default is a constant: this one's depends on whether
+    // `--nolimit` was passed, which is not known until the arguments are parsed. See
+    // `Options::budget`.
+    /// How much the diagram manager may commit, in MB [default: the shipped allowance]
+    #[arg(long = "budget-mb", value_name = "MB")]
+    budget_mb: Option<usize>,
+
+    /// Measure with the limits off: a measurement's memory and a five-minute wall
+    #[arg(long)]
+    nolimit: bool,
+
+    // A MODE RATHER THAN AN OPTION, and it is how a driver writing one file out of many
+    // processes gets a header without parsing a row.
+    /// Print the column names and measure nothing
+    #[arg(long)]
+    header: bool,
+
+    /// Which menu marking a row is taken with
+    #[arg(long, value_enum, default_value_t = Marking::HybridBranchAndBound)]
+    marking: Marking,
+
+    // THE TEMPLATE IS THE FAIR COMMON DENOMINATOR - the blank slate every committed scenario is
+    // a diff over, so no group is favoured by a save that happens to suit it. What it is not is
+    // a state anybody reached: on 761 a walk from it shows 44 entries of 2,263, where a walk
+    // from a real playthrough's save shows 144. Naming a save asks the same question of a world
+    // a player was actually in.
+    /// Which save a walked profile is built from
+    #[arg(long, value_name = "NAME", default_value = save_world::TEMPLATE)]
+    save: String,
+
+    /// Which scenario a row is taken in; see `walked_profile`
+    #[arg(long = "walked-profile", value_name = "NAME", default_value = WALK_DEEPEST)]
+    walked_profile: String,
 }
 
-/// Whether this run is taken with the limits off. See [`NOLIMIT_BUDGET_MB`] and
-/// [`NOLIMIT_TIME`].
-fn nolimit() -> bool {
-    lookahead_engine::core::env::is_set("NOLIMIT")
-}
-
-/// Which menu marking a row is taken with. See [`marking`].
-#[derive(Clone, Copy)]
-enum Marking {
-    /// What the product marks with, told where the player walked from - see `hub::walk_to_menu`
-    /// for the walk - so the onward question cuts what they passed since their current hub, and
-    /// the exact marking by branch and bound only answers where that marks nothing. See
-    /// `bridge::mark_menu_as_shipped`, which the plugin's requests reach too.
-    HybridBranchAndBound,
-    /// The shipped hybrid with the SPENT BRANCHES cut beside the walk: a branch off a hub the
-    /// player is inside whose one-time effects have all fired and which shows nothing unread
-    /// cannot be the way on, so it is refused like the walk itself. See de-wi02.
-    HybridSpent,
-    /// STEP 1 AND NOTHING AFTER IT - the onward question with the cut the default rule would
-    /// ask it with, stopping whether or not it starred anything.
+impl Options {
+    /// What the diagram manager may spend, in bytes.
     ///
-    /// NOT A MARKING ANYONE WOULD SHIP, and it is not offered as one: a menu it leaves bare is
-    /// a menu the product would have gone on to answer exactly. It exists to name the menus
-    /// that FALL THROUGH, cheaply - a `rounds` of zero here is a menu the expensive half runs
-    /// for - so a before-and-after of step 2 can be taken on the menus step 2 actually
-    /// touches, without paying for step 2 to find out which those are. See de-qy5t.
-    Onward,
+    /// The limits being off raises the default and nothing else: a run that names a budget gets
+    /// the budget it named either way.
+    fn budget(&self) -> DiagramBudget {
+        let mb = self.budget_mb.unwrap_or(if self.nolimit {
+            NOLIMIT_BUDGET_MB
+        } else {
+            BUDGET_MB
+        });
+        DiagramBudget::new(mb * 1024 * 1024)
+    }
 }
 
-/// What `DEGCT_MARKING` says for each marking.
-const HYBRID_BRANCH_AND_BOUND: &str = "hybrid-bnb";
-const HYBRID_SPENT: &str = "hybrid-spent";
-const ONWARD: &str = "onward";
-
-/// The marking `DEGCT_MARKING` names: `hybrid-bnb`, the default and what the product marks
-/// with, walk and all. Row files can be taken each way and compared on the same profile and the
-/// same allowance (de-0jsf.20).
+/// Which menu marking a row is taken with. Row files can be taken each way and compared on the
+/// same profile and the same allowance (de-0jsf.20).
 ///
 /// THE DEFAULT IS THE SHIPPED ALGORITHM, walk included, because a measurement that is not the
 /// game's algorithm describes code no player runs (de-r2xf.11). There is no default without the
@@ -326,35 +359,49 @@ const ONWARD: &str = "onward";
 /// though the two answered one question. `menu::mark_menu` is still what step 2 calls, and a
 /// test that wants the exact answer calls it directly. See de-eo76.
 ///
-/// # Panics
-///
-/// On any other value, so a misspelt run does not quietly measure the default.
-fn marking() -> Marking {
-    match lookahead_engine::core::env::var("MARKING")
-        .unwrap_or_default()
-        .as_str()
-    {
-        "" | HYBRID_BRANCH_AND_BOUND => Marking::HybridBranchAndBound,
-        HYBRID_SPENT => Marking::HybridSpent,
-        ONWARD => Marking::Onward,
-        other => panic!(
-            "DEGCT_MARKING={other:?}: expected {HYBRID_BRANCH_AND_BOUND}, {HYBRID_SPENT} or \
-             {ONWARD}"
-        ),
-    }
+/// A MISSPELT ARM IS REFUSED BY NAME, with the arms listed, because `clap` will not accept a
+/// value that is not one of these - which is what a hand-written parser had to panic to do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+enum Marking {
+    /// What the product marks with, told where the player walked from - see `hub::walk_to_menu`
+    /// for the walk - so the onward question cuts what they passed since their current hub, and
+    /// the exact marking by branch and bound only answers where that marks nothing. See
+    /// `bridge::mark_menu_as_shipped`, which the plugin's requests reach too.
+    #[value(name = HYBRID_BRANCH_AND_BOUND, help = "what the product marks with, walk and hub cut included")]
+    HybridBranchAndBound,
+    /// The shipped hybrid with the SPENT BRANCHES cut beside the walk: a branch off a hub the
+    /// player is inside whose one-time effects have all fired and which shows nothing unread
+    /// cannot be the way on, so it is refused like the walk itself. See de-wi02.
+    #[value(name = HYBRID_SPENT, help = "the shipped hybrid, with spent branches cut beside the walk")]
+    HybridSpent,
+    /// STEP 1 AND NOTHING AFTER IT - the onward question with the cut the default rule would
+    /// ask it with, stopping whether or not it starred anything.
+    ///
+    /// NOT A MARKING ANYONE WOULD SHIP, and it is not offered as one: a menu it leaves bare is
+    /// a menu the product would have gone on to answer exactly. It exists to name the menus
+    /// that FALL THROUGH, cheaply - a `rounds` of zero here is a menu the expensive half runs
+    /// for - so a before-and-after of step 2 can be taken on the menus step 2 actually
+    /// touches, without paying for step 2 to find out which those are. See de-qy5t.
+    #[value(name = ONWARD, help = "step 1 alone, to name the menus that fall through to step 2")]
+    Onward,
 }
+
+/// What `--marking` says for each marking.
+const HYBRID_BRANCH_AND_BOUND: &str = "hybrid-bnb";
+const HYBRID_SPENT: &str = "hybrid-spent";
+const ONWARD: &str = "onward";
 
 /// How many options the menu asks about.
 ///
 /// EIGHT, which is what `workspace_menus` uses, so a figure here is comparable with one
-/// there. A wider menu is measurable with `DEGCT_STARTS`; twenty-four is what a menu of
+/// there. A wider menu is measurable with `--starts`; twenty-four is what a menu of
 /// rolled checks costs, since de-fes makes each outcome its own start.
 const STARTS: usize = 8;
 
 /// How many of the group's deepest entries are unread.
 const UNSEEN: usize = 10;
 
-/// What one leg of a walked profile's search may hold, where `DEGCT_WALKED_PROFILE` asks for
+/// What one leg of a walked profile's search may hold, where `--walked-profile` asks for
 /// one. The same bound `greedy_playthrough` uses, so a profile built here is the one that
 /// generator caches.
 const WALK_CEILING: usize = 200_000;
@@ -370,7 +417,7 @@ struct Standing {
     walk: Vec<DialogueNodeId>,
 }
 
-/// The default. The X unseen entries are the deepest ones A WALK REACHES: `DEGCT_UNSEEN` is the
+/// The default. The X unseen entries are the deepest ones A WALK REACHES: `--unseen` is the
 /// X in walk-deepest-X, and a run of keypresses is the witness that a player can stand there.
 const WALK_DEEPEST: &str = "walk-deepest";
 /// A start set nobody can stand at, asked on a save that has shown nothing: the structural menu
@@ -392,7 +439,7 @@ const WALKED_FLAG: &str = "1";
 ///
 /// ## The world says what is seen, and nothing else does
 ///
-/// walk-deepest-X takes a greedy playthrough from the template save, stops it with `DEGCT_UNSEEN`
+/// walk-deepest-X takes a greedy playthrough from the template save, stops it with `--unseen`
 /// entries still to come, and measures THAT: the unseen entries are the last ones a nearest-first
 /// play reaches, the seen set is what it displayed, and the variables are what its walk left them
 /// at. There is ONE account of what the player has read - the world - and the seen state function
@@ -425,21 +472,18 @@ const WALKED_FLAG: &str = "1";
 /// # Panics
 ///
 /// On any other value, so a misspelt run does not quietly measure something else.
-fn walked_profile() -> Scenario {
-    match lookahead_engine::core::env::var("WALKED_PROFILE") {
-        Err(_) => Scenario::Walked(menu_profile::Starts::Reaching),
-        Ok(value) => match value.as_str() {
-            "" | WALKED_FLAG | WALK_DEEPEST => Scenario::Walked(menu_profile::Starts::Reaching),
-            WALKED_ON_SCREEN => Scenario::Walked(menu_profile::Starts::OnScreen),
-            SYNTHETIC_MENU => Scenario::SyntheticMenu(Globally::LinkDeepest),
-            SYNTHETIC_MENU_WALK_DEEPEST => Scenario::SyntheticMenu(Globally::WalkDeepest),
-            FIRST_MENU => Scenario::FirstMenu,
-            other => panic!(
-                "DEGCT_WALKED_PROFILE={other:?}: expected {WALK_DEEPEST} (or {WALKED_FLAG}), \
-                 {WALKED_ON_SCREEN}, {SYNTHETIC_MENU}, {SYNTHETIC_MENU_WALK_DEEPEST} or \
-                 {FIRST_MENU}"
-            ),
-        },
+fn walked_profile(named: &str) -> Scenario {
+    match named {
+        "" | WALKED_FLAG | WALK_DEEPEST => Scenario::Walked(menu_profile::Starts::Reaching),
+        WALKED_ON_SCREEN => Scenario::Walked(menu_profile::Starts::OnScreen),
+        SYNTHETIC_MENU => Scenario::SyntheticMenu(Globally::LinkDeepest),
+        SYNTHETIC_MENU_WALK_DEEPEST => Scenario::SyntheticMenu(Globally::WalkDeepest),
+        FIRST_MENU => Scenario::FirstMenu,
+        other => panic!(
+            "--walked-profile {other:?}: expected {WALK_DEEPEST} (or {WALKED_FLAG}), \
+             {WALKED_ON_SCREEN}, {SYNTHETIC_MENU}, {SYNTHETIC_MENU_WALK_DEEPEST} or \
+             {FIRST_MENU}"
+        ),
     }
 }
 
@@ -547,14 +591,14 @@ struct Menu {
 }
 
 fn main() {
-    if lookahead_engine::core::env::is_set("HEADER") {
+    // PARSED BEFORE ANYTHING IS BUILT, so a misspelt option stops the run before a group is
+    // built rather than inside the thread each menu is marked on.
+    let asked = <Options as clap::Parser>::parse();
+
+    if asked.header {
         println!("{}", COLUMNS.join("\t"));
         return;
     }
-
-    // ASKED ONCE UP FRONT, so a misspelt DEGCT_MARKING stops the run before a group is built
-    // rather than inside the thread each menu is marked on.
-    let _ = marking();
 
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
@@ -569,21 +613,11 @@ fn main() {
     // know which groups there are before it measures any, and a list kept anywhere else can
     // omit a group and never say so. See `group_list`.
 
-    let budget = DiagramBudget::new(
-        from_env(
-            "BUDGET_MB",
-            if nolimit() {
-                NOLIMIT_BUDGET_MB
-            } else {
-                BUDGET_MB
-            },
-        ) * 1024
-            * 1024,
-    );
-    let starts_wanted = from_env("STARTS", STARTS);
-    let unseen_wanted = from_env("UNSEEN", UNSEEN);
+    let budget = asked.budget();
+    let starts_wanted = asked.starts.starts;
+    let unseen_wanted = asked.unseen.unseen;
 
-    for conversation in numbers("CONVERSATION", &CONVERSATIONS) {
+    for conversation in asked.groups.or(&CONVERSATIONS) {
         // FROM BEFORE THE GRAPH BUILD, because that is what a row which never measures
         // anything is made of - see [`Prep`].
         let started = Instant::now();
@@ -607,7 +641,7 @@ fn main() {
         // THROUGH `MenuProfile`, for the reason it exists: a menu whose starts have nothing
         // better beyond them is refused before a diagram is touched, and the whole row reads
         // as a fast engine while measuring nothing.
-        let scenario = walked_profile();
+        let scenario = walked_profile(&asked.walked_profile);
         let (profile, walked) = if let Scenario::SyntheticMenu(globally) = scenario {
             // NO WALK-UP AND NOTHING SHOWN. The world is the save as it is - no `seen` slot set,
             // no `once` fired - and the starts are the structural set, which is why there is no
@@ -626,7 +660,7 @@ fn main() {
                 // save's, which has displayed nothing.
                 Globally::WalkDeepest => {
                     let base = SnapshotWorld::declaring(
-                        save_world::of_save(&graph, conversation, &shipped, &save()),
+                        save_world::of_save(&graph, conversation, &shipped, &asked.save),
                         save_world::declared(),
                     );
                     menu_profile::walk_deepest_unseen(
@@ -648,7 +682,7 @@ fn main() {
             }
         } else if let Scenario::FirstMenu = scenario {
             let base = SnapshotWorld::declaring(
-                save_world::of_save(&graph, conversation, &shipped, &save()),
+                save_world::of_save(&graph, conversation, &shipped, &asked.save),
                 save_world::declared(),
             );
             match menu_profile::first_menu_profile(
@@ -676,7 +710,8 @@ fn main() {
                         found.profile.unseen.len(),
                         found.reachable,
                     );
-                    let mut world = save_world::of_save(&graph, conversation, &shipped, &save());
+                    let mut world =
+                        save_world::of_save(&graph, conversation, &shipped, &asked.save);
                     world.seen = found.seen.iter().copied().map(NodeRef::from).collect();
                     world.variables = found.variables;
                     (
@@ -700,7 +735,7 @@ fn main() {
             // cached playthrough run fourteen legs while the profile measured here stopped at
             // seven. See de-qy5t.
             let base = SnapshotWorld::declaring(
-                save_world::of_save(&graph, conversation, &shipped, &save()),
+                save_world::of_save(&graph, conversation, &shipped, &asked.save),
                 save_world::declared(),
             );
             match menu_profile::walked_profile(
@@ -723,7 +758,7 @@ fn main() {
                     // entries of 2,263 from the template save, which is the difference between
                     // a menu asked in a well-explored conversation and one asked in a doorway.
                     //
-                    // NOT THE UNSEEN COUNT, which is `DEGCT_UNSEEN` and the same every time by
+                    // NOT THE UNSEEN COUNT, which is `--unseen` and the same every time by
                     // construction: printing it would have looked like a measurement and been
                     // a restatement of the setting.
                     let entries = graph.nodes().filter(|node| !node.is_group).count();
@@ -732,7 +767,8 @@ fn main() {
                          and the profile is taken {} in",
                         found.reachable, found.shown,
                     );
-                    let mut world = save_world::of_save(&graph, conversation, &shipped, &save());
+                    let mut world =
+                        save_world::of_save(&graph, conversation, &shipped, &asked.save);
                     world.seen = found.seen.iter().copied().map(NodeRef::from).collect();
                     world.variables = found.variables;
                     (
@@ -770,6 +806,7 @@ fn main() {
             &seen_any_game,
             budget,
             walked.as_ref(),
+            &asked,
         ) {
             Some(measured) => row(
                 conversation,
@@ -804,6 +841,7 @@ fn menu<F>(
     seen_any_game: &F,
     budget: DiagramBudget,
     walked: Option<&Standing>,
+    asked: &Options,
 ) -> Option<Menu>
 where
     // SYNC, because the search runs on a thread of its own - de-fpax - and the closure
@@ -942,7 +980,7 @@ where
             world: &world,
             counter_cap: COUNTER_CAP as u32,
         };
-        let marking_budget = if nolimit() {
+        let marking_budget = if asked.nolimit {
             menu::Budget {
                 wall: NOLIMIT_TIME,
                 each: NOLIMIT_TIME,
@@ -955,7 +993,7 @@ where
         };
         // THE MARKING THE PRODUCT MARKS WITH by default, through the one function that chooses
         // it, so a default row measures what a player waits for. See [`marking`].
-        let found = match marking() {
+        let found = match asked.marking {
             // INSIDE THE TIMED REGION, the group's hubs included. The WALK ITSELF is handed
             // over and both cuts are derived from it in the bridge, through the one call a
             // request carrying a walk goes through - so this row pays what a player's menu
@@ -1175,27 +1213,4 @@ fn row(
 
 fn ms(took: Duration) -> f64 {
     took.as_secs_f64() * 1000.0
-}
-
-fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name)
-        .ok()
-        .and_then(|value| value.trim().parse().ok())
-        .unwrap_or(fallback)
-}
-
-fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
-    match lookahead_engine::core::env::var(name) {
-        Ok(named) => named
-            .split(',')
-            .map(str::trim)
-            .filter(|piece| !piece.is_empty())
-            .map(|piece| {
-                piece
-                    .parse()
-                    .unwrap_or_else(|_| panic!("{name}={piece:?} is not a number"))
-            })
-            .collect(),
-        Err(_) => fallback.to_vec(),
-    }
 }
