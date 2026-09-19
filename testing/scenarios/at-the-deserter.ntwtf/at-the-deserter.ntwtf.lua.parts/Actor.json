@@ -1,0 +1,13 @@
+{
+  "_format": "sparse-diff",
+  "_formatVersion": 2,
+  "_base": "../../before-the-deserter.ntwtf/before-the-deserter.ntwtf.lua.parts/Actor.json",
+  "_changes": {
+    "Kim_Kitsuragi": {
+      "Position_Martinaise_ext": "40.05531,0.4236663,-251.0915,0,0.7552818,0,-0.6554002,Martinaise-ext"
+    },
+    "You": {
+      "Position_Martinaise_ext": "39.083,0.4630362,-249.457,0,0.9455186,0,-0.3255681,Martinaise-ext"
+    }
+  }
+}

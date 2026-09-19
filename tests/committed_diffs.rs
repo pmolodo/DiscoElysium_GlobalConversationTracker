@@ -198,9 +198,14 @@ fn collect_diffs(directory: &Path, found: &mut Vec<PathBuf>) {
 }
 
 /// How many text-member diffs the scenarios carry: three made scenario saves - at-klaasjes-flower,
-/// at-trashcan and at-manana - and at-garte-kitchen, at-leo and at-evart, saves from real
-/// playthroughs.
-const TEXT_DIFFS: usize = 6;
+/// at-trashcan and at-manana - and at-garte-kitchen, at-leo, at-evart, before-the-deserter and
+/// at-the-deserter, saves from real playthroughs.
+///
+/// THE LAST TWO ARE A PAIR AND ARE COUNTED AS TWO. before-the-deserter is the last save of a
+/// playthrough with no state in SEAFORT / THE DESERTER and at-the-deserter is the next one, which
+/// has forty-five of its entries displayed - so the pair is a real before and after of one
+/// sitting, and each carries its own text diff. See de-izfa.
+const TEXT_DIFFS: usize = 8;
 
 /// Every committed text diff is in a shape this build can read.
 ///

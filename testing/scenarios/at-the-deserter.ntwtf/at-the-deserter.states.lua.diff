@@ -1,0 +1,28 @@
+--- ../before-the-deserter.ntwtf/before-the-deserter.states.lua.diff
++++ at-the-deserter.states.lua
+@@ -21,5 +21,5 @@
+ AreaState["SEA_MODE"]={LocationState=1};
+-AreaState["FORTRESS_DESERTERGUN"]={LocationState=0};
+-AreaState["FORTRESS_BLAST_DOOR"]={LocationState=0};
+-AreaState["FORTRESS_GENERATOR"]={LocationState=0};
++AreaState["FORTRESS_DESERTERGUN"]={LocationState=2};
++AreaState["FORTRESS_BLAST_DOOR"]={LocationState=1};
++AreaState["FORTRESS_GENERATOR"]={LocationState=1};
+ AreaState["FORTRESS_PHASMID"]={LocationState=0};
+@@ -342,2 +342,4 @@
+ AreaState["Stairs container"]={disappear=true};
++AreaState["Cabin"]={emptied=true};
++AreaState["SF canister"]={disappear=true};
+ ShownOrbs["WHIRLING F2 ORB / commodore red"]={OrbSeen=1};
+@@ -826 +828,11 @@
+ ShownOrbs["SEAFORT ORB / broken winch"]={OrbSeen=1};
++ShownOrbs["SEAFORT ORB / killingpoint"]={OrbSeen=1};
++ShownOrbs["SEAFORT ORB / insidetheruinpeek"]={OrbSeen=1};
++ShownOrbs["SEAFORT ORB / nojumping"]={OrbSeen=1};
++ShownOrbs["SEAFORT ORB / winch depot"]={OrbSeen=1};
++ShownOrbs["SEAFORT ORB / map table"]={OrbSeen=1};
++ShownOrbs["SEAFORT ORB / medicinecabinet"]={OrbSeen=1};
++ShownOrbs["SEAFORT ORB / inland eyes"]={OrbSeen=1};
++ShownOrbs["SEAFORT INT ORB / hatchafterthought"]={OrbSeen=1};
++ShownOrbs["SEAFORT ORB / lastdinghy"]={OrbSeen=1};
++ShownOrbs["SEAFORT ORB / blossomingallaround"]={OrbSeen=1};

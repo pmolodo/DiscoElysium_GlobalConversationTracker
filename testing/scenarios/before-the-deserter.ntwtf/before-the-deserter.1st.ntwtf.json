@@ -1,0 +1,53 @@
+{
+  "_base": "../../save_template.ntwtf/save_template.1st.ntwtf.json",
+  "_changes": {
+    "areaId": "Martinaise-ext",
+    "fowUnrevealersStatusCache": {
+      "fog-boytoy-kitchen": "ACTIVE",
+      "fog-cryptozoo": "ACTIVE",
+      "fog-doomed-back": "ACTIVE",
+      "fog-doomed-f1_curtains": "ACTIVE",
+      "fog-doomed-gym": "ACTIVE",
+      "fog-doomed-main": "ACTIVE",
+      "fog-doomed-stairs": "UNSEEN",
+      "fog-doomed-storage": "ACTIVE",
+      "fog-doomed-tower": "ACTIVE",
+      "fog-evrart-office": "ACTIVE",
+      "fog-instigators-bedroom": "ACTIVE",
+      "fog-instigators-bedroom (1)": "UNSEEN",
+      "fog-instigators-sea": "UNSEEN",
+      "fog-main": "ACTIVE",
+      "fog-seafort-door": "UNSEEN",
+      "fog-seafort-dream": "UNSEEN",
+      "fog-whirling-backstage": "ACTIVE",
+      "fog-whirling-kitchen": "ACTIVE",
+      "fog-whirling-kitsuragi": "ACTIVE",
+      "fog-whirling-klaasje-bathroom": "ACTIVE",
+      "fog-whirling-klaasje-main": "ACTIVE",
+      "fog-whirling-rifles": "ACTIVE",
+      "fog-whirling-union": "ACTIVE",
+      "fog-whirling3-bedroom": "ACTIVE",
+      "fog-whirling3-workshop": "ACTIVE",
+      "fow_capeside-apps_bathroom": "ACTIVE",
+      "fow_capeside-apps_cunos": "ACTIVE",
+      "fow_capeside-apps_destroyed": "ACTIVE",
+      "fow_capeside-apps_empty": "ACTIVE",
+      "fow_capeside-apps_hobo": "ACTIVE",
+      "fow_capeside-apps_mazov": "ACTIVE",
+      "fow_church": "UNSEEN",
+      "fow_wcw-left": "UNSEEN",
+      "fow_wcw-right": "UNSEEN"
+    },
+    "partyState": {
+      "hasHangover": false,
+      "isKimAbandoned": false,
+      "isKimInParty": true,
+      "kimLastArrivalLocation": 0,
+      "sleepLocation": 2,
+      "timeSinceKimWentSleepingInHisRoom": 2775,
+      "waitLocation": 4
+    }
+  },
+  "_format": "json-diff",
+  "_formatVersion": 1
+}

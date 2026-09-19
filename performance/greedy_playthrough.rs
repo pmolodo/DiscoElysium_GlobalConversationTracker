@@ -312,8 +312,15 @@ fn main() {
         if graph.get(DialogueNodeId::new(conversation, 0)).is_none() {
             continue;
         }
+        // THE TEMPLATE UNLESS `DEGCT_SAVE` NAMES ANOTHER, as `target_cost` reads it. A walk is
+        // only as good as the world it walks, and the template is the fair common denominator
+        // rather than a state anyone reached - on 761 it leaves 2,219 of 2,263 entries
+        // unreachable. Naming a save taken from a real playthrough asks the same question of a
+        // world a player was actually in.
+        let save = lookahead_engine::core::env::var("SAVE")
+            .unwrap_or_else(|_| save_world::TEMPLATE.to_string());
         let world = SnapshotWorld::declaring(
-            save_world::of_save(&graph, conversation, &shipped, save_world::TEMPLATE),
+            save_world::of_save(&graph, conversation, &shipped, &save),
             save_world::declared(),
         );
 

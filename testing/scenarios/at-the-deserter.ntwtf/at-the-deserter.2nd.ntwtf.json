@@ -1,0 +1,2620 @@
+{
+  "_base": "../before-the-deserter.ntwtf/before-the-deserter.2nd.ntwtf.json",
+  "_changes": {
+    "aquiredJournalTasks": {
+      "ChecksWithNotifications": [
+        "village.netpicker_suggestion_whitecheck"
+      ],
+      "DoneTasksTabNotifyIcon": true,
+      "TaskResolutions": {
+        "TASK.determine_where_shot_came_from": {
+          "dayCounter": 7,
+          "dayMinutes": 804,
+          "realDayCounter": 1,
+          "seconds": 13
+        },
+        "TASK.open_blast_door": {
+          "dayCounter": 7,
+          "dayMinutes": 811,
+          "realDayCounter": 1,
+          "seconds": 7
+        }
+      },
+      "TasksTabNotifyIcon": true
+    },
+    "characterSheet": {
+      "SkillModifierCauseMap": {
+        "CONCEPTUALIZATION": [
+          {
+            "amount": 0,
+            "explanation": "Conceptualization base",
+            "modifierCause": {
+              "ModifierCauseType": "ABILITY",
+              "ModifierKey": "INT"
+            },
+            "skillType": "CONCEPTUALIZATION",
+            "type": "CALCULATED_ABILITY"
+          },
+          {
+            "amount": 1,
+            "explanation": "Learned skill",
+            "modifierCause": null,
+            "skillType": "NONE",
+            "type": "ADVANCEMENT"
+          },
+          {
+            "amount": 1,
+            "explanation": "Learned skill",
+            "modifierCause": null,
+            "skillType": "NONE",
+            "type": "ADVANCEMENT"
+          }
+        ],
+        "EMPATHY": [
+          {
+            "amount": 0,
+            "explanation": "Empathy base",
+            "modifierCause": {
+              "ModifierCauseType": "ABILITY",
+              "ModifierKey": "PSY"
+            },
+            "skillType": "EMPATHY",
+            "type": "CALCULATED_ABILITY"
+          },
+          {
+            "amount": 1,
+            "explanation": "Learned skill",
+            "modifierCause": null,
+            "skillType": "NONE",
+            "type": "ADVANCEMENT"
+          },
+          {
+            "amount": 1,
+            "explanation": "Learned skill",
+            "modifierCause": null,
+            "skillType": "NONE",
+            "type": "ADVANCEMENT"
+          },
+          {
+            "amount": 1,
+            "explanation": "+1 Empathy",
+            "modifierCause": {
+              "ModifierCauseType": "INVENTORY_ITEM",
+              "ModifierKey": "glasses_biker"
+            },
+            "skillType": "EMPATHY",
+            "type": "ITEM"
+          },
+          {
+            "amount": 1,
+            "explanation": "Learned skill",
+            "modifierCause": null,
+            "skillType": "NONE",
+            "type": "ADVANCEMENT"
+          },
+          {
+            "amount": 1,
+            "explanation": "+1 Empathy",
+            "modifierCause": {
+              "ModifierCauseType": "INVENTORY_ITEM",
+              "ModifierKey": "jacket_mullen"
+            },
+            "skillType": "EMPATHY",
+            "type": "ITEM"
+          }
+        ],
+        "HE_COORDINATION": [
+          {
+            "amount": 0,
+            "explanation": "Hand/Eye Coordination base",
+            "modifierCause": {
+              "ModifierCauseType": "ABILITY",
+              "ModifierKey": "MOT"
+            },
+            "skillType": "HE_COORDINATION",
+            "type": "CALCULATED_ABILITY"
+          },
+          {
+            "amount": 1,
+            "explanation": "Learned skill",
+            "modifierCause": null,
+            "skillType": "NONE",
+            "type": "ADVANCEMENT"
+          },
+          {
+            "amount": 1,
+            "explanation": "+1 H/E Coordination",
+            "modifierCause": {
+              "ModifierCauseType": "INVENTORY_ITEM",
+              "ModifierKey": "jacket_mullen"
+            },
+            "skillType": "HE_COORDINATION",
+            "type": "ITEM"
+          },
+          {
+            "amount": 1,
+            "explanation": "+1 Hand/Eye Coordination",
+            "modifierCause": {
+              "ModifierCauseType": "INVENTORY_ITEM",
+              "ModifierKey": "shirt_faln"
+            },
+            "skillType": "HE_COORDINATION",
+            "type": "ITEM"
+          }
+        ],
+        "SUGGESTION": [
+          {
+            "amount": 0,
+            "explanation": "Suggestion base",
+            "modifierCause": {
+              "ModifierCauseType": "ABILITY",
+              "ModifierKey": "PSY"
+            },
+            "skillType": "SUGGESTION",
+            "type": "CALCULATED_ABILITY"
+          },
+          {
+            "amount": 1,
+            "explanation": "Learned skill",
+            "modifierCause": null,
+            "skillType": "NONE",
+            "type": "ADVANCEMENT"
+          },
+          {
+            "amount": 1,
+            "explanation": "Learned skill",
+            "modifierCause": null,
+            "skillType": "NONE",
+            "type": "ADVANCEMENT"
+          },
+          {
+            "amount": -1,
+            "explanation": "-1 Suggestion",
+            "modifierCause": {
+              "ModifierCauseType": "THOUGHT",
+              "ModifierKey": "the_waste_land_of_reality"
+            },
+            "skillType": "SUGGESTION",
+            "type": "THC"
+          },
+          {
+            "amount": 1,
+            "explanation": "Learned skill",
+            "modifierCause": null,
+            "skillType": "NONE",
+            "type": "ADVANCEMENT"
+          }
+        ]
+      },
+      "conceptualization": {
+        "maximumValue": 7,
+        "value": 7,
+        "valueWithoutPerceptionsSubSkills": 7
+      },
+      "empathy": {
+        "maximumValue": 7,
+        "value": 7,
+        "valueWithoutPerceptionsSubSkills": 7
+      },
+      "equippedItems": [
+        "shoes_snakeskin_left",
+        "pants_faln",
+        "gloves_t500",
+        "hat_mullen",
+        "neck_teratorn_tie",
+        "gun_villiers",
+        "glasses_biker",
+        "shirt_faln",
+        "flashlight",
+        "shoes_cavalry",
+        "jacket_mullen"
+      ],
+      "gainedItems": [
+        "pants_bellbottom",
+        "jacket_suede",
+        "neck_tie",
+        "music_whirling_smallest_church",
+        "shoes_snakeskin_left",
+        "shirt_dress_disco",
+        "shoes_snakeskin",
+        "shoes_snakeskin_right",
+        "kind_green_ape_pen",
+        "gloves_garden",
+        "shirt_tank_top",
+        "map_of_martinaise",
+        "hat_mullen",
+        "prybar",
+        "chaincutters",
+        "flashlight",
+        "instant_photo_tattoos",
+        "yellow_man_mug",
+        "yellow_plastic_bag",
+        "ledger_of_failure_and_hatred",
+        "postcard_boogie_street",
+        "glasses_flipup",
+        "pants_jeans",
+        "jacket_navalcoat",
+        "gloves_bum",
+        "postcard_grand_couron",
+        "gum_wrapper",
+        "jacket_patrol_cloak",
+        "book_la_fumee",
+        "postcard_le_jardin",
+        "glasses_rect",
+        "gloves_faln",
+        "jacket_interisolar_white",
+        "shoes_fancy_loafer",
+        "shirt_interisolar",
+        "book_sixteen_days_in_coldest_april",
+        "book_cockatoo",
+        "shotput_ball",
+        "postcard_la_delta",
+        "jacket_kimono_robe",
+        "hat_samaran",
+        "pants_jeans_black",
+        "pants_faln",
+        "glasses_biker",
+        "pants_interisolar",
+        "neck_bowtie",
+        "postcard_coal_city",
+        "jacket_rcm",
+        "badge",
+        "note_from_fridge",
+        "antique_rifle",
+        "shirt_mesh",
+        "jacket_korovjev",
+        "shoes_cavalry",
+        "book_primer",
+        "gloves_t500",
+        "shirt_t500",
+        "gun_villiers",
+        "glasses_megabinos",
+        "hat_rcm",
+        "jacket_faln",
+        "glasses_bugeyes",
+        "hat_faln",
+        "drug_alcohol_potent_pilsner",
+        "postcard_couron",
+        "shirt_polo",
+        "neck_scented_scarf",
+        "boombox",
+        "jacket_pissflaubert",
+        "jacket_fucktheworld",
+        "neck_teratorn_tie",
+        "glasses_sub_insulindics",
+        "glasses_self_destruction",
+        "jacket_windbreaker_surf",
+        "shirt_hjelmdall",
+        "figurine_set_headless_faln_rider",
+        "neck_winter_scarf_red",
+        "shoes_snakeskin_red",
+        "kvalsund_multitool",
+        "red_police_die",
+        "jacket_mullen",
+        "dried_may_bells",
+        "drug_speed_preptide",
+        "tape_lely",
+        "superstar_dice",
+        "postcard_martinaise",
+        "jacket_interisolar",
+        "hat_revolutionary",
+        "jacket_nansencoat",
+        "rubys_journal",
+        "shirt_faln",
+        "neck_winter_scarf",
+        "deserter_gun"
+      ],
+      "handEyeCoordination": {
+        "maximumValue": 7,
+        "value": 7,
+        "valueWithoutPerceptionsSubSkills": 7
+      },
+      "selectedPanelName": "HE_COORDINATION",
+      "suggestion": {
+        "maximumValue": 4,
+        "rankValue": 3,
+        "value": 4,
+        "valueWithoutPerceptionsSubSkills": 4
+      }
+    },
+    "containerSourceState": {
+      "itemRegistry": {
+        "Interactable/Containers Loot/Seafort Containers/Drug Containers/Cabin0": [],
+        "Interactable/Sea Fort/SF canister1": [],
+        "Karaoke Prefab 2f(Clone)/NPCs Karaoke/Clubber Man 5/ClubberMan5/doomspiral_rig/doomspiral_SHJntGrp/doomspiral_ROOTSHJnt/doomspiral_Spine_01SHJnt/doomspiral_Spine_02SHJnt/doomspiral_Spine_TopSHJnt/doomspiral_r_Arm_ClavicleSHJnt/doomspiral_r_Arm_ShoulderSHJnt/doomspiral_r_Arm_ElbowSHJnt/doomspiral_r_Arm_WristSHJnt/doomspiral_r_Finger_02_01SHJnt/doomspiral_r_Finger_02_02SHJnt/empty_bottle1": [
+          {
+            "$id": "1145",
+            "bonusLoot": false,
+            "calculatedValue": 0,
+            "deviation": 0,
+            "name": "plastic_tare",
+            "probability": 1,
+            "value": 0
+          }
+        ],
+        "NPC Locations Instigators Lair/Instigator/Ruby Schedule/instigator/ruby/ruby_SHJntGrp/ruby_ROOTSHJnt/ruby_Spine_01SHJnt/ruby_Spine_02SHJnt/ruby_Spine_TopSHJnt/ruby_r_Arm_ClavicleSHJnt/ruby_r_Arm_ShoulderSHJnt/ruby_r_Arm_ElbowSHJnt/ruby_gun2": [
+          {
+            "$ref": "1409"
+          }
+        ],
+        "Props whirling f2/Karaoke f2/Karaoke Prefab 2f/NPCs Karaoke/Clubber Man 5/ClubberMan5/doomspiral_rig/doomspiral_SHJntGrp/doomspiral_ROOTSHJnt/doomspiral_Spine_01SHJnt/doomspiral_Spine_02SHJnt/doomspiral_Spine_TopSHJnt/doomspiral_r_Arm_ClavicleSHJnt/doomspiral_r_Arm_ShoulderSHJnt/doomspiral_r_Arm_ElbowSHJnt/doomspiral_r_Arm_WristSHJnt/doomspiral_r_Finger_02_01SHJnt/doomspiral_r_Finger_02_02SHJnt/empty_bottle1": [
+          {
+            "$ref": "1145"
+          }
+        ],
+        "instigator/ruby/ruby_SHJntGrp/ruby_ROOTSHJnt/ruby_Spine_01SHJnt/ruby_Spine_02SHJnt/ruby_Spine_TopSHJnt/ruby_r_Arm_ClavicleSHJnt/ruby_r_Arm_ShoulderSHJnt/ruby_r_Arm_ElbowSHJnt/ruby_gun2": [
+          {
+            "$id": "1409",
+            "bonusLoot": false,
+            "calculatedValue": 0,
+            "deviation": 0,
+            "name": "gun_ruby",
+            "probability": 1,
+            "value": 0
+          }
+        ]
+      }
+    },
+    "failedWhiteChecksHolder": {
+      "SeenWhiteCheckCache": {
+        "seafort.deserter_composure_white_succeeded": {
+          "Actor": {
+            "alternatePortraits": [],
+            "fields": [
+              {
+                "title": "Name",
+                "type": "Text",
+                "typeString": "",
+                "value": "The Deserter"
+              },
+              {
+                "title": "IsPlayer",
+                "type": "Boolean",
+                "typeString": "CustomFieldType_Boolean",
+                "value": "False"
+              },
+              {
+                "title": "Pictures",
+                "type": "Text",
+                "typeString": "",
+                "value": "[portrait_deserter.png]"
+              },
+              {
+                "title": "Description",
+                "type": "Text",
+                "typeString": "",
+                "value": "The Deserter is an old revolutionary and war veteran sniper who has been hiding on the sea fortress island."
+              },
+              {
+                "title": "character_short_name",
+                "type": "Text",
+                "typeString": "",
+                "value": "thedeserter"
+              },
+              {
+                "title": "IsNPC",
+                "type": "Boolean",
+                "typeString": "CustomFieldType_Boolean",
+                "value": "True"
+              },
+              {
+                "title": "IsFemale",
+                "type": "Boolean",
+                "typeString": "CustomFieldType_Boolean",
+                "value": "False"
+              },
+              {
+                "title": "short_description",
+                "type": "Text",
+                "typeString": "",
+                "value": ""
+              },
+              {
+                "title": "LongDescription",
+                "type": "Text",
+                "typeString": "",
+                "value": ""
+              },
+              {
+                "title": "color",
+                "type": "Number",
+                "typeString": "CustomFieldType_Number",
+                "value": "1"
+              },
+              {
+                "title": "Articy Id",
+                "type": "Text",
+                "typeString": "",
+                "value": "0x0100002F0000F36F"
+              }
+            ],
+            "id": 388,
+            "portrait": null,
+            "spritePortrait": null,
+            "spritePortraits": []
+          },
+          "ActorsPortraitsBundleManager": null,
+          "CheckModifiers": {
+            "CheckEquipped": [
+              {
+                "bonus": -1,
+                "expression": "CheckEquipped(\"neck_winter_scarf\")  and  CheckEquipped(\"hat_revolutionary\")",
+                "fallbackExplanation": "Dresscode: Winter revolutionary.",
+                "localizedExplanation": {
+                  "Term": "tooltip7/0x01000089000034AE"
+                }
+              }
+            ],
+            "deserter_modifier_comp_nervous_system": [
+              {
+                "bonus": -1,
+                "expression": "deserter_modifier_comp_nervous_system",
+                "fallbackExplanation": "Neurological aberration?",
+                "localizedExplanation": {
+                  "Term": "tooltip5/0x01000089000034AE"
+                }
+              }
+            ],
+            "seafort.deserter_endurance_modifier_more": [
+              {
+                "bonus": -1,
+                "expression": "Variable[\"seafort.deserter_endurance_modifier_more\"]",
+                "fallbackExplanation": "More than poor health.",
+                "localizedExplanation": {
+                  "Term": "tooltip2/0x01000089000034AE"
+                }
+              }
+            ],
+            "seafort.deserter_modifier_composure_neurological": [
+              {
+                "bonus": -1,
+                "expression": "Variable[\"seafort.deserter_modifier_composure_neurological\"]",
+                "fallbackExplanation": "Possible neurological damage?",
+                "localizedExplanation": {
+                  "Term": "tooltip4/0x01000089000034AE"
+                }
+              }
+            ],
+            "seafort.deserter_modifier_vol_insert_thought": [
+              {
+                "bonus": -2,
+                "expression": "Variable[\"seafort.deserter_modifier_vol_insert_thought\"]",
+                "fallbackExplanation": "Odd flower behaviour.",
+                "localizedExplanation": {
+                  "Term": "tooltip6/0x01000089000034AE"
+                }
+              }
+            ],
+            "seafort.deserter_reaction_modifier_motorics_off": [
+              {
+                "bonus": -1,
+                "expression": "Variable[\"seafort.deserter_reaction_modifier_motorics_off\"]",
+                "fallbackExplanation": "Disturbed motorics.",
+                "localizedExplanation": {
+                  "Term": "tooltip3/0x01000089000034AE"
+                }
+              }
+            ],
+            "seafort.phasmid_intro_hub_reached": [
+              {
+                "bonus": -2,
+                "expression": "Variable[\"seafort.phasmid_intro_hub_reached\"]",
+                "fallbackExplanation": "Phasmid Appearance.",
+                "localizedExplanation": {
+                  "Term": "tooltip1/0x01000089000034AE"
+                }
+              }
+            ]
+          },
+          "FlagName": "seafort.deserter_composure_white_succeeded",
+          "LastSkillValue": 1,
+          "LastTargetValue": 12,
+          "SkillType": "COMPOSURE",
+          "checkPrecondition": "Variable[\"seafort.deserter_wc_health_trigger\"] == true",
+          "checkTargetArticyId": "0x0100002F0000F36F",
+          "difficulty": 14,
+          "isOnlySeen": true
+        }
+      }
+    },
+    "hudState": {
+      "charsheetNotification": true,
+      "inventoryNotification": true
+    },
+    "inventoryState": {
+      "inventoryViewState": {
+        "equipment": {
+          "HELDRIGHT": "gun_villiers",
+          "JACKET": "jacket_mullen",
+          "SHIRT": "shirt_faln"
+        },
+        "inventory": {
+          "CLOTHES": [
+            {
+              "Key": 1,
+              "Value": "hat_samaran"
+            },
+            {
+              "Key": 21,
+              "Value": "jacket_korovjev"
+            },
+            {
+              "Key": 18,
+              "Value": "jacket_suede"
+            },
+            {
+              "Key": 31,
+              "Value": "shirt_mesh"
+            },
+            {
+              "Key": 40,
+              "Value": "gloves_garden"
+            },
+            {
+              "Key": 42,
+              "Value": "pants_interisolar"
+            },
+            {
+              "Key": 0,
+              "Value": "hat_faln"
+            },
+            {
+              "Key": 7,
+              "Value": "glasses_bugeyes"
+            },
+            {
+              "Key": 45,
+              "Value": "pants_bellbottom"
+            },
+            {
+              "Key": 43,
+              "Value": "pants_jeans"
+            },
+            {
+              "Key": 22,
+              "Value": "jacket_interisolar_white"
+            },
+            {
+              "Key": 44,
+              "Value": "pants_jeans_black"
+            },
+            {
+              "Key": 10,
+              "Value": "glasses_self_destruction"
+            },
+            {
+              "Key": 48,
+              "Value": "shoes_fancy_loafer"
+            },
+            {
+              "Key": 39,
+              "Value": "gloves_bum"
+            },
+            {
+              "Key": 6,
+              "Value": "glasses_flipup"
+            },
+            {
+              "Key": 9,
+              "Value": "glasses_megabinos"
+            },
+            {
+              "Key": 25,
+              "Value": "jacket_pissflaubert"
+            },
+            {
+              "Key": 20,
+              "Value": "jacket_navalcoat"
+            },
+            {
+              "Key": 41,
+              "Value": "gloves_faln"
+            },
+            {
+              "Key": 49,
+              "Value": "shoes_snakeskin"
+            },
+            {
+              "Key": 33,
+              "Value": "shirt_interisolar"
+            },
+            {
+              "Key": 8,
+              "Value": "glasses_sub_insulindics"
+            },
+            {
+              "Key": 24,
+              "Value": "jacket_kimono_robe"
+            },
+            {
+              "Key": 32,
+              "Value": "shirt_t500"
+            },
+            {
+              "Key": 23,
+              "Value": "jacket_faln"
+            },
+            {
+              "Key": 34,
+              "Value": "shirt_hjelmdall"
+            },
+            {
+              "Key": 14,
+              "Value": "neck_scented_scarf"
+            },
+            {
+              "Key": 30,
+              "Value": "shirt_polo"
+            },
+            {
+              "Key": 13,
+              "Value": "neck_bowtie"
+            },
+            {
+              "Key": 26,
+              "Value": "jacket_fucktheworld"
+            },
+            {
+              "Key": 12,
+              "Value": "neck_tie"
+            },
+            {
+              "Key": 27,
+              "Value": "jacket_windbreaker_surf"
+            },
+            {
+              "Key": 19,
+              "Value": "jacket_nansencoat"
+            },
+            {
+              "Key": 11,
+              "Value": "glasses_rect"
+            },
+            {
+              "Key": 35,
+              "Value": "shirt_tank_top"
+            },
+            {
+              "Key": 15,
+              "Value": "neck_winter_scarf_red"
+            },
+            {
+              "Key": 2,
+              "Value": "hat_rcm"
+            },
+            {
+              "Key": 28,
+              "Value": "jacket_rcm"
+            },
+            {
+              "Key": 36,
+              "Value": "shirt_dress_disco"
+            },
+            {
+              "Key": 3,
+              "Value": "hat_revolutionary"
+            },
+            {
+              "Key": 29,
+              "Value": "jacket_interisolar"
+            },
+            {
+              "Key": 16,
+              "Value": "neck_winter_scarf"
+            },
+            {
+              "Key": 17,
+              "Value": "jacket_patrol_cloak"
+            },
+            {
+              "Key": 50,
+              "Value": "shoes_snakeskin_red"
+            }
+          ],
+          "PAWNABLES": [
+            {
+              "Key": 0,
+              "Value": "music_whirling_smallest_church"
+            },
+            {
+              "Key": 1,
+              "Value": "kind_green_ape_pen"
+            },
+            {
+              "Key": 16,
+              "Value": "postcard_boogie_street"
+            },
+            {
+              "Key": 15,
+              "Value": "postcard_grand_couron"
+            },
+            {
+              "Key": 13,
+              "Value": "postcard_le_jardin"
+            },
+            {
+              "Key": 3,
+              "Value": "superstar_dice"
+            },
+            {
+              "Key": 8,
+              "Value": "shotput_ball"
+            },
+            {
+              "Key": 17,
+              "Value": "postcard_la_delta"
+            },
+            {
+              "Key": 12,
+              "Value": "postcard_coal_city"
+            },
+            {
+              "Key": 4,
+              "Value": "antique_rifle"
+            },
+            {
+              "Key": 14,
+              "Value": "postcard_couron"
+            },
+            {
+              "Key": 5,
+              "Value": "figurine_set_headless_faln_rider"
+            },
+            {
+              "Key": 2,
+              "Value": "red_police_die"
+            },
+            {
+              "Key": 6,
+              "Value": "postcard_martinaise"
+            },
+            {
+              "Key": 7,
+              "Value": "deserter_gun"
+            }
+          ],
+          "TOOLS": [
+            {
+              "Key": 0,
+              "Value": "ledger_of_failure_and_hatred"
+            },
+            {
+              "Key": 2,
+              "Value": "chaincutters"
+            },
+            {
+              "Key": 1,
+              "Value": "kvalsund_multitool"
+            },
+            {
+              "Key": 12,
+              "Value": "yellow_plastic_bag"
+            },
+            {
+              "Key": 7,
+              "Value": "drug_alcohol_potent_pilsner"
+            },
+            {
+              "Key": 3,
+              "Value": "boombox"
+            },
+            {
+              "Key": 4,
+              "Value": "prybar"
+            },
+            {
+              "Key": 6,
+              "Value": "drug_speed_preptide"
+            }
+          ]
+        },
+        "lastSelectedItem": "hat_faln"
+      },
+      "itemListState": [
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_trash_container",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_ring",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_whirling_tequila",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_bookstore_backdoor",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_doomed_backdoor",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_abandoned_lorry",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_church_door",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_apartment_building",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_workshop_spare",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_coast_home",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_basement_apartment",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "union_membership_card",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "union_membership_card_other",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "sabre",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "armistice_muzzleloader",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "gun_villiers",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "gun_ruby",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "boombox",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "prybar",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "chaincutters",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "ledger_oblivion",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "ledger_of_failure_and_hatred",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "ledger_damaged",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "flashlight",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "kvalsund_multitool",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "yellow_plastic_bag",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "spirit_bomb",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "drug_alcohol_commodore_red",
+          "substanceTimeLeft": 0,
+          "substanceUses": 3
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "drug_alcohol_pale_aged_vodka",
+          "substanceTimeLeft": 0,
+          "substanceUses": -1
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "drug_alcohol_potent_pilsner",
+          "substanceTimeLeft": 0,
+          "substanceUses": 3
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "drug_pyrholidon",
+          "substanceTimeLeft": 0,
+          "substanceUses": 3
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "drug_smokes_astra",
+          "substanceTimeLeft": 0,
+          "substanceUses": -1
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "drug_speed_preptide",
+          "substanceTimeLeft": 0,
+          "substanceUses": 4
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "drug_speed_bottle",
+          "substanceTimeLeft": 0,
+          "substanceUses": 6
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "drug_alcohol_goracy_brew",
+          "substanceTimeLeft": 0,
+          "substanceUses": -1
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "drug_smokes_tioumoutiri",
+          "substanceTimeLeft": 0,
+          "substanceUses": -1
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "nosaphed",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "drouamine",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "magnesium",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "hypnogamma",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "jacket_carabineer",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "pants_carabineer",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_kimono_robe",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shirt_faln",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "pants_faln",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "shoes_t500",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shirt_t500",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "gloves_t500",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "hat_t500",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "hat_samaran",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_fucktheworld",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_pissflaubert",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_korovjev",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_suede",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "pants_jeans",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_rcm",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shirt_hjelmdall",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "pants_bellbottom",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "pants_rcm",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "jacket_fritte_raincoat",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_patrol_cloak",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "hat_revolutionary",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shirt_dress_disco",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shoes_snakeskin",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shoes_snakeskin_left",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shoes_snakeskin_right",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "hat_camionneur",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "neck_winter_scarf",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "hat_rcm",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "gloves_garden",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "neck_tie",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "neck_setting_sun_medal",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_windbreaker_surf",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "glasses_self_destruction",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "glasses_sub_insulindics",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "shoes_faln",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "pants_itchy_angry",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "hat_amphibian_sports_visor",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_faln",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "gloves_faln",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "gloves_bum",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_interisolar",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "pants_interisolar",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "neck_scented_scarf",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "hat_faln",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "hat_bum",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "glasses_megabinos",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "glasses_flipup",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shoes_cavalry",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shirt_interisolar",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_nansencoat",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_navalcoat",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shoes_fancy_loafer",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "neck_teratorn_tie",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "hat_mullen",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_mullen",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shirt_polo",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shirt_tank_top",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "neck_bowtie",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_interisolar_white",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "pants_interisolar_white",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "pants_jeans_red",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "pants_jeans_black",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "shoes_fancy_loafer_brown",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shoes_snakeskin_red",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shirt_mesh",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "neck_winter_scarf_red",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "glasses_rect",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "glasses_bugeyes",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "glasses_biker",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "shoes_donks",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "jacket_reflective_vest",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "hat_headset",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "map_of_martinaise",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "instant_photo_tattoos",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "ham_sandwich",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "fractured_bullet",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "dried_may_bells",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "deluxe_topping_pie",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "badge",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "book_greatest_innossence",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "book_hjelmdevil",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "book_hjelmdallermann",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "rubys_journal",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "book_codex_urik",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "book_cockatoo",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "book_primer",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "game_suzerainty",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "game_wirral",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "book_medicinal_purposes_of_the_pale",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "book_sixteen_days_in_coldest_april",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "book_dick_mullen_and_the_mistaken_identity",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "book_nilsenism_introduction",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "book_la_fumee",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "klaasje_passport",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "tape_lely",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "music_smallest_church_tape",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "note_from_fridge",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "library_card",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "gum_wrapper",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "hanged_boots_raw",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "missing_jacket_filthy",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "white_envelope_signed_right",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "white_envelope_signed_failed_forgery",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "white_envelope_signed_wrong",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "white_envelope",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "white_envelope_lilienne_signed",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "white_envelope_lilienne_and_idiot_doom",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "stock_certificate",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "ammonia_ampoule",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "antique_rifle",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "blue_medicinal_spirit",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "box_with_locusts",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "bullet",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "cindys_brush",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "commemorative_pin",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "deserter_gun",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "dockworker_id_card",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "figurine_set_headless_faln_rider",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "filament_memory_off_site_copy",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "filament_memory_production_schedule",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "fuel_canister_lum",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "fuel_canister_rcm",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "samaran_speakers",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "kind_green_ape_pen",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "lieutenants_handkerchief",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "lieutenants_notebook",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "novelty_cheque",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "radiant_spinners",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "ruffed_grouse_taxidermy",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shotput_ball",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "yellow_man_mug",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "police_dice",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "superstar_dice",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "apocalypse_die",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "sorry_die",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "wirral_die",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "anti_wirral_die",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "red_police_die",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "music_whirling_smallest_church",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "tape_melody_broken",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "tape_melody_fixed",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "rene_photo",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "bullets",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "figurine_set_revolutionary",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "blue_oblong_pen",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "deserter_scope",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "postcard_martinaise",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "postcard_le_jardin",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "postcard_la_delta",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "postcard_grand_couron",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "postcard_couron",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "postcard_boogie_street",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "postcard_coal_city",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "highly_advanced_transceiver",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "highly_expensive_transceiver",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "perfectly_adequate_transceiver",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "cindys_painting",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "money",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "cents_40",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "leopard_print_body_suit",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "tare_pile",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "glass_tare",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "metal_tare",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "special_tare",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "plastic_tare",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        }
+      ]
+    },
+    "playerCharacter": {
+      "Level": 43,
+      "Money": 2919,
+      "NewPointsToSpend": true,
+      "SkillPoints": 3,
+      "XpAmount": 12,
+      "healingPools": {
+        "ENDURANCE": 8
+      }
+    },
+    "sunshineClockTimeHolder": {
+      "time": {
+        "dayMinutes": 880,
+        "seconds": 7
+      }
+    },
+    "thoughtCabinetState": {
+      "thoughtCabinetViewState": {
+        "selectedProjectName": "Inexplicable Feminist Agenda"
+      },
+      "thoughtListState": [
+        {
+          "isFresh": true,
+          "name": "revacholian_nationhood",
+          "state": "UNKNOWN",
+          "timeLeft": 550
+        },
+        {
+          "isFresh": false,
+          "name": "guillaume_le_million",
+          "state": "FIXED",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": false,
+          "name": "radical_feminist_agenda",
+          "state": "KNOWN",
+          "timeLeft": 4
+        },
+        {
+          "isFresh": true,
+          "name": "hobocop",
+          "state": "UNKNOWN",
+          "timeLeft": 260
+        },
+        {
+          "isFresh": false,
+          "name": "aces_high",
+          "state": "FIXED",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": true,
+          "name": "aces_low",
+          "state": "UNKNOWN",
+          "timeLeft": 165
+        },
+        {
+          "isFresh": false,
+          "name": "the_way_home",
+          "state": "FORGOTTEN",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": true,
+          "name": "coach_physical_instrument",
+          "state": "UNKNOWN",
+          "timeLeft": 40
+        },
+        {
+          "isFresh": false,
+          "name": "shit_together",
+          "state": "FORGOTTEN",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": true,
+          "name": "torque_dork",
+          "state": "UNKNOWN",
+          "timeLeft": 25
+        },
+        {
+          "isFresh": false,
+          "name": "sorry_cop",
+          "state": "KNOWN",
+          "timeLeft": 360
+        },
+        {
+          "isFresh": true,
+          "name": "superstar_cop",
+          "state": "UNKNOWN",
+          "timeLeft": 70
+        },
+        {
+          "isFresh": false,
+          "name": "apocalypse_cop",
+          "state": "KNOWN",
+          "timeLeft": 415
+        },
+        {
+          "isFresh": false,
+          "name": "communist",
+          "state": "KNOWN",
+          "timeLeft": 5
+        },
+        {
+          "isFresh": true,
+          "name": "boring_cop",
+          "state": "UNKNOWN",
+          "timeLeft": 80
+        },
+        {
+          "isFresh": true,
+          "name": "ultraliberal",
+          "state": "UNKNOWN",
+          "timeLeft": 105
+        },
+        {
+          "isFresh": false,
+          "name": "moralist",
+          "state": "FIXED",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": false,
+          "name": "the_bow_collector",
+          "state": "FIXED",
+          "timeLeft": -7
+        },
+        {
+          "isFresh": false,
+          "name": "white_mourning",
+          "state": "FIXED",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": false,
+          "name": "juicy_fruit",
+          "state": "FIXED",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": true,
+          "name": "caustic_echo",
+          "state": "UNKNOWN",
+          "timeLeft": 600
+        },
+        {
+          "isFresh": true,
+          "name": "detective_costeau",
+          "state": "UNKNOWN",
+          "timeLeft": 150
+        },
+        {
+          "isFresh": true,
+          "name": "boiadeiro",
+          "state": "UNKNOWN",
+          "timeLeft": 390
+        },
+        {
+          "isFresh": false,
+          "name": "art_cop",
+          "state": "KNOWN",
+          "timeLeft": 90
+        },
+        {
+          "isFresh": true,
+          "name": "honour",
+          "state": "UNKNOWN",
+          "timeLeft": 20
+        },
+        {
+          "isFresh": false,
+          "name": "finger_pistols",
+          "state": "KNOWN",
+          "timeLeft": 60
+        },
+        {
+          "isFresh": false,
+          "name": "magnesium_based_lifeform",
+          "state": "KNOWN",
+          "timeLeft": 75
+        },
+        {
+          "isFresh": true,
+          "name": "lawbringer",
+          "state": "UNKNOWN",
+          "timeLeft": 175
+        },
+        {
+          "isFresh": true,
+          "name": "advanced_race_theory",
+          "state": "UNKNOWN",
+          "timeLeft": 100
+        },
+        {
+          "isFresh": false,
+          "name": "the_destroyer",
+          "state": "FIXED",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": false,
+          "name": "master_investigator",
+          "state": "FIXED",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": true,
+          "name": "remote_viewer",
+          "state": "UNKNOWN",
+          "timeLeft": 325
+        },
+        {
+          "isFresh": false,
+          "name": "motorway_south",
+          "state": "FIXED",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": false,
+          "name": "narcomania",
+          "state": "KNOWN",
+          "timeLeft": 55
+        },
+        {
+          "isFresh": true,
+          "name": "age_bracket",
+          "state": "KNOWN",
+          "timeLeft": 435
+        },
+        {
+          "isFresh": false,
+          "name": "homosexual_underground",
+          "state": "FORGOTTEN",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": false,
+          "name": "arno_van_eyck",
+          "state": "KNOWN",
+          "timeLeft": 42
+        },
+        {
+          "isFresh": true,
+          "name": "fairweather_t_500",
+          "state": "UNKNOWN",
+          "timeLeft": 210
+        },
+        {
+          "isFresh": true,
+          "name": "terrier",
+          "state": "UNKNOWN",
+          "timeLeft": 195
+        },
+        {
+          "isFresh": false,
+          "name": "one_more_door",
+          "state": "KNOWN",
+          "timeLeft": 45
+        },
+        {
+          "isFresh": false,
+          "name": "contact_mike",
+          "state": "KNOWN",
+          "timeLeft": 15
+        },
+        {
+          "isFresh": false,
+          "name": "hardcore_aesthetic",
+          "state": "KNOWN",
+          "timeLeft": 110
+        },
+        {
+          "isFresh": true,
+          "name": "suicide_is_painless",
+          "state": "UNKNOWN",
+          "timeLeft": 120
+        },
+        {
+          "isFresh": true,
+          "name": "col_do_ma_ma_daqua",
+          "state": "UNKNOWN",
+          "timeLeft": 430
+        },
+        {
+          "isFresh": false,
+          "name": "the_waste_land_of_reality",
+          "state": "FIXED",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": true,
+          "name": "kras_mazov",
+          "state": "UNKNOWN",
+          "timeLeft": 285
+        },
+        {
+          "isFresh": true,
+          "name": "precarious_world",
+          "state": "KNOWN",
+          "timeLeft": 240
+        },
+        {
+          "isFresh": false,
+          "name": "welkin_generator",
+          "state": "KNOWN",
+          "timeLeft": 335
+        },
+        {
+          "isFresh": false,
+          "name": "jamais_vu",
+          "state": "FIXED",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": false,
+          "name": "trant_heidelstam",
+          "state": "KNOWN",
+          "timeLeft": 42
+        },
+        {
+          "isFresh": false,
+          "name": "return_on_investment",
+          "state": "KNOWN",
+          "timeLeft": 315
+        },
+        {
+          "isFresh": false,
+          "name": "insulindian_miracle",
+          "state": "COOKING",
+          "timeLeft": 109
+        },
+        {
+          "isFresh": false,
+          "name": "wild_pines",
+          "state": "KNOWN",
+          "timeLeft": 355
+        }
+      ]
+    },
+    "variousItemsHolder": {
+      "Obsessions": [
+        "THOUGHT / GOSSAMER STATE",
+        "THOUGHT / WORLD REPUBLIC",
+        "THOUGHT / REVACHOLIAN NATIONHOOD",
+        "THOUGHT / BORING COP",
+        "THOUGHT / KINGDOM OF CONSCIENCE",
+        "THOUGHT / ART COP",
+        "THOUGHT / SORRY COP",
+        "THOUGHT / MAGNESIUM BASED LIFE FORM",
+        "WHIRLING F2 ORB / speed hangover",
+        "THOUGHT / SUPERSTAR COP",
+        "THOUGHT / THE DESTROYER",
+        "THOUGHT / APOCALYPSE COP",
+        "BOARDWALK ORB / wielding your gun",
+        "SEAFORT ORB / full faln set"
+      ]
+    }
+  },
+  "_format": "json-diff",
+  "_formatVersion": 1
+}

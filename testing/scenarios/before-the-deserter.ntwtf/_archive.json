@@ -1,0 +1,31 @@
+{
+  "_format": "expanded-save-diff",
+  "_formatVersion": 1,
+  "base": "../../save_template.ntwtf",
+  "members": [
+    {
+      "diff": "before-the-deserter.states.lua.diff",
+      "kind": "text",
+      "name": "before-the-deserter.states.lua",
+      "suffix": ".states.lua"
+    },
+    {
+      "diff": "before-the-deserter.1st.ntwtf.json",
+      "kind": "json",
+      "name": "before-the-deserter.1st.ntwtf.json",
+      "suffix": ".1st.ntwtf.json"
+    },
+    {
+      "diff": "before-the-deserter.2nd.ntwtf.json",
+      "kind": "json",
+      "name": "before-the-deserter.2nd.ntwtf.json",
+      "suffix": ".2nd.ntwtf.json"
+    },
+    {
+      "diff": "before-the-deserter.FOW.json",
+      "kind": "json",
+      "name": "before-the-deserter.FOW.json",
+      "suffix": ".FOW.json"
+    }
+  ]
+}
