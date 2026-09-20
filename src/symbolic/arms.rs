@@ -47,10 +47,24 @@ pub struct Arms {
     /// medians of three runs with a cold pass discarded: branch and bound answers in 4,810,836
     /// diagram nodes and 5.2 seconds, the pool in 6,444,119 and 8.9. Every run of each arm held
     /// its arm's node count to the node, so the nodes are the arm and the seconds are the
-    /// machine. What the pool once won by - tens of millions of nodes - was mostly a
-    /// redundant counter's doing, and dropping those took branch and bound from 93,353,567 nodes
-    /// to the 4.8 million above without changing a mark. So a run measuring the pool is asking
-    /// whether anything is left of its advantage, rather than turning on a known win.
+    /// machine.
+    ///
+    /// THE RANKING IS THE REDUNDANT COUNTERS' DOING, and they were worth an order of magnitude
+    /// more to one arm than the other. The same menu, the same three-run medians, either side of
+    /// the layout dropping them:
+    ///
+    /// ```text
+    ///                  carried (bea707f)     dropped (35fccbc)
+    ///   branch/bound   131,399 ms  93.4M     5,198 ms  4.81M     25.3x
+    ///   pooled          20,593 ms  14.7M     8,910 ms  6.44M      2.3x
+    /// ```
+    ///
+    /// So the pool wins by 6.4x with them and loses by 1.7x without. The reading that fits,
+    /// though nothing here measures it on its own: one pooled race pays for a wide variable once
+    /// a round where branch and bound pays per target, so a redundant variable is worth most to
+    /// the arm that revisits it. Neither arm's marks moved. A run
+    /// measuring the pool is therefore asking whether anything is left of its advantage, rather
+    /// than turning on a known win.
     ///
     /// The two do not always mark the same options, and that is not a defect in either - see the
     /// rule in CLAUDE.md. On this menu they star four each, agreeing on three.
