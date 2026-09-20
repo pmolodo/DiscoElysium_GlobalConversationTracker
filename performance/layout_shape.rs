@@ -44,7 +44,8 @@
 use std::collections::{HashMap, HashSet};
 
 use lookahead_engine::core::action::DialogueActionKind;
-use lookahead_engine::core::types::DialogueNodeId;
+use lookahead_engine::core::guard::{Guard, GuardExpression};
+use lookahead_engine::core::types::{DialogueNodeId, Ternary};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
@@ -80,6 +81,8 @@ enum Report {
     Groups,
     /// One group's slots, listed
     Slots,
+    /// A line per group: the runs of entries a play cannot stop inside, and what they hold
+    Stretches,
 }
 
 /// TWO MEASUREMENTS IN ONE EXAMPLE, chosen by argument, because they share the classifier.
@@ -94,6 +97,7 @@ fn main() {
     match asked.report {
         Report::Groups => what_each_group_carries(),
         Report::Slots => list_the_slots(asked.groups.conversations.first().copied()),
+        Report::Stretches => what_each_stretch_holds(&asked.groups.or(&CENSUS_GROUPS)),
     }
 }
 
@@ -250,6 +254,140 @@ fn walk_comparisons(
             }
             _ => {}
         }
+    }
+}
+
+/// The groups the stretch census reports on: the matrix's six, and 761, which every arm
+/// measured in de-ipzs was measured on.
+const CENSUS_GROUPS: [i32; 7] = [362, 28, 368, 14, 631, 1030, 761];
+
+/// The runs of entries a play cannot stop in the middle of.
+///
+/// ## What has to be true of one, and why each part
+///
+/// A stretch is a chain of entries where reaching the first means showing all of them. Each
+/// link in it needs four things, and dropping any one of them breaks the claim that the whole
+/// chain is one event:
+///
+/// - ONE WAY OUT. An entry with two links is a fork, and a play can take either.
+/// - ONE WAY IN, for every entry but the first. Something linking into the middle of a chain
+///   can show the tail without the head, so the tail is not part of this event.
+/// - NO CHOICE. A choice is where the player decides, and leaving one is what a layer CHARGES
+///   for - so entries either side of a choice are at different distances and cannot be one
+///   node.
+/// - NO GUARD. A guarded entry may not be shown at all, so entering the chain would not imply
+///   showing what is past the guard.
+///
+/// WHAT THIS IS EVIDENCE FOR. Every entry in such a run is at the same choice-distance from
+/// everywhere, and a play that enters shows all of it - so their once and seen slots rise
+/// together and could be ONE variable rather than several. See de-f75o, and de-3x76.9 for the
+/// same idea reached from the actions rather than from the graph.
+fn stretches_of(graph: &LookAheadGraph) -> Vec<Vec<DialogueNodeId>> {
+    let mut arrivals = HashMap::<DialogueNodeId, usize>::new();
+    for node in graph.nodes() {
+        for &link in &node.links {
+            *arrivals.entry(link).or_default() += 1;
+        }
+    }
+    // A chain continues through an entry only where nothing can divert, stop or arrive.
+    let follows = |id: DialogueNodeId| -> Option<DialogueNodeId> {
+        let node = graph.get(id)?;
+        if node.choice || !lets_everything_through(&node.guard) || node.links.len() != 1 {
+            return None;
+        }
+        let next = node.links[0];
+        let ahead = graph.get(next)?;
+        let alone = arrivals.get(&next).copied().unwrap_or(0) == 1;
+        match alone && !ahead.choice && lets_everything_through(&ahead.guard) {
+            true => Some(next),
+            false => None,
+        }
+    };
+
+    let mut inside = HashSet::new();
+    let mut found = Vec::new();
+    // IN ENTRY ORDER, so a run reported twice cannot depend on how a map laid out its keys.
+    let mut ids: Vec<_> = graph.nodes().map(|node| node.id).collect();
+    ids.sort_by_key(|id| (id.conversation_id, id.entry_id));
+    for id in ids {
+        if inside.contains(&id) {
+            continue;
+        }
+        let mut run = vec![id];
+        while let Some(next) = follows(*run.last().expect("a run has a head")) {
+            if inside.contains(&next) || run.contains(&next) {
+                break;
+            }
+            run.push(next);
+        }
+        if run.len() > 1 {
+            inside.extend(run.iter().copied());
+            found.push(run);
+        }
+    }
+    found
+}
+
+/// Whether a guard is the one an entry with no guard carries.
+///
+/// AN ABSENT GUARD IS A LITERAL TRUE rather than nothing - see `Guard::always_true` - so the
+/// test is on the expression rather than on a length. A guard that is true for another reason,
+/// such as a comparison of two constants, reads as a guard here: this is a census, and counting
+/// one entry too few is better than claiming a run a play can stop inside.
+fn lets_everything_through(guard: &Guard) -> bool {
+    match guard.expression() {
+        GuardExpression::Literal(value) => value.as_condition() == Ternary::True,
+        _ => false,
+    }
+}
+
+/// How many of a run's entries carry a slot the layout has to represent.
+fn slots_along(graph: &LookAheadGraph, run: &[DialogueNodeId]) -> usize {
+    run.iter()
+        .filter_map(|id| graph.get(*id))
+        .map(|node| usize::from(node.once_slot >= 0) + usize::from(node.seen_slot >= 0))
+        .sum()
+}
+
+/// A line per group: how much of it is stretches, and how many slots they hold.
+fn what_each_stretch_holds(wanted: &[i32]) {
+    let Some(path) = common::conversation_index() else {
+        eprintln!("no conversation index; skipping.");
+        return;
+    };
+    let index = read_index(&path).expect("the index reads");
+    println!(
+        "{:>5} {:>8} {:>7} {:>8} {:>8} {:>7} {:>7} {:>7} {:>7}",
+        "conv", "entries", "runs", "in runs", "longest", "nodes-", "slots", "in runs", "slots-"
+    );
+    println!(
+        "  nodes- is what collapsing every run would remove; slots- is how many of the slots \
+         inside runs could be shared, being one per run rather than one per entry."
+    );
+    for &conversation in wanted {
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            println!("{conversation:>5}  does not build");
+            continue;
+        };
+        let runs = stretches_of(&graph);
+        let entries = graph.nodes().count();
+        let inside: usize = runs.iter().map(|run| run.len()).sum();
+        let longest = runs.iter().map(|run| run.len()).max().unwrap_or(0);
+        let slots: usize = graph
+            .nodes()
+            .map(|node| usize::from(node.once_slot >= 0) + usize::from(node.seen_slot >= 0))
+            .sum();
+        let held: usize = runs.iter().map(|run| slots_along(&graph, run)).sum();
+        let shared: usize = runs
+            .iter()
+            .map(|run| slots_along(&graph, run).saturating_sub(1))
+            .sum();
+        println!(
+            "{conversation:>5} {entries:>8} {:>7} {inside:>8} {longest:>8} {:>7} {slots:>7} \
+{held:>7} {shared:>7}",
+            runs.len(),
+            inside - runs.len(),
+        );
     }
 }
 
