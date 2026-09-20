@@ -34,7 +34,7 @@
 //!
 //! `tools/render-dot.py` runs graphviz over the `.dot` files this writes.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -75,6 +75,28 @@ struct Options {
     /// The largest group a survey will suggest
     #[arg(long = "at-most", default_value_t = 50)]
     at_most: usize,
+
+    /// Draw outwards from this entry instead of the one a play starts at
+    #[arg(long, value_name = "ENTRY")]
+    from: Option<i32>,
+
+    /// Draw only the entries this many steps out, and no further
+    #[arg(long, value_name = "STEPS")]
+    within: Option<usize>,
+}
+
+/// Which part of a group is drawn, and from where.
+///
+/// A WHOLE GROUP IS OFTEN TOO MUCH FOR A VIEWER RATHER THAN FOR GRAPHVIZ: 761 lays out fine as a
+/// picture and defeats an interactive previewer that draws it in a browser. Both halves of the
+/// answer are the same breadth-first sweep the ranking already runs - start it somewhere else,
+/// stop it sooner - so a neighbourhood costs no second notion of distance.
+#[derive(Debug, Clone, Copy)]
+struct Window {
+    /// The entry the sweep starts at, and `None` for the one a play starts at.
+    from: Option<i32>,
+    /// How many steps out to draw, and `None` for all of them.
+    within: Option<usize>,
 }
 
 fn main() {
@@ -89,8 +111,12 @@ fn main() {
         survey(&index, asked.at_most);
         return;
     }
+    let window = Window {
+        from: asked.from,
+        within: asked.within,
+    };
     for conversation in &asked.groups.conversations {
-        draw(&index, *conversation, &asked.out);
+        draw(&index, *conversation, &asked.out, window);
     }
 }
 
@@ -137,19 +163,39 @@ fn menus_of(graph: &LookAheadGraph) -> usize {
 }
 
 /// Writes one group: the picture and the slot summary beside it.
-fn draw(index: &Index, conversation: i32, out: &Path) {
+fn draw(index: &Index, conversation: i32, out: &Path, window: Window) {
     let Ok((graph, _)) = build_group_graph(index, conversation) else {
         eprintln!("conversation {conversation}: no group builds from it");
         return;
     };
+    let root = DialogueNodeId::new(conversation, window.from.unwrap_or(0));
+    if graph.get(root).is_none() {
+        eprintln!("conversation {conversation}: no entry {}", root.entry_id);
+        return;
+    }
     if let Err(problem) = std::fs::create_dir_all(out) {
         eprintln!("cannot write to {}: {problem}", out.display());
         return;
     }
 
-    let picture = out.join(format!("{conversation}.dot"));
+    let mut depths = depths_from(&graph, root);
+    // THE WHOLE GROUP MEANS THE WHOLE GROUP, including a conversation nothing links to from the
+    // start. A window asked for a corner of it, so it gets only what its root reaches.
+    if window.from.is_none() && window.within.is_none() {
+        spread_to_the_rest(&graph, conversation, &mut depths);
+    }
+    let drawn: HashSet<DialogueNodeId> = depths
+        .iter()
+        .filter(|(_, depth)| window.within.is_none_or(|within| **depth <= within))
+        .map(|(id, _)| *id)
+        .collect();
+
+    let picture = out.join(format!("{conversation}{}.dot", window.suffix()));
+    // THE SLOT SUMMARY IS THE WHOLE GROUP'S even when the picture is a corner of it. Its column
+    // answers WHO ELSE touches a slot, and an entry left out of the drawing is exactly the kind
+    // of answer that is being looked for.
     let summary = out.join(format!("{conversation}-slots.md"));
-    if let Err(problem) = std::fs::write(&picture, dot(&graph, conversation)) {
+    if let Err(problem) = std::fs::write(&picture, dot(&graph, conversation, &depths, &drawn)) {
         eprintln!("cannot write {}: {problem}", picture.display());
         return;
     }
@@ -158,7 +204,8 @@ fn draw(index: &Index, conversation: i32, out: &Path) {
         return;
     }
     println!(
-        "conversation {conversation}: {} entries, {} slots\n  {}\n  {}",
+        "conversation {conversation}: {} entries drawn of {}, {} slots\n  {}\n  {}",
+        drawn.len(),
         graph.nodes().count(),
         graph.symbols().count(),
         picture.display(),
@@ -166,7 +213,22 @@ fn draw(index: &Index, conversation: i32, out: &Path) {
     );
 }
 
-/// One graph as graphviz, laid out in layers away from the entry a play starts at.
+impl Window {
+    /// What the picture's name says about which part of the group it holds, and nothing for the
+    /// whole of it.
+    fn suffix(self) -> String {
+        let mut suffix = String::new();
+        if let Some(from) = self.from {
+            let _ = write!(suffix, "-from{from}");
+        }
+        if let Some(within) = self.within {
+            let _ = write!(suffix, "-within{within}");
+        }
+        suffix
+    }
+}
+
+/// One graph as graphviz, laid out in layers away from the entry the sweep started at.
 ///
 /// ## The layering is ours, not graphviz's
 ///
@@ -183,8 +245,19 @@ fn draw(index: &Index, conversation: i32, out: &Path) {
 /// Both halves matter: without the first a loop back to the hub is indistinguishable from the
 /// dialogue moving forward, and without the second the edge fights the layer it was given and
 /// drags its target up the picture. See `constraint` in the graphviz attributes.
-fn dot(graph: &LookAheadGraph, conversation: i32) -> String {
-    let depths = depths_from_start(graph, conversation);
+///
+/// ## An edge that leaves the picture
+///
+/// A neighbourhood is cut somewhere, and an entry on the cut links to entries that are not
+/// drawn. Such an edge is dropped rather than drawn at nothing, and the entry it left is marked
+/// so the cut is visible: an unmarked entry with no way out is the end of the dialogue, and the
+/// two must not look alike.
+fn dot(
+    graph: &LookAheadGraph,
+    conversation: i32,
+    depths: &HashMap<DialogueNodeId, usize>,
+    drawn: &HashSet<DialogueNodeId>,
+) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "digraph conversation{conversation} {{");
     let _ = writeln!(out, "  rankdir=TB;");
@@ -195,16 +268,20 @@ fn dot(graph: &LookAheadGraph, conversation: i32) -> String {
     let _ = writeln!(out, "  newrank=true;");
     let _ = writeln!(out, "  ranksep=0.5;");
     let _ = writeln!(out, "  node [fontname=\"monospace\" fontsize=9];");
-    let mut ids: Vec<_> = graph.nodes().map(|node| node.id).collect();
+    let mut ids: Vec<DialogueNodeId> = drawn.iter().copied().collect();
     ids.sort_unstable_by_key(|id| (id.conversation_id, id.entry_id));
     for id in &ids {
         let Some(node) = graph.get(*id) else { continue };
+        let leaves = node.links.iter().any(|link| !drawn.contains(link));
+        let mut label = label_of(node, graph.symbols());
+        if leaves {
+            label.push_str("... beyond the picture\\l");
+        }
         let _ = writeln!(
             out,
-            "  \"{}\" [{} label=\"{}\"];",
+            "  \"{}\" [{} label=\"{label}\"];",
             node.id,
             shape_of(node),
-            label_of(node, graph.symbols())
         );
     }
 
@@ -225,6 +302,9 @@ fn dot(graph: &LookAheadGraph, conversation: i32) -> String {
     for id in &ids {
         let Some(node) = graph.get(*id) else { continue };
         for link in &node.links {
+            if !drawn.contains(link) {
+                continue;
+            }
             let descends = match (depths.get(id), depths.get(link)) {
                 (Some(from), Some(to)) => to > from,
                 _ => true,
@@ -246,11 +326,26 @@ fn dot(graph: &LookAheadGraph, conversation: i32) -> String {
 /// short one's depth, which is where a reader looking for how soon something can happen expects
 /// to find it.
 ///
+/// WHAT IS NOT REACHED IS NOT HERE, which is what makes this the neighbourhood as well as the
+/// ranking: an entry with no depth was not drawn, and the same map answers both questions.
+fn depths_from(graph: &LookAheadGraph, root: DialogueNodeId) -> HashMap<DialogueNodeId, usize> {
+    let mut depths = HashMap::from([(root, 0)]);
+    sweep(graph, root, &mut depths);
+    depths
+}
+
+/// Lays out what the sweep from the start never reached, each unreached entry seeded in turn
+/// below everything already placed.
+///
 /// A GROUP IS SEVERAL CONVERSATIONS and only one of them was asked for, so the entries of the
-/// others are not reachable from its start at all. Each is seeded in turn, lowest id first, once
-/// everything reachable from the entry before it has been laid out - so a conversation the group
-/// pulled in is drawn below what reaches it rather than left out of the ranking.
-fn depths_from_start(graph: &LookAheadGraph, conversation: i32) -> HashMap<DialogueNodeId, usize> {
+/// others may not be reachable from its start at all. For a picture of the WHOLE group they
+/// still belong in it, drawn below what does reach them rather than left out of the ranking. A
+/// picture of a neighbourhood asks a narrower question and does not call this.
+fn spread_to_the_rest(
+    graph: &LookAheadGraph,
+    conversation: i32,
+    depths: &mut HashMap<DialogueNodeId, usize>,
+) {
     let mut ids: Vec<DialogueNodeId> = graph.nodes().map(|node| node.id).collect();
     ids.sort_unstable_by_key(|id| {
         (
@@ -259,31 +354,43 @@ fn depths_from_start(graph: &LookAheadGraph, conversation: i32) -> HashMap<Dialo
             id.entry_id,
         )
     });
-
-    let mut depths = HashMap::new();
-    let mut floor = 0;
     for seed in ids {
         if depths.contains_key(&seed) {
             continue;
         }
+        let floor = depths
+            .values()
+            .copied()
+            .max()
+            .map_or(0, |deepest| deepest + 1);
         depths.insert(seed, floor);
-        let mut deepest = floor;
-        let mut pending = VecDeque::from([seed]);
-        while let Some(id) = pending.pop_front() {
-            let depth = depths[&id];
-            let Some(node) = graph.get(id) else { continue };
-            for &link in &node.links {
-                if graph.get(link).is_none() || depths.contains_key(&link) {
-                    continue;
-                }
-                depths.insert(link, depth + 1);
-                deepest = deepest.max(depth + 1);
-                pending.push_back(link);
-            }
-        }
-        floor = deepest + 1;
+        sweep(graph, seed, depths);
     }
-    depths
+}
+
+/// A breadth-first sweep out from one entry, leaving every entry it reaches at its distance.
+///
+/// BREADTH FIRST, so an entry reachable by a short route and a long one sits at the short one's
+/// depth, which is where a reader looking for how soon something can happen expects to find it.
+/// An entry already carrying a depth keeps it, which is what stops a second sweep moving what
+/// the first one placed.
+fn sweep(
+    graph: &LookAheadGraph,
+    root: DialogueNodeId,
+    depths: &mut HashMap<DialogueNodeId, usize>,
+) {
+    let mut pending = VecDeque::from([root]);
+    while let Some(id) = pending.pop_front() {
+        let depth = depths[&id];
+        let Some(node) = graph.get(id) else { continue };
+        for &link in &node.links {
+            if graph.get(link).is_none() || depths.contains_key(&link) {
+                continue;
+            }
+            depths.insert(link, depth + 1);
+            pending.push_back(link);
+        }
+    }
 }
 
 /// A group is a folder, a check a corner-cut box, a choice a sharp box, anything else a rounded
