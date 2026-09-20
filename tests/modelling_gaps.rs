@@ -49,16 +49,6 @@ mod common;
 /// The conversation the epic turns on.
 const SUBJECT: i32 = 631;
 
-/// Which conversation to survey, so any group can be asked about without an edit.
-///
-/// One per process, the way every measurement over a group is run here - see
-/// `tools/measure-symbolic.sh` for why.
-fn subject() -> i32 {
-    lookahead_engine::core::env::var("CONVERSATION")
-        .ok()
-        .and_then(|named| named.trim().parse().ok())
-        .unwrap_or(SUBJECT)
-}
 const COUNTER_CAP: i32 = 16;
 
 /// How wide a decision's reasoning is printed.
@@ -134,8 +124,8 @@ fn what_is_still_unmodelled_in_the_subject_conversation() {
         return;
     };
     let index = read_index(&path).expect("the index reads");
-    let subject = subject();
-    let (graph, group) = build_group_graph(&index, subject).expect("the subject group builds");
+    let subject = SUBJECT;
+    let (graph, group) = build_group_graph(&index, SUBJECT).expect("the subject group builds");
     let symbols = graph.symbols().clone();
     let world = common::measurement_save();
 
@@ -249,17 +239,13 @@ fn what_is_still_unmodelled_in_the_subject_conversation() {
 
     report_exposure(&index, &group, &declared_actions, &compiler);
 
-    // A declared no-op is a decision, not a licence to stop looking - but an UNKNOWN in
-    // the conversation the epic turns on is a measurement running on a model nobody has
-    // read. Asserted only for the subject the file is about; any other group is being
-    // surveyed, and its unknowns are the survey's result rather than a failure.
-    if subject == SUBJECT {
-        assert!(
-            action_gaps.is_empty(),
-            "conversation {SUBJECT} has undecided actions: {:?}",
-            by_frequency(&action_gaps),
-        );
-    }
+    // A declared no-op is a decision, not a licence to stop looking: an UNKNOWN in the
+    // conversation the epic turns on is a measurement running on a model nobody has read.
+    assert!(
+        action_gaps.is_empty(),
+        "conversation {SUBJECT} has undecided actions: {:?}",
+        by_frequency(&action_gaps),
+    );
 
     assert!(graph.count() > 0, "the subject group has no entries");
 }

@@ -581,7 +581,29 @@ pub fn heaviest_target(
 }
 
 /// The variable asking the committed-save tests to check every save, not only changed ones.
-pub const ALL_COMMITTED_SAVES: &str = "ALL_COMMITTED_SAVES";
+///
+/// ## WHY THIS ONE IS STILL A VARIABLE - de-3dx9
+///
+/// Every other option in this project is a CLI argument, because an argument documents itself
+/// and `--help` is never stale. This one cannot be:
+///
+/// - CARGO OWNS THE COMMAND LINE. A test binary is handed libtest's arguments - filters,
+///   `--nocapture`, `--test-threads` - and taking one of its own means fighting libtest for it
+///   or building a custom harness, which is a great deal of machinery for one flag.
+/// - IT WIDENS RATHER THAN SELECTS, so `#[ignore]` and cargo's own `--ignored` do not fit
+///   either: it does not choose which tests run, it changes what THREE of them check, and an
+///   ignored twin of each would be three more test functions saying the same thing.
+///
+/// WHAT IT IS FOR, given the automatic triggers below already cover the cases that matter: it
+/// forces the exhaustive pass when somebody wants it anyway - before a release, or when they
+/// distrust the git detection. That is a real want and a rare one, which is the right shape for
+/// a variable rather than an argument.
+///
+/// SPELLED OUT AT THE CALL SITE rather than held in a const, so that `tools/survey-env.py` and
+/// `tests/environment_table.rs` both find it by the rule they are built on. Held in a const, the
+/// only thing that put it in the table was the prose beside it - and a variable whose row
+/// survives because of a sentence is one that leaves the table silently when the sentence is
+/// edited.
 
 /// Where the save reader and writer live: a change here can break any save, changed or not.
 const SAVE_CODE: [&str; 2] = ["crates/gct-save-files", "crates/gct-formats"];
@@ -610,10 +632,10 @@ pub fn committed_saves_to_check(saves: Vec<PathBuf>) -> Vec<PathBuf> {
         println!("checking all {} committed saves: {why}", saves.len());
         saves.clone()
     };
-    if lookahead_engine::core::env::is_set(ALL_COMMITTED_SAVES) {
+    if lookahead_engine::core::env::is_set("ALL_COMMITTED_SAVES") {
         return every(&format!(
             "{} is set",
-            lookahead_engine::core::env::qualified(ALL_COMMITTED_SAVES)
+            lookahead_engine::core::env::qualified("ALL_COMMITTED_SAVES")
         ));
     }
 
@@ -673,7 +695,7 @@ pub fn committed_saves_to_check(saves: Vec<PathBuf>) -> Vec<PathBuf> {
          set {} to check all",
         selected.len(),
         saves.len(),
-        lookahead_engine::core::env::qualified(ALL_COMMITTED_SAVES),
+        lookahead_engine::core::env::qualified("ALL_COMMITTED_SAVES"),
     );
     selected
 }

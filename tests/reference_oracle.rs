@@ -67,17 +67,6 @@ const CHECKABLE: [i32; 6] = [1123, 484, 1066, 1147, 949, 511];
 /// its opening lines and they are all trivially reachable.
 const TARGETS: usize = 40;
 
-/// Which conversations this process should check, one per process being the intended way.
-fn conversations(default: &[i32]) -> Vec<i32> {
-    match lookahead_engine::core::env::var("CONVERSATION") {
-        Ok(named) => named
-            .split(',')
-            .filter_map(|id| id.trim().parse().ok())
-            .collect(),
-        Err(_) => default.to_vec(),
-    }
-}
-
 /// Entries reachable from `start` by following links alone, with how far away they are.
 ///
 /// Guards ignored, so it is an upper bound no stateful search can exceed - which is exactly
@@ -158,7 +147,7 @@ fn the_backward_search_finds_what_the_reference_walk_reaches() {
 
     let mut compared = 0;
 
-    for conversation in conversations(&CHECKABLE) {
+    for conversation in CHECKABLE {
         let Some((graph, start, walk)) = group(&index, conversation, &world) else {
             continue;
         };
@@ -304,7 +293,7 @@ fn the_driver_and_the_shipped_call_find_what_the_reference_walk_finds() {
     let mut compared = 0;
     let mut unwalkable_witnesses = 0;
 
-    for conversation in conversations(&CHECKABLE) {
+    for conversation in CHECKABLE {
         let Some((graph, start, walk)) = group(&index, conversation, &world) else {
             continue;
         };

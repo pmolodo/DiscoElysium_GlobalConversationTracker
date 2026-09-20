@@ -115,14 +115,32 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
 
     let table = suites::table();
     let suite = table.suite(SUITE);
-    // THE FIRST SCENARIO UNLESS DEGCT_SAVE NAMES ANOTHER, so a variant of the trash can save
-    // can be reported the same way without a second copy of this test.
-    let wanted = lookahead_engine::core::env::var("SAVE").ok();
-    let scenario = suite
-        .scenarios
-        .iter()
-        .find(|scenario| wanted.as_deref().is_none_or(|save| scenario.save == save))
-        .unwrap_or_else(|| panic!("the kim-case suite has no scenario for {wanted:?}"));
+
+    // EVERY SCENARIO THE SUITE HAS, rather than one named from outside.
+    //
+    // It used to report the first unless a variable named another, which meant eight of the
+    // nine were never exercised by a run of the suite - the variants are the same trash can in
+    // different weather, indoors, unlocked, and with thoughts cooking, and each is a different
+    // world over the same menu. Measured 2026-09-19 by asking each in turn: all of them draw
+    // the six options below, so reporting all nine costs a second and covers what one did not.
+    for (position, scenario) in suite.scenarios.iter().enumerate() {
+        report(&index, suite, scenario, position == 0);
+    }
+}
+
+/// One scenario's menu, reported.
+///
+/// `pairs_with_the_game` says whether this is the scenario whose request is written out for
+/// `tests/request_agreement.rs` to compare against what the game captured. Only one may be:
+/// the harness names its captures by CONVERSATION and every scenario here shares conversation
+/// 29, so writing each would leave the pairing looking at whichever ran last, against a world
+/// the game was never in.
+fn report(
+    index: &lookahead_engine::index::Index,
+    suite: &suites::Suite,
+    scenario: &suites::Scenario,
+    pairs_with_the_game: bool,
+) {
     let conversation = scenario.conversation;
 
     let (graph, group) =
@@ -235,13 +253,15 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
     // the mod's KeepLookAheadRequests setting, which this suite turns on - and the two are
     // a diff apart, which is the only way to find out which FIELD the two executors
     // disagree about rather than which marker. See de-v702.
-    let written = repo_root().join(".build").join("offline-requests");
-    std::fs::create_dir_all(&written).expect("a folder to write the request into");
-    std::fs::write(
-        written.join(format!("look-ahead-request-{conversation}.json")),
-        serde_json::to_string(&request).expect("the request serialises"),
-    )
-    .expect("the request writes");
+    if pairs_with_the_game {
+        let written = repo_root().join(".build").join("offline-requests");
+        std::fs::create_dir_all(&written).expect("a folder to write the request into");
+        std::fs::write(
+            written.join(format!("look-ahead-request-{conversation}.json")),
+            serde_json::to_string(&request).expect("the request serialises"),
+        )
+        .expect("the request writes");
+    }
 
     let response = answer(&index, None, &request);
     assert!(response.error.is_none(), "{:?}", response.error);
