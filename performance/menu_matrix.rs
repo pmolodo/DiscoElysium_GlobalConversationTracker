@@ -328,8 +328,15 @@ struct Options {
     #[arg(long, value_name = "NAME", default_value = save_world::TEMPLATE)]
     save: String,
 
+    // THE NAMES ARE THE HELP'S, through `walked_profile_names`, so `--help` lists what this
+    // takes rather than naming a function only a reader of the source can follow.
     /// Which scenario a row is taken in; see `walked_profile`
-    #[arg(long = "walked-profile", value_name = "NAME", default_value = WALK_DEEPEST)]
+    #[arg(
+        long = "walked-profile",
+        value_name = "NAME",
+        default_value = WALK_DEEPEST,
+        value_parser = walked_profile_names(),
+    )]
     walked_profile: String,
 
     #[command(flatten)]
@@ -460,6 +467,27 @@ const WALKED_ON_SCREEN: &str = "menu";
 /// reproducible. Nothing else spells it this way any more.
 const WALKED_FLAG: &str = "1";
 
+/// What `--walked-profile` takes, so the help lists the scenarios and a misspelt one is refused
+/// by name, with the names printed - which is what [`walked_profile`]'s panic had to do from
+/// inside the run. The same reason `--marking` is an enum. See [`Marking`].
+///
+/// THE SPELLINGS ARE THE CONSTANTS, not a list beside them, so a name cannot be offered here and
+/// go unmatched below. [`WALKED_FLAG`] and the empty string are hidden: both reach
+/// [`WALK_DEEPEST`], which is already listed, so printing them would offer a reader a choice that
+/// is not one.
+fn walked_profile_names() -> clap::builder::PossibleValuesParser {
+    let named = [
+        WALK_DEEPEST,
+        WALKED_ON_SCREEN,
+        SYNTHETIC_MENU,
+        SYNTHETIC_MENU_WALK_DEEPEST,
+        FIRST_MENU,
+    ]
+    .map(clap::builder::PossibleValue::new);
+    let spelled = [WALKED_FLAG, ""].map(|name| clap::builder::PossibleValue::new(name).hide(true));
+    clap::builder::PossibleValuesParser::new(named.into_iter().chain(spelled))
+}
+
 /// Which scenario a row is taken in: the walked one by default, a fresh-save one on request.
 ///
 /// ## The world says what is seen, and nothing else does
@@ -496,7 +524,8 @@ const WALKED_FLAG: &str = "1";
 ///
 /// # Panics
 ///
-/// On any other value, so a misspelt run does not quietly measure something else.
+/// On any other value, so a misspelt run does not quietly measure something else. A name typed on
+/// the command line is refused before that, by [`walked_profile_names`].
 fn walked_profile(named: &str) -> Scenario {
     match named {
         "" | WALKED_FLAG | WALK_DEEPEST => Scenario::Walked(menu_profile::Starts::Reaching),
