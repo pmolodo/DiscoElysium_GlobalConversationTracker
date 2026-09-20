@@ -130,6 +130,10 @@ path = "performance/group_census.rs"
 name = "search_residue"
 path = "performance/search_residue.rs"
 
+[[example]]
+name = "permissive_census"
+path = "performance/permissive_census.rs"
+
 # A GENERATOR rather than a measurement: two of its three passes write the committed files
 # under analysis/.
 [[example]]
