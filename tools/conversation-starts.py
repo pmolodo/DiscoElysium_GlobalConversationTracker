@@ -20,11 +20,17 @@ found anyway, and the report names the field it was found in.
 ## The other three sources
 
 CODE, for names that are not on any component: `HardcodedDialogues.LIST` - a static table the
-dreams, wakeups and cutscene situations read - plus the three string literals elsewhere in the
+dreams, wakeups and cutscene situations read - plus the string literals elsewhere in the
 game, plus `ReputationAlterant.orbDialogues`, which names one conversation per reputation and
 is how the political thoughts arrive. The Final Cut export drops both tables' contents; the
 Cpp2IL ISIL dump holds them and agrees with the pre-Final-Cut export, so the strings are
 transcribed here.
+
+A TEST FIXTURE IS NOT A START, and gets a column of its own rather than counting as code.
+"Stage directions test dialogue" is named at two lines of `CharacterFunctionsTests` and
+nowhere else in the game, so treating it as startable credits its 78 entries - and, through
+its one "Jump to:" link, part of conversation 688 - to a start no player can reach. See
+`TEST_LITERALS`.
 
 ITEMS, from the dialogue database's own items table, which names conversations in its
 `conversation`, `equipOrb` and `alternativeEquipOrb` fields.
@@ -39,11 +45,13 @@ started by a mechanism this does not model. The save corpus decides it in one di
 a conversation a real playthrough displayed was reached somehow, so its presence proves a
 missed mechanism, while absence proves nothing - four playthroughs are not exhaustive.
 
-At the time of writing 17 of the 67 residue conversations had been displayed, nearly all of
-them `THOUGHT / ...`. Their titles are resolved by the Thought Cabinet at runtime from data
-no exported table carries: the items table does not name them, `GainThought` ids match only
-11 of 18 by spelling, and the political thoughts are awarded in C# rather than by Lua. That
-is the known hole, and the residue column is how it stays visible.
+No residue conversation has been displayed in the corpus, which is the result the column
+exists to report and is not a result that stays true by itself: every source this models was
+added because a residue row pointed at it. The `THOUGHT / ...` conversations are the ones to
+watch, since the Thought Cabinet resolves their titles at runtime from data no exported table
+carries - the items table does not name them, `GainThought` ids match only 11 of 18 by
+spelling, and the political thoughts are awarded by a C# tally rather than by Lua, which is
+why `ORB_DIALOGUES` is transcribed rather than read.
 """
 
 import argparse
@@ -100,8 +108,21 @@ HARDCODED = (
     "BACKYARD / KIM APT DOOR barks",
 )
 
-#: The only conversation names written as string literals anywhere else in the game's code.
-LITERALS = ("ICE / KIM RACISM FINAL TALK", "Stage directions test dialogue")
+#: The only conversation names written as string literals anywhere else in the game's code,
+#: excluding the ones only a test names - see `TEST_LITERALS`.
+LITERALS = ("ICE / KIM RACISM FINAL TALK",)
+
+#: NAMED ONLY BY A TEST, which is not a start the game offers. `CharacterFunctionsTests`
+#: starts "Stage directions test dialogue" at lines 51 and 56, from `DamageVolition()` and
+#: `DamageEndurance()`, methods that damage nothing; the whole exported codebase names it
+#: nowhere else, no component field holds it and the items table does not mention it.
+#:
+#: THIS IS ITS OWN COLUMN RATHER THAN A DELETION. A conversation reached only from a test
+#: fixture is exactly as absent from the game as one nothing names at all, but the two have
+#: different explanations, and a row that simply vanished would leave the next reader to
+#: rediscover why. It also keeps the claim falsifiable: if something else turns out to start
+#: this conversation, the row says what the evidence against it was.
+TEST_LITERALS = ("Stage directions test dialogue",)
 
 #: `ReputationAlterant.orbDialogues`, one title per reputation. Crossing a reputation's
 #: threshold adds an ORB rather than starting a conversation directly -
@@ -339,7 +360,7 @@ def corpus_counts(corpus):
 
 def write_dataset(index, titles, sources, out):
     """One row per conversation; returns the counts worth printing."""
-    component, code, item, links, saves = sources
+    component, code, item, test, links, saves = sources
     by_title = defaultdict(set)
     for conversation, title in titles.items():
         by_title[title].add(conversation)
@@ -353,17 +374,26 @@ def write_dataset(index, titles, sources, out):
     from_component = ids_of(component)
     from_code = ids_of(code)
     from_item = ids_of(item)
+    from_test = ids_of(test)
 
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    counts = {"startable": 0, "reachable": 0, "residue": 0, "residue_displayed": 0}
+    counts = {
+        "startable": 0,
+        "reachable": 0,
+        "residue": 0,
+        "residue_displayed": 0,
+        "test_only": 0,
+    }
     with open(out, "w", encoding="utf-8", newline="") as handle:
         handle.write(
             "conversation\tentries\tcontent_entry0\tby_component\tby_code\tby_item\t"
-            "linked_into\tsaves_displayed\tstartable\treachable\tresidue\ttitle\n"
+            "by_test\tlinked_into\tsaves_displayed\tstartable\treachable\tresidue\ttitle\n"
         )
         for conversation in sorted(index):
             content = content_from(index, (conversation, 0)) if 0 in index[conversation] else 0
+            # A TEST FIXTURE IS NOT A START. It names the conversation, so the evidence is
+            # recorded, but the game offers the player no way to reach it.
             startable = conversation in from_component or conversation in from_code or conversation in from_item
             reachable = startable or conversation in links
             residue = int(content > 0 and not reachable)
@@ -371,10 +401,12 @@ def write_dataset(index, titles, sources, out):
             counts["reachable"] += int(reachable)
             counts["residue"] += residue
             counts["residue_displayed"] += int(bool(residue and saves.get(conversation)))
+            counts["test_only"] += int(conversation in from_test and not startable)
             handle.write(
                 f"{conversation}\t{len(index[conversation])}\t{content}\t"
                 f"{int(conversation in from_component)}\t{int(conversation in from_code)}\t"
-                f"{int(conversation in from_item)}\t{int(conversation in links)}\t"
+                f"{int(conversation in from_item)}\t{int(conversation in from_test)}\t"
+                f"{int(conversation in links)}\t"
                 f"{saves.get(conversation, 0)}\t{int(startable)}\t{int(reachable)}\t"
                 f"{residue}\t{titles[conversation]}\n"
             )
@@ -412,10 +444,18 @@ def build(export=EXPORT, index_path=INDEX, database=DATABASE, corpus=CORPUS, out
     counts = write_dataset(
         index,
         titles,
-        (component, HARDCODED + LITERALS + ORB_DIALOGUES, item | lua, links, saves),
+        (
+            component,
+            HARDCODED + LITERALS + ORB_DIALOGUES,
+            item | lua,
+            TEST_LITERALS,
+            links,
+            saves,
+        ),
         out,
     )
     print(f"\nstartable                    {counts['startable']}")
+    print(f"  named only by a test       {counts['test_only']}")
     print(f"reachable (starts + links)   {counts['reachable']}")
     print(f"residue                      {counts['residue']}")
     print(f"  displayed in a real save   {counts['residue_displayed']}")
