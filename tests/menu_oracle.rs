@@ -29,6 +29,16 @@ fn compare(
     world: &dyn ILookAheadWorld,
     seen_state: &impl Fn(DialogueNodeId) -> SeenState,
 ) {
+    compare_under(&GroupShape::of(graph), graph, options, world, seen_state);
+}
+
+fn compare_under(
+    shape: &GroupShape,
+    graph: &LookAheadGraph,
+    options: &[DialogueNodeId],
+    world: &dyn ILookAheadWorld,
+    seen_state: &impl Fn(DialogueNodeId) -> SeenState,
+) {
     let layout = DataLayout::for_group(graph, world, 16);
     let vars = DataVars::new(&layout, graph.symbols(), DiagramBudget::modest());
     let mut compiler = GuardCompiler::new(&vars).with_world(world);
@@ -64,7 +74,7 @@ fn compare(
             wall: Duration::from_secs(30),
             each: Duration::from_secs(30),
         },
-        &GroupShape::of(graph),
+        shape,
     );
     assert!(found.marks.iter().all(|m| m.complete));
     let mut expected: Vec<_> = options.iter().map(|id| (seen_state(*id), None)).collect();

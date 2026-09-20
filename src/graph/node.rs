@@ -109,6 +109,68 @@ impl LookAheadNode {
         self.cost_once || self.actions.iter().any(|action| action.is_once())
     }
 
+    /// Whether a walk through this entry could step straight past it to its own neighbours.
+    ///
+    /// AN ENTRY THAT CONTRIBUTES NOTHING. No guard to fail, no action to apply, no slot to
+    /// raise, no cost to charge, no choice to charge for, and no check whose outcome the world
+    /// decides - so every route through it reaches the same states at the same distance as a
+    /// route that skipped it. A quarter to a third of a group's entries are like this; see the
+    /// stretches report in `performance/layout_shape.rs`.
+    ///
+    /// ## SKIPPING THEM IN THE SEARCH WAS MEASURED, AND IT COSTS
+    ///
+    /// The obvious use of this is to splice such entries out of the parent index a backward
+    /// crawl walks, so it steps straight past them. Built, checked against the oracle and
+    /// measured over the whole game at the shipped budget, three runs and a cold pass each:
+    ///
+    /// ```text
+    ///   the parent index as it is         6,420 ms over 299 groups
+    ///   stepping past every clear entry   6,923 ms  +7.8%   1030 holds 9,425 nodes, was 7,259
+    ///   stepping past only those with a
+    ///     single parent, so no list grows  6,667 ms  +3.8%   1030 holds 10,000
+    /// ```
+    ///
+    /// It buys 6 per cent on 761 with the limits off - an adversarial profile nobody waits for -
+    /// and costs 4 to 8 per cent on what a player does wait for. The first variant inflates a
+    /// child's parent list, which is a wider diagram per layer; the second cannot, and still
+    /// inflates 1030 by a third, because skipping an entry changes the ORDER sets are merged in
+    /// and a diagram's size follows that order. See de-f75o.
+    ///
+    /// So this is a fact about the dialogue, kept for counting. It is not an optimisation
+    /// waiting to be turned on.
+    ///
+    /// ITS DEGREE DOES NOT MATTER, which is what makes this different from collapsing a chain:
+    /// a route THROUGH an entry is a route PAST it however many other routes there are, so an
+    /// entry with three parents and two links is as steppable as one in a line.
+    ///
+    /// THE CHECK KIND BEING PLAIN IS WHAT KEEPS `never_displays` FALSE as well, since only a
+    /// passive check is an entry the world can refuse outright.
+    pub fn adds_nothing_to_a_route(&self) -> bool {
+        !self.is_group
+            && !self.choice
+            && !self.player
+            && self.kind == DialogueCheckKind::None
+            && matches!(
+                self.guard.expression(),
+                crate::core::guard::GuardExpression::Literal(value)
+                    if value.as_condition() == crate::core::types::Ternary::True
+            )
+            && self.actions.is_empty()
+            && self.failure_actions.is_empty()
+            && self.skill_moves.lost_items.is_empty()
+            && !self.skill_moves.puts_on
+            && self.skill_moves.damage.is_empty()
+            && self.cost == 0
+            && self.click_cost == 0
+            && !self.cost_once
+            && !self.hidden_when_unaffordable
+            && !self.holds_the_screen
+            && self.flag_slot < 0
+            && self.failed_flag_slot < 0
+            && self.seen_slot < 0
+            && self.once_slot < 0
+    }
+
     /// Every action the entry can take, on entering and on a failing branch alike - for what
     /// asks which slots, thoughts or money an entry can touch rather than when.
     pub fn all_actions(&self) -> impl Iterator<Item = &DialogueAction> {

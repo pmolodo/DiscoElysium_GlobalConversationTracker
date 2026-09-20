@@ -357,8 +357,17 @@ fn what_each_stretch_holds(wanted: &[i32]) {
     };
     let index = read_index(&path).expect("the index reads");
     println!(
-        "{:>5} {:>8} {:>7} {:>8} {:>8} {:>7} {:>7} {:>7} {:>7}",
-        "conv", "entries", "runs", "in runs", "longest", "nodes-", "slots", "in runs", "slots-"
+        "{:>5} {:>8} {:>7} {:>8} {:>8} {:>7} {:>7} {:>7} {:>7} {:>7}",
+        "conv",
+        "entries",
+        "runs",
+        "in runs",
+        "longest",
+        "nodes-",
+        "slots",
+        "in runs",
+        "slots-",
+        "clear"
     );
     println!(
         "  nodes- is what collapsing every run would remove; slots- is how many of the slots \
@@ -378,13 +387,17 @@ fn what_each_stretch_holds(wanted: &[i32]) {
             .map(|node| usize::from(node.once_slot >= 0) + usize::from(node.seen_slot >= 0))
             .sum();
         let held: usize = runs.iter().map(|run| slots_along(&graph, run)).sum();
+        let clear = graph
+            .nodes()
+            .filter(|node| node.adds_nothing_to_a_route())
+            .count();
         let shared: usize = runs
             .iter()
             .map(|run| slots_along(&graph, run).saturating_sub(1))
             .sum();
         println!(
             "{conversation:>5} {entries:>8} {:>7} {inside:>8} {longest:>8} {:>7} {slots:>7} \
-{held:>7} {shared:>7}",
+{held:>7} {shared:>7} {clear:>7}",
             runs.len(),
             inside - runs.len(),
         );

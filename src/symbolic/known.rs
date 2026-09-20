@@ -119,18 +119,22 @@ pub struct GroupShape {
 impl GroupShape {
     /// Works the group's shape out, once, for every search that will run over it.
     pub fn of(graph: &LookAheadGraph) -> Self {
+        Self {
+            parents: Arc::new(Self::parent_index(graph)),
+            order: IterationOrder::of(graph),
+            hubs: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// Who links to each entry.
+    fn parent_index(graph: &LookAheadGraph) -> HashMap<DialogueNodeId, Vec<DialogueNodeId>> {
         let mut parents: HashMap<DialogueNodeId, Vec<DialogueNodeId>> = HashMap::new();
         for node in graph.nodes() {
             for &child in &node.links {
                 parents.entry(child).or_default().push(node.id);
             }
         }
-
-        Self {
-            parents: Arc::new(parents),
-            order: IterationOrder::of(graph),
-            hubs: std::sync::OnceLock::new(),
-        }
+        parents
     }
 
     /// The group's hub candidates and which lies above which - see [`crate::symbolic::hub`].
