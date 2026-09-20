@@ -130,19 +130,23 @@ fn main() {
     }
 
     // WHAT IS NOT THERE AND WHY, because a missing name otherwise reads as one the group never
-    // mentions. Two things take a slot out: nothing reads it, and its value being recoverable
-    // from the `once` slots that determine it.
+    // mentions. Three things take a slot out: nothing reads it, nothing can have written it by
+    // the time anything reads it, and its value being recoverable from the `once` slots that
+    // determine it.
     println!();
+    let reads = DataLayout::read_by(&graph);
     let mut gone: Vec<(usize, &str, &'static str)> = Vec::new();
     for slot in 0..symbols.count() {
         if layout.slot(slot).is_some() {
             continue;
         }
         let name = symbols.name_of(slot).unwrap_or("?");
-        let why = if dropped.contains_key(&slot) {
-            "counts once slots"
-        } else {
-            "nothing reads it"
+        let why = match (dropped.contains_key(&slot), reads.contains(name)) {
+            (true, _) => "counts once slots",
+            (false, false) => "nothing reads it",
+            // READ, AND STILL NOT CARRIED, which leaves one rule that can have taken it - see
+            // `DataLayout::dropping_slots_written_too_late`.
+            (false, true) => "no write reaches a read of it",
         };
         gone.push((slot, name, why));
     }
@@ -153,6 +157,12 @@ fn main() {
     {
         let onces = dropped.get(slot).map(Vec::len).unwrap_or(0);
         println!("  slot {slot:>5}  {why} ({onces} of them)  {name}");
+    }
+    for (slot, name, why) in gone
+        .iter()
+        .filter(|(_, _, why)| *why == "no write reaches a read of it")
+    {
+        println!("  slot {slot:>5}  {why}  {name}");
     }
     println!(
         "  and {} more that nothing in the group reads",

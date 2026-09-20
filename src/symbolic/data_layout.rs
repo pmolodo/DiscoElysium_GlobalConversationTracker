@@ -201,6 +201,69 @@ fn read_only_as_thresholds(graph: &LookAheadGraph) -> HashSet<usize> {
         .collect()
 }
 
+/// Sets the bit for `slot`, where the slot is one.
+///
+/// A SLOT FIELD SPELLS "NONE" AS A NEGATIVE NUMBER and a node has four of them, so taking the
+/// field's own type and ignoring what is not a slot is what keeps the callers free of the same
+/// two-line conversion four times over. A slot past the end of the set is ignored for the same
+/// reason: a symbol table can be wider than the layout built from it.
+fn raise(bits: &mut [u64], slot: i32) {
+    let Ok(slot) = usize::try_from(slot) else {
+        return;
+    };
+    if slot < bits.len() * 64 {
+        bits[slot / 64] |= 1 << (slot % 64);
+    }
+}
+
+/// Whether the bit for `slot` is set.
+fn holds(bits: &[u64], slot: usize) -> bool {
+    slot < bits.len() * 64 && bits[slot / 64] >> (slot % 64) & 1 == 1
+}
+
+/// Which slots some path may have written by the time it ARRIVES at each entry.
+///
+/// Reaching definitions over the links: what leaves an entry is what arrived plus what the
+/// entry writes, and what arrives at an entry is the union of what leaves the entries linking
+/// to it. Nothing has been written on arrival at an entry nothing links to, which is where the
+/// fixed point starts.
+///
+/// A WORKLIST RATHER THAN SWEEPS, because a dialogue loops: an entry whose arrivals grow has to
+/// tell the entries it links to, and a pass in any fixed order would take as many passes as the
+/// longest chain. Bits only ever go up, so it terminates.
+fn reaching_writes(
+    entries: &[&LookAheadNode],
+    at_of: &HashMap<DialogueNodeId, usize>,
+    writes: &[u64],
+    words: usize,
+) -> Vec<u64> {
+    let mut arriving = vec![0u64; entries.len() * words];
+    let mut pending: std::collections::VecDeque<usize> = (0..entries.len()).collect();
+    let mut queued = vec![true; entries.len()];
+    while let Some(at) = pending.pop_front() {
+        queued[at] = false;
+        let leaving: Vec<u64> = (0..words)
+            .map(|word| arriving[at * words + word] | writes[at * words + word])
+            .collect();
+        for link in &entries[at].links {
+            let Some(&onward) = at_of.get(link) else {
+                continue;
+            };
+            let mut grew = false;
+            for word in 0..words {
+                let joined = arriving[onward * words + word] | leaving[word];
+                grew |= joined != arriving[onward * words + word];
+                arriving[onward * words + word] = joined;
+            }
+            if grew && !queued[onward] {
+                queued[onward] = true;
+                pending.push_back(onward);
+            }
+        }
+    }
+    arriving
+}
+
 /// What one sweep of a group's guards says about how each slot is read.
 ///
 /// ONE SWEEP RATHER THAN THREE. Two questions want this - how wide a slot has to be, and
@@ -663,11 +726,10 @@ impl DataLayout {
         entered_at: Option<&[i32]>,
         arms: Arms,
     ) -> Self {
-        let reads = match entered_at {
-            Some(conversations) => Self::read_by_some(
-                graph,
-                Self::reachable_from_conversations(graph, conversations),
-            ),
+        let walkable = entered_at
+            .map(|conversations| Self::reachable_from_conversations(graph, conversations));
+        let reads = match &walkable {
+            Some(nodes) => Self::read_by_some(graph, nodes.iter().copied()),
             None => Self::read_by(graph),
         };
 
@@ -678,6 +740,7 @@ impl DataLayout {
             false,
         )
         .keeping_only_read(graph.symbols(), &reads)
+        .dropping_slots_written_too_late(graph, walkable.as_deref())
         .dropping_redundant_counters(graph, world)
         .in_variable_order(graph, arms.var_order)
     }
@@ -777,6 +840,120 @@ impl DataLayout {
                 continue;
             }
             if !reads.contains(name) {
+                self.slots[slot].1 = 0;
+            }
+        }
+
+        self.renumber();
+        self
+    }
+
+    /// The same layout with every slot dropped whose writes cannot reach any of its reads.
+    ///
+    /// ## The other half of [`Self::keeping_only_read`], and exact for the same reason
+    ///
+    /// That one drops a slot NOTHING READS: write-only for the length of a search, so what is
+    /// written cannot change which entries are reachable. This drops a slot nothing can have
+    /// WRITTEN BY THE TIME it is read: every guard that reads it sees the value the world
+    /// arrived with, so the slot holds one number for the whole search and a guard compiled
+    /// against the world's number answers exactly as one compiled against the slot would - see
+    /// `GuardCompiler`, where a variable the layout carries no slot for is the world's number
+    /// everywhere. Both remove a variable and change no answer.
+    ///
+    /// ## Why the case is common
+    ///
+    /// A latch written at the end of a branch and read by a guard near the top of the
+    /// conversation is how a dialogue remembers what was done LAST time it was entered. The
+    /// write reaches the read through a save, not along any path of one search. Conversation
+    /// 761's entry 6 writes `seafort.deserter_no_gun_exit_done` and has no outgoing links at
+    /// all, while the guards reading it are at entries 3 and 4, which reach 6 rather than the
+    /// other way round.
+    ///
+    /// It takes 10 slots out of 640 and 10 out of 761, which is 10 variables off each of their
+    /// layouts - 223 to 213 and 259 to 249.
+    ///
+    /// ## Reaching definitions, not a search per slot
+    ///
+    /// What is wanted is the set of slots some path may have written before arriving at an
+    /// entry, which is the textbook forward dataflow: what leaves an entry is what arrived plus
+    /// what it writes, and what arrives at an entry is the union over the entries linking to
+    /// it. One fixed point over bitsets answers it for every slot at once, where a search per
+    /// slot would walk the group once per slot.
+    ///
+    /// ## What it will not touch
+    ///
+    /// AN ENTRY'S GUARD IS TESTED BEFORE ITS OWN ACTIONS APPLY - see
+    /// [`crate::symbolic::reachability`] - so an entry writing what it also reads has NOT
+    /// written it by the time it reads it. That falls out of the dataflow rather than being a
+    /// case: what arrives is what predecessors left, and an entry reaches itself only around a
+    /// loop, which the fixed point follows like any other path.
+    ///
+    /// THE ENGINE'S OWN SLOTS, which it writes where no action does: `once:`, `seen:` and a
+    /// rolled check's pass and fail flags. Their writes are not in any entry's actions, so an
+    /// analysis of actions alone would call them unwritten and strand every one of them.
+    ///
+    /// A SLOT NO ACTION IN THE WALKABLE SET WRITES, which is left to the rules that already
+    /// cover it rather than dropped from here on the grounds that nothing wrote it.
+    pub fn dropping_slots_written_too_late(
+        mut self,
+        graph: &LookAheadGraph,
+        walkable: Option<&[crate::core::types::DialogueNodeId]>,
+    ) -> Self {
+        let symbols = graph.symbols();
+        let entries: Vec<&LookAheadNode> = match walkable {
+            Some(ids) => ids.iter().filter_map(|id| graph.get(*id)).collect(),
+            None => graph.nodes().collect(),
+        };
+        let words = self.slots.len().div_ceil(64);
+        if words == 0 || entries.is_empty() {
+            return self;
+        }
+        let at_of: HashMap<crate::core::types::DialogueNodeId, usize> = entries
+            .iter()
+            .enumerate()
+            .map(|(at, node)| (node.id, at))
+            .collect();
+
+        let mut writes = vec![0u64; entries.len() * words];
+        let mut the_engine_writes = vec![0u64; words];
+        let mut an_action_writes = vec![0u64; words];
+        for (at, node) in entries.iter().enumerate() {
+            for slot in [
+                node.once_slot,
+                node.seen_slot,
+                node.flag_slot,
+                node.failed_flag_slot,
+            ] {
+                raise(&mut the_engine_writes, slot);
+            }
+            for action in node.all_actions() {
+                if action.writes_slot() {
+                    raise(&mut writes[at * words..(at + 1) * words], action.slot());
+                    raise(&mut an_action_writes, action.slot());
+                }
+            }
+        }
+
+        let arriving = reaching_writes(&entries, &at_of, &writes, words);
+
+        let mut a_write_arrives = vec![0u64; words];
+        for (at, node) in entries.iter().enumerate() {
+            let arrived = &arriving[at * words..(at + 1) * words];
+            for name in Self::read_by_nodes([*node], symbols) {
+                if let Some(slot) = symbols.find(&name)
+                    && holds(arrived, slot)
+                {
+                    raise(&mut a_write_arrives, slot as i32);
+                }
+            }
+        }
+
+        for slot in 0..self.slots.len() {
+            let stranded = self.slots[slot].1 != 0
+                && holds(&an_action_writes, slot)
+                && !holds(&the_engine_writes, slot)
+                && !holds(&a_write_arrives, slot);
+            if stranded {
                 self.slots[slot].1 = 0;
             }
         }
@@ -1263,6 +1440,83 @@ mod tests {
     /// A one-entry graph whose increment can fire again, because the entry links to itself.
     fn looping_graph_with(actions: Vec<DialogueAction>, symbols: StateSymbols) -> LookAheadGraph {
         graph_linking(actions, symbols, vec![DialogueNodeId::new(1, 0)])
+    }
+
+    /// Three entries in a line, one reading a variable and one writing it.
+    ///
+    /// `closed` links the last back to the first, which is the case that separates "the write
+    /// is below the read" from "the write can come round again and be above it".
+    fn line_reading_at(reads: i32, writing_at: i32, closed: bool) -> (LookAheadGraph, usize) {
+        const ENTRIES: [i32; 3] = [0, 1, 2];
+        let mut symbols = StateSymbols::new();
+        let slot = symbols.variable("x");
+
+        let nodes = ENTRIES
+            .iter()
+            .map(|&entry| LookAheadNode {
+                guard: match entry == reads {
+                    true => Guard::comparison(
+                        "==",
+                        Guard::variable("x"),
+                        Guard::literal(crate::core::guard_value::GuardValue::from_number(1.0)),
+                    ),
+                    false => Guard::always_true(),
+                },
+                actions: match entry == writing_at {
+                    true => vec![DialogueAction::assign(slot, 1, "sets x".to_string())],
+                    false => vec![],
+                },
+                links: match (entry, closed) {
+                    (2, false) => vec![],
+                    (2, true) => vec![DialogueNodeId::new(1, 0)],
+                    _ => vec![DialogueNodeId::new(1, entry + 1)],
+                },
+                ..LookAheadNode::new(DialogueNodeId::new(1, entry))
+            })
+            .collect();
+        (LookAheadGraph::new(nodes, symbols).unwrap(), slot)
+    }
+
+    /// The layout of such a line, with both dropping rules applied as a group build applies
+    /// them.
+    fn line_layout(graph: &LookAheadGraph) -> DataLayout {
+        DataLayout::for_graph(graph, 16, None, false)
+            .keeping_only_read(graph.symbols(), &DataLayout::read_by(graph))
+            .dropping_slots_written_too_late(graph, None)
+    }
+
+    /// A write below every read of it holds a value no search can see, so it gets no slot.
+    ///
+    /// The shape of a dialogue latch: written where a branch ends, read by a guard nearer the
+    /// top, and the two only ever meet through a save.
+    #[test]
+    fn a_slot_written_below_its_only_reader_is_dropped() {
+        let (graph, slot) = line_reading_at(0, 2, false);
+        assert_eq!(line_layout(&graph).slot(slot), None);
+    }
+
+    /// The same write, with a way back round to the read, is a write the read can see.
+    #[test]
+    fn a_slot_whose_write_loops_back_to_its_reader_is_kept() {
+        let (graph, slot) = line_reading_at(0, 2, true);
+        assert!(line_layout(&graph).slot(slot).is_some());
+    }
+
+    /// A write above the read is the ordinary case, and nothing here touches it.
+    #[test]
+    fn a_slot_written_before_its_reader_is_kept() {
+        let (graph, slot) = line_reading_at(2, 0, false);
+        assert!(line_layout(&graph).slot(slot).is_some());
+    }
+
+    /// An entry's guard is tested before its own actions apply, so an entry writing what it
+    /// reads has not written it yet.
+    ///
+    /// See [`crate::symbolic::reachability`], which states the order this rests on.
+    #[test]
+    fn a_slot_an_entry_both_writes_and_reads_is_dropped() {
+        let (graph, slot) = line_reading_at(1, 1, false);
+        assert_eq!(line_layout(&graph).slot(slot), None);
     }
 
     /// The register holds the dearest price even when the purse starts below it.
