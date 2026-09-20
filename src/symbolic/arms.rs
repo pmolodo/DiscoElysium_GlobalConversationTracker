@@ -42,12 +42,20 @@ pub struct Arms {
     /// Whether a round of the exact marking is searched by one pool rather than by branch and
     /// bound.
     ///
-    /// OFF UNLESS ASKED. The pool was built, verified against `tests/menu_oracle.rs` and taken
-    /// out - on conversation 761 it answered in 10.1 million diagram nodes against 92.3 million,
-    /// and it went because the cheap question had made the exact marking rare enough that
-    /// nothing slow reached it. It is an arm again because the exact marking now runs on 133
-    /// menus of 389. See de-y04p, and de-t329 for the ceiling: step 2 costs 451 ms across the
-    /// whole game, over the 48 menus that reach it.
+    /// OFF UNLESS ASKED, and the pool is the SLOWER of the two on the menu it was built for.
+    /// Measured 2026-09-19 at 16233b8, conversation 761 at link-deepest-10 with the limits off:
+    /// branch and bound answers in 4,810,836 diagram nodes and 6.2 seconds, the pool in
+    /// 6,444,119 and 10.7. What the pool once won by - tens of millions of nodes - was mostly a
+    /// redundant counter's doing, and dropping those took branch and bound from 93,353,567 nodes
+    /// to the 4.8 million above without changing a mark. So a run measuring the pool is asking
+    /// whether anything is left of its advantage, rather than turning on a known win.
+    ///
+    /// The two do not always mark the same options, and that is not a defect in either - see the
+    /// rule in CLAUDE.md. On this menu they star four each, agreeing on three.
+    ///
+    /// It is an arm at all because the exact marking runs on 133 menus of 389. See de-y04p, and
+    /// de-t329 for the ceiling: step 2 costs 451 ms across the whole game, over the 48 menus
+    /// that reach it.
     pub pooled_rounds: bool,
 }
 
