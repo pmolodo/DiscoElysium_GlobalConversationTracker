@@ -288,7 +288,25 @@ struct Walk<'w, 'a> {
     queue: Worklist<'w>,
     /// The layer being spread, in choices from the target.
     distance: usize,
+    /// WHEN THIS PASS IS OUT OF TIME, as a moment rather than an allowance, so that everything
+    /// the pass reaches can ask without being handed the clock it started on.
+    ///
+    /// A WALL BOUNDS THE TIME OR IT BOUNDS NOTHING. The worklist loop has always checked
+    /// between entries, but a layer's transition spreads every entry that arrived and every one
+    /// of their parents before the loop is reached again - which on a deep group is minutes of
+    /// diagram work past the wall. See de-j8eh.
+    deadline: std::time::Instant,
+    /// How many parents have been spread since the clock was last read.
+    ///
+    /// A CLOCK READ IS NOT FREE and this is the hottest loop in the search: reading it for every
+    /// parent costs 1.8 per cent of the whole game, measured, for a bound nothing but a deep
+    /// menu ever reaches. Reading it every [`CLOCK_EVERY`] parents costs a sixty-fourth of that
+    /// and bounds the overrun to that many parents' work instead of a whole layer's.
+    since_the_clock: usize,
 }
+
+/// How many parents one spread walks before it asks the time again. See [`Walk::since_the_clock`].
+const CLOCK_EVERY: usize = 64;
 
 impl<'a> Backward<'a> {
     /// Runs the fixed point backwards from `target`.
@@ -1038,6 +1056,8 @@ impl<'a> Backward<'a> {
             frontier: HashMap::new(),
             queue: Worklist::new(known.order()),
             distance: 0,
+            deadline: began + budget.time,
+            since_the_clock: 0,
         };
         let seed = this.pre_enter(node, &vars.top(), compiler, world, &mut walk.image);
         let mut next = HashMap::new();
@@ -1058,6 +1078,11 @@ impl<'a> Backward<'a> {
                 // At the target these states have arrived nowhere yet. Everywhere else they
                 // are a choice's, already asked about when the choice was reached, and what
                 // this layer buys is leaving it.
+                if std::time::Instant::now() >= walk.deadline {
+                    return Nearest::Unfinished {
+                        out_of_memory: false,
+                    };
+                }
                 if distance == 0 {
                     walk.frontier.insert(id, states);
                     walk.queue.push(id);
@@ -1151,6 +1176,15 @@ impl<'a> Backward<'a> {
         let (graph, world, known, cut, positions) =
             (walk.graph, walk.world, walk.known, walk.cut, walk.positions);
         for &parent in known.parents_of(id) {
+            walk.since_the_clock += 1;
+            if walk.since_the_clock >= CLOCK_EVERY {
+                walk.since_the_clock = 0;
+                if std::time::Instant::now() >= walk.deadline {
+                    return Some(Nearest::Unfinished {
+                        out_of_memory: false,
+                    });
+                }
+            }
             if cut.contains(&parent) {
                 continue;
             }
