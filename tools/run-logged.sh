@@ -222,6 +222,32 @@ LOG="$(unique "$DEGCT_LOG_DIR/$(stem "$TOOL" "$VERB")" ".txt")"
 
 echo "logging to $LOG"
 
+# WHY THESE TWO ARE STILL ENVIRONMENT VARIABLES - de-3dx9, and this is the ruling
+#
+# Every option this project takes is a CLI argument, because an argument documents itself and
+# --help is never stale. These two cannot be, and the reason is what this script IS: it wraps
+# a command it does not parse and has never heard of. `cargo test --release`, `dotnet test`,
+# `python tools/measure-menus.py all` - adding a flag to somebody else's command line is not a
+# thing a wrapper may do, and which flag would even be right depends on the wrapped tool.
+#
+# THREE ALTERNATIVES, NAMED RATHER THAN LEFT UNCONSIDERED:
+#
+#   PASS A FLAG. The same impossibility said twice: to know the flag, the wrapper would have
+#   to know the tool, and its whole value is that it does not.
+#
+#   WRITE THEM TO A FILE AND PASS THE PATH. Passing the path is passing a flag, so this only
+#   moves the problem, and it adds a file to clean up.
+#
+#   LET THE TOOL ASK THIS SCRIPT. It already can, and does: `measurement_common.folder_for`
+#   shells out to `--folder-only` when nothing wrapped it. But a tool that ASKED for the name
+#   would derive a second one - the wrapper names a run for the instant it started, and the
+#   tool asking a moment later gets a different instant, so the transcript and the rows would
+#   carry different names and the pairing this exists to create would be exactly what broke.
+#   The value has to be the one already decided, which means handing it over.
+#
+# So they stay, and the shape is the narrow one: a wrapper hands DOWN what it alone knows.
+# Nothing sets them by hand, and a person who does is overriding the wrapper on purpose.
+#
 # WHICH TRANSCRIPT A FOLDER OF ROWS BELONGS TO. A run writes two things in two places - this
 # transcript, named for when it ran, and a folder of rows named for what it measured - and
 # only one direction was findable: the transcript prints where the rows went, and the rows

@@ -3,7 +3,7 @@
 # Import it:
 #
 #     Import-Module "$PSScriptRoot/DegctEnv.psm1"
-#     $out = Get-DegctEnv MENUS_OUT -Default 'performance/logs/somewhere'
+#     $value = Get-DegctEnv SOME_NAME -Default 'a-default'
 #     if (Test-DegctEnv NOLIMIT) { 'limits off' }
 #
 # WHY A HELPER RATHER THAN A CONVENTION. Every environment variable this project defines is

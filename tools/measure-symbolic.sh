@@ -12,7 +12,7 @@
 # it, so a crashed row can still be read afterwards - and so can the run before this one.
 #
 # Usage:
-#   tools/measure-symbolic.sh <measurement> [stage] [conversation ...]
+#   tools/measure-symbolic.sh [--log-dir DIR] <measurement> [stage] [conversation ...]
 #
 # Examples:
 #   tools/measure-symbolic.sh symbolic_answers
@@ -30,6 +30,24 @@
 # does - takes the stage name as a second argument. Anything that parses as a number is
 # read as a conversation, so the stage is optional and order still reads naturally.
 set -u
+
+# WHERE THE LOGS GO, if not the folder this would name for itself. An option rather than a
+# variable - de-3dx9 - and read before the positional arguments so it may appear anywhere.
+DEGCT_ASKED_LOG_DIR=""
+DEGCT_REST=()
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --log-dir)
+            DEGCT_ASKED_LOG_DIR="$2"
+            shift 2
+            ;;
+        *)
+            DEGCT_REST+=("$1")
+            shift
+            ;;
+    esac
+done
+set -- "${DEGCT_REST[@]+"${DEGCT_REST[@]}"}"
 
 DEGCT_MEASUREMENT="${1:-symbolic_answers}"
 shift || true
@@ -49,15 +67,16 @@ fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# The prefix is applied by the helper rather than typed - see CLAUDE.md.
-. "$ROOT/tools/degct-env.sh"
-
 # ONE FOLDER PER RUN, and under performance/ rather than target/ - a `cargo clean` should
-# not take measurements with it, and a run's logs only mean anything as a set. LOG_DIR
+# not take measurements with it, and a run's logs only mean anything as a set. `--log-dir`
 # still overrides the whole thing, which is what a one-off comparison wants.
+#
+# DEGCT_RUN_LOG_DIR IS SET FOR THE WRAPPER, not read from the world: it is how this script tells
+# `run-logged.sh --folder-only` which tree to name a folder in. That is the wrapper chain, and
+# the ruling on it is in that script.
 DEGCT_RUN_NAME="${DEGCT_MEASUREMENT}${STAGE:+-$STAGE}"
-DEGCT_LOG_DIR="$(degct_env LOG_DIR "$(DEGCT_RUN_LOG_DIR="$ROOT/performance/logs" \
-    "$ROOT/tools/run-logged.sh" --folder-only measure "$DEGCT_RUN_NAME")")"
+DEGCT_LOG_DIR="${DEGCT_ASKED_LOG_DIR:-$(DEGCT_RUN_LOG_DIR="$ROOT/performance/logs" \
+    "$ROOT/tools/run-logged.sh" --folder-only measure "$DEGCT_RUN_NAME")}"
 mkdir -p "$DEGCT_LOG_DIR"
 
 echo "measuring ${DEGCT_RUN_NAME}, one process per conversation"

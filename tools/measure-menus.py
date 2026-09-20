@@ -43,11 +43,11 @@ had anything worth hunting, which says nothing about what the next menu costs.
 RESUMING. Rows are written as they finish, and pointing a later run at the same folder makes
 it skip the groups already there:
 
-    DEGCT_MENUS_OUT=performance/logs/2026-09-09/menus tools/measure-menus.py all
+    tools/measure-menus.py --out performance/logs/2026-09-09/menus all
 
 The same command is the start and the resume; there is no separate mode to remember. A resumed
 group still counts towards settling, by the row it left, so a resume switches where the
-original run would have. Without MENUS_OUT each run gets its own folder and resumes nothing.
+original run would have. Without `--out` each run gets its own folder and resumes nothing.
 
 SEVERAL RUNS. `--runs N` takes N runs of the same groups back to back, each in run-1 ... run-N
 under the one folder, because a single run's milliseconds are a reading of the machine as much
@@ -117,7 +117,6 @@ from measurement_common import (  # noqa: E402
     Settling,
     build_measurement,
     default_workers,
-    env,
     progress_line,
     refuse,
     run_groups,
@@ -152,6 +151,10 @@ MENU_MS_COLUMN = 4
 # matrix group, many rows long, near two seconds - so a menu under this is at the floor whatever
 # the relative arm says of it.
 SETTLE_MS = 100
+
+# What this driver calls the option that names its folder, said in the refusal when there is no
+# bash to ask the wrapper for a name. See `measurement_common.run_folder`.
+OUT_OPTION = "--out"
 
 
 def driver_arguments(marking, driver):
@@ -751,6 +754,16 @@ def get_parser():
         ),
     )
     parser.add_argument(
+        "--out",
+        default="",
+        metavar="PATH|LABEL",
+        help=(
+            "where the rows go, and THAT is the resume: run the same command again and every "
+            "group already there is skipped. A path is taken literally; a plain word is a "
+            "LABEL, carried as a suffix on the name the run would have had anyway"
+        ),
+    )
+    parser.add_argument(
         "--driver",
         default="",
         metavar="ARGS",
@@ -786,11 +799,10 @@ def main(argv=None):
     # THE KIND PLACES IT, transcript and rows alike: a dataset derived by this tool is filed
     # with the datasets rather than among the timings.
     kind = common.run_kind(args.kind)
-    named_out = env("MENUS_OUT")
-    if named_out:
-        out = common.folder_for(named_out, TOOL, VERB, "MENUS_OUT", kind)
+    if args.out:
+        out = common.folder_for(args.out, TOOL, VERB, OUT_OPTION, kind)
     else:
-        out = common.run_folder(TOOL, VERB, "MENUS_OUT", kind)
+        out = common.run_folder(TOOL, VERB, OUT_OPTION, kind)
 
     # WHAT WAS NAMED WINS, INCLUDING UPWARDS. `default_workers` answers what the machine affords
     # and is asked only when nothing was named; somebody who knows what their box can take is not

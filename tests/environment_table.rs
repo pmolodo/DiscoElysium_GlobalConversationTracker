@@ -34,9 +34,19 @@ const TABLE: &str = "docs/environment.md";
 /// The files ABOUT the variables, whose own patterns and prose name them as examples.
 ///
 /// A file whose subject is the list cannot also be evidence for it: every name it uses to explain
-/// itself would become a row, and a name it stopped explaining would silently leave one. This file
-/// is one; `tools/survey-env.py`, which prints where each variable is read, is the other.
-const ABOUT: [&str; 2] = ["tests/environment_table.rs", "tools/survey-env.py"];
+/// itself would become a row, and a name it stopped explaining would silently leave one.
+///
+/// FOUR OF THEM. This file and `tools/survey-env.py` look for variables and name them as patterns
+/// to look for. The two shell HELPERS are the doors themselves - they take a name as a parameter
+/// and read nothing of their own - so every name in them is showing how the door works. Three
+/// rows survived in the table on the strength of an example in one of those headers, after
+/// nothing read the variables any more.
+const ABOUT: [&str; 4] = [
+    "tests/environment_table.rs",
+    "tools/survey-env.py",
+    "tools/degct-env.sh",
+    "tools/DegctEnv.psm1",
+];
 
 /// What a file has to end in to be worth reading: the languages that have a helper, plus the
 /// docs, which name variables in prose.

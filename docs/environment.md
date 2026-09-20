@@ -55,7 +55,7 @@ Checked against the code rather than trusted, by `tests/environment_table.rs`: i
 tracked file for a variable spelled out in full or asked for by bare name through the helper for
 its language, compares what it finds with the rows below and with the count in this sentence,
 and fails with the block to paste. So a stale table is a failing test rather than a reader
-looking for a variable that has been renamed. 22 variables.
+looking for a variable that has been renamed. 21 variables.
 
 A TEST RATHER THAN A GENERATOR because what is wanted is enforcement: a build script that
 rewrote this file would dirty the working tree on every build, which every measurement's log
@@ -64,24 +64,23 @@ forgotten.
 
 | `DEGCT_ALL_COMMITTED_SAVES` | `tests/common/mod.rs` |
 | `DEGCT_ARMS` | `tools/measure-residue-arms.sh` |
+| `DEGCT_ASKED_LOG_DIR` | `tools/measure-symbolic.sh` |
 | `DEGCT_BUDGET_MB` | `tools/measure-residue-arms.sh` |
-| `DEGCT_CONVERSATION` | `AGENTS.md`, `CLAUDE.md`, `docs/modelling-gaps.md`, `src/core/env.rs`, `tools/degct-env.sh`, `tools/measurement_common.py` |
+| `DEGCT_CONVERSATION` | `AGENTS.md`, `CLAUDE.md`, `docs/modelling-gaps.md`, `src/core/env.rs` |
 | `DEGCT_GIT_INDEX_FILE` | `build.rs` |
-| `DEGCT_HEADER` | `tools/measurement_common.py` |
 | `DEGCT_LOG_DIR` | `tools/measure-symbolic.sh`, `tools/run-logged.sh` |
 | `DEGCT_MARKING` | `AGENTS.md`, `CLAUDE.md`, `performance/README.md`, `src/bridge.rs`, `tools/measurement_common.py`, `tools/menu-costs-diff.py` |
 | `DEGCT_MEASUREMENT` | `tools/measure-symbolic.sh` |
-| `DEGCT_MENUS_OUT` | `AGENTS.md`, `CLAUDE.md`, `performance/README.md`, `tools/DegctEnv.psm1`, `tools/degct-env.sh`, `tools/measure-menus.py`, `tools/measurement_common.py` |
-| `DEGCT_NOLIMIT` | `src/core/env.rs`, `tools/DegctEnv.psm1`, `tools/degct-env.sh`, `tools/measurement_common.py` |
-| `DEGCT_OUT` | `tools/degct-env.sh` |
+| `DEGCT_NOLIMIT` | `src/core/env.rs`, `tools/measurement_common.py` |
+| `DEGCT_OUT` | `tools/measure-residue-arms.sh` |
+| `DEGCT_OVERRIDE` | `tools/measure-residue-arms.sh` |
 | `DEGCT_POOLED_ROUNDS` | `src/symbolic/menu.rs` |
-| `DEGCT_ROW_SECONDS` | `tools/DegctEnv.psm1`, `tools/degct-env.sh` |
+| `DEGCT_REST` | `tools/measure-symbolic.sh` |
 | `DEGCT_RUN_KIND` | `AGENTS.md`, `CLAUDE.md`, `tools/measure-menus.py`, `tools/measurement_common.py`, `tools/run-logged.sh` |
 | `DEGCT_RUN_LOG` | `tools/measurement_common.py`, `tools/run-logged.sh` |
 | `DEGCT_RUN_LOG_DIR` | `tools/measure-symbolic.sh`, `tools/measurement_common.py`, `tools/run-logged.sh` |
 | `DEGCT_RUN_NAME` | `tools/measure-symbolic.sh` |
 | `DEGCT_SEARCHES` | `tools/measure-residue-arms.sh` |
-| `DEGCT_THREAD` | `tools/measure-residue-arms.sh` |
 | `DEGCT_VAR_ORDER` | `src/symbolic/var_order.rs` |
 | `DEGCT_WEIGH_FRONTS` | `src/symbolic/backward.rs` |
 

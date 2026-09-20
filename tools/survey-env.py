@@ -18,10 +18,11 @@ Where they would disagree, the test is right and this is the bug.
 
 ## What it does not count
 
-A read inside the helper that DEFINES the door - `src/core/env.rs` asking for a name in its own
-unit tests - is the helper testing itself rather than an option anybody passes. The Python and
-shell helpers are not excluded, because they read variables of their own besides defining the
-door, and those reads are real.
+A read inside a file that IS the door - `src/core/env.rs`, `tools/degct-env.sh`,
+`tools/DegctEnv.psm1` - is the helper explaining or testing itself rather than an option anybody
+passes. Those three take a name as a parameter and read nothing of their own, so every name in
+them is an example. `tools/measurement_common.py` is NOT excluded: it defines the Python door and
+also reads variables of its own, and those reads are real.
 
 A call that WRITES - `env::pass`, `env_for_child`, `degct_env_set` - is printed apart from the
 reads. A variable that is only ever written is one this project hands DOWN rather than one it is
@@ -80,7 +81,20 @@ BARE = [
 # Calls that hand a value DOWN rather than read one.
 WRITERS = frozenset({"env::pass(", "env_for_child(", "degct_env_set ", "Set-DegctEnv "})
 
-# The files that are NOTHING but the door, whose own reads are self-tests.
+# The files ABOUT the variables, skipped entirely. The same four `tests/environment_table.rs`
+# skips, and for the same reason: a file whose subject is the list cannot be evidence for it.
+ABOUT = frozenset(
+    {
+        "docs/environment.md",
+        "tests/environment_table.rs",
+        "tools/survey-env.py",
+        "tools/degct-env.sh",
+        "tools/DegctEnv.psm1",
+    }
+)
+
+# The file that is nothing but the Rust door, whose own reads are self-tests. Not in ABOUT,
+# because it is ordinary code that happens to test itself rather than a document about the list.
 HELPERS_ONLY = frozenset({"src/core/env.rs"})
 
 # Which piece of the project a path belongs to. FIRST MATCH WINS, so the order is the rule: the
@@ -121,9 +135,9 @@ SUFFIXES = (".rs", ".py", ".sh", ".psm1", ".ps1", ".cs", ".md")
 #   `${DEGCT_RUN_NAME}` directly rather than through `degct_env`, which is the helper the
 #   project mandates being bypassed.
 #
-#   A PHANTOM. `DEGCT_PROFILE` and `DEGCT_OUT` appear only in a doc comment and a usage example.
-#   Nothing sets them and nothing reads them, and they have rows in `docs/environment.md`
-#   anyway, because a prose mention is what puts a row there.
+#   A PHANTOM. `DEGCT_PROFILE` appears only in a doc comment in `performance/seen_profile.rs`.
+#   Nothing sets it and nothing reads it, and it had a row in `docs/environment.md` anyway,
+#   because a prose mention is what puts a row there.
 NO_READ = "no recognised read"
 
 
@@ -158,6 +172,13 @@ def asks_in(text):
                 if "foreign=True" in line[match.start() : line.find(")", match.end())]:
                     continue
                 found.append((match.group(1).removeprefix(PREFIX), call, number))
+        # `env_for_child(X=.., Y=..)` NAMES ITS VARIABLES AS KEYWORDS rather than as a quoted
+        # first argument, so the shape above cannot see them. `tests/environment_table.rs` has
+        # the same special case, and a difference here is a difference between the two.
+        for match in re.finditer(r"env_for_child\(([^)]*)\)", line):
+            for keyword in re.finditer(r"([A-Za-z_][A-Za-z0-9_]*)\s*=", match.group(1)):
+                found.append((keyword.group(1).removeprefix(PREFIX), "env_for_child(", number))
+
         for call in BARE:
             for match in re.finditer(re.escape(call) + r"([A-Za-z0-9_]+)", line):
                 found.append((match.group(1).removeprefix(PREFIX), call, number))
@@ -173,8 +194,11 @@ def sites(root):
     """Every asking site in the repository, keyed on the bare variable name."""
     where = collections.defaultdict(list)
     for path in tracked_files(root):
-        # The doc and the test that guards it name every variable by construction.
-        if path in ("tests/environment_table.rs", "docs/environment.md"):
+        # THE FILES ABOUT THE VARIABLES, skipped entirely rather than only for their reads: the
+        # doc and the test that guards it name every variable by construction, and a door names
+        # one to show how it is opened. The same four `tests/environment_table.rs` skips, because
+        # this and that are supposed to agree.
+        if path in ABOUT:
             continue
         text = (root / path).read_text(encoding="utf-8", errors="replace")
         for name, call, number in asks_in(text):

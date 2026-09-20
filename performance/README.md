@@ -84,7 +84,7 @@ down costs that group and nothing else:
 
     tools/measure-menus.py 368 631                        # just these
     tools/measure-menus.py --workers 1 all                # every group, one at a time
-    DEGCT_MENUS_OUT=performance/logs/whole-game tools/measure-menus.py all
+    tools/measure-menus.py --out performance/logs/whole-game all
     tools/measure-menus.py --workers 1 --runs 3 all       # three runs, combined
 
 `--runs N` takes N runs back to back, each in `run-1` ... `run-N` under the run's folder, and
@@ -104,12 +104,12 @@ The heavy groups are measured one at a time and the rest several at once, and th
 decides where that switch is from what it has just measured; see the driver's module doc and
 `Settling` in `tools/measurement_common.py`.
 
-`DEGCT_MENUS_OUT` names the folder instead of generating one, and THAT is the resume: run the
+`--out` names the folder instead of generating one, and THAT is the resume: run the
 same command again after a kill, a crash or a reboot and every group already in that folder
 is skipped. Rows are appended as they finish, so an interruption costs the group in flight and
 nothing else.
 
-A PATH places the folder; ONE PLAIN WORD labels it - `DEGCT_MENUS_OUT=qy5t-before` - and the
+A PATH places the folder; ONE PLAIN WORD labels it - `--out qy5t-before` - and the
 label rides as a suffix on the name the run would have had anyway,
 `..._measure-menus_menus__qy5t-before/`, so the folder still carries its transcript's name.
 The same word later resumes the most recent folder carrying it.

@@ -165,7 +165,7 @@ def qualified(name):
 
 
 def env(name, fallback=None, foreign=False):
-    """One of ours, by its BARE name: `env("MENUS_OUT")` reads DEGCT_MENUS_OUT.
+    """One of ours, by its BARE name: `env("RUN_KIND")` reads DEGCT_RUN_KIND.
 
     ## Why a helper rather than a convention
 
@@ -213,10 +213,14 @@ def env_int(name, fallback):
 def env_for_child(**names):
     """An environment dict for a child process, with our names qualified.
 
-    Handed the BARE names - `env_for_child(CONVERSATION="631", HEADER="1")` - so the same
-    rule that governs reading governs setting, and a driver cannot pass a child a variable the
-    measurement will not recognise. Everything already in os.environ is carried through
-    untouched, because a child needs PATH and the rest.
+    Handed the BARE names - `env_for_child(RUN_LOG_DIR=...)` - so the same rule that governs
+    reading governs setting, and a driver cannot pass a child a variable the measurement will not
+    recognise. Everything already in os.environ is carried through untouched, because a child
+    needs PATH and the rest.
+
+    ONE CALLER LEFT, and what it hands down says what this is for now. A driver's own options go
+    to a child as ARGUMENTS - de-3dx9 - so the only thing still passed this way is what the
+    wrapper chain passes: the tree a folder is to be named in. See `run_kind`.
     """
     child = dict(os.environ)
     for name, value in names.items():
@@ -293,6 +297,20 @@ def run_kind(asked):
     UNKNOWN COUNTS AS TIMING, for the reason `measure-menus.takes_cold_run` gives: an unwrapped
     invocation that says nothing about itself pays the cold run rather than risk a comparison
     taken without one.
+
+    ## Why the wrapper's half is still a variable - de-3dx9
+
+    DEGCT_RUN_KIND, DEGCT_RUN_LOG and DEGCT_RUN_LOG_DIR are the three this project kept, and
+    the ruling is written where they are SET, in `tools/run-logged.sh`. The short of it: that
+    script wraps a command it does not parse and has never heard of, so it cannot put a flag on
+    somebody else's command line, and a tool that asked it for the name instead would derive a
+    SECOND one - the wrapper names a run for the instant it started, and an answer fetched a
+    moment later is a different instant. The pairing between a transcript and a folder of rows
+    is the thing being handed down, and it has to be the one already decided.
+
+    THIS END IS THE READING END, and it reads only what a wrapper set. Nothing here sets them,
+    and a person who sets one by hand is overriding the wrapper deliberately - which is why
+    `asked` wins over the variable rather than the other way round.
     """
     return asked or env("RUN_KIND", PERFORMANCE_KIND)
 
@@ -323,18 +341,18 @@ def in_tree(folder, kind):
     return folder
 
 
-def folder_for(value, tool, verb, out_variable, kind):
+def folder_for(value, tool, verb, out_option, kind):
     """Where a driver told `value` should write: a path as given, or a label's folder.
 
     ## Two things one variable can be
 
-    A PATH is taken literally, which is what it always was: `DEGCT_MENUS_OUT=/tmp/rows` writes
+    A PATH is taken literally, which is what it always was: `--out /tmp/rows` writes
     there and resumes there.
 
     A LABEL - one plain word, no separators - names the run instead of placing it, and is a
     SUFFIX on the name the run would have had anyway:
 
-        DEGCT_MENUS_OUT=qy5t-before
+        --out qy5t-before
         -> performance/logs/2026-09-18/2026-09-18_10,07,41_7a2d23f_measure-menus_menus__qy5t-before/
 
     WHY THE LABEL EXISTS. Naming the folder by hand is the common case, and a hand-named folder
@@ -376,11 +394,11 @@ def folder_for(value, tool, verb, out_variable, kind):
     )
     if existing:
         return existing[-1]
-    base = run_folder(tool, verb, out_variable, kind)
+    base = run_folder(tool, verb, out_option, kind)
     return base.with_name(base.name + LABEL_SEPARATOR + value)
 
 
-def run_folder(tool, verb, out_variable, kind):
+def run_folder(tool, verb, out_option, kind):
     """One folder for this run, named the way every run log in this repository is named.
 
     THE SAME NAME AS THE TRANSCRIPT, EXACTLY, where there is one. A run writes two things -
@@ -423,7 +441,7 @@ def run_folder(tool, verb, out_variable, kind):
     name.
 
     `tool` and `verb` are what the run calls itself where the wrapper is not there to be asked:
-    the driver's own name, and what it produced. `out_variable` is the driver's OUT name, said
+    the driver's own name, and what it produced. `out_option` is the driver's own option for naming a folder, said
     in the refusal when there is no bash to ask - naming the folder is how a run gets one
     without the wrapper.
     """
@@ -433,7 +451,7 @@ def run_folder(tool, verb, out_variable, kind):
 
     folder = subprocess.run(
         [
-            bash(f", or name the run's folder with {qualified(out_variable)}"),
+            bash(f", or name the run's folder with {out_option}"),
             str(ROOT / "tools" / "run-logged.sh"),
             "--folder-only",
             tool,
