@@ -4,26 +4,25 @@
 //! ## Why a struct, and why one struct
 //!
 //! These are read a long way from any `main`: the variable ordering inside
-//! `DataLayout::for_group`, which is three calls below wherever a search is set up, and the
-//! pooled scheduler inside `menu::mark_menu_blocking`, which is inside the marking itself. Both
-//! used to read the environment at the point of use, which is how an option comes to be decided
-//! somewhere no caller can see - and how a measurement can be taken under an arm nobody asked
-//! for, because nothing between the command line and the read says which arm is in force.
+//! `DataLayout::for_group` is three calls below wherever a search is set up. An option read at
+//! the point of use is one decided somewhere no caller can see - and a measurement can then be
+//! taken under an arm nobody asked for, because nothing between the command line and the read
+//! says which arm is in force.
 //!
 //! DEPTH IS NOT A REASON TO LEAVE THEM THERE. The objection to threading them - that it would
 //! change signatures having nothing else to do with the option - is an objection to threading
 //! options ONE AT A TIME. This is one parameter, and the next arm to arrive costs no signature
 //! at all. See de-3dx9.
 //!
-//! ONE STRUCT RATHER THAN ONE PER CONSUMER, because the two consumers are the same KIND of
-//! thing - an arm a measurement turns on - and they are set together, from one command line, by
-//! whoever is taking the measurement. A callable that carries an arm it does not read is the
-//! price, and it is smaller than two structs travelling the same route.
+//! ONE STRUCT EVEN AT ONE ARM, because what it carries is a KIND of thing - an arm a measurement
+//! turns on - rather than one particular option, and the next one costs no signature. A callable
+//! that carries an arm it does not read is the price, and it is smaller than threading options
+//! one at a time again.
 //!
 //! ## The default is what ships, and that is the whole point
 //!
-//! `Arms::default()` is the shipped algorithm: the interning variable order, and no pooled
-//! rounds. Every path the game takes builds one, so a default measurement, a default in-game
+//! `Arms::default()` is the shipped algorithm: the interning variable order. Every path the game
+//! takes builds one, so a default measurement, a default in-game
 //! run and a default offline test all do what the product does - which is the rule in CLAUDE.md
 //! that a green test or a measured number must describe code the game runs.
 
@@ -38,138 +37,6 @@ pub struct Arms {
     /// so an ordering is worth MEASURING rather than worth assuming, which is why this is an
     /// arm at all rather than a decision taken once.
     pub var_order: Ordering,
-
-    /// How a round of the exact marking searches for the nearest target.
-    ///
-    /// THREE SEARCHES FOR ONE QUESTION, and they disagree about cost rather than about the
-    /// answer. See [`Rounds`] for what each one does and what it measured.
-    pub rounds: Rounds,
-}
-
-/// How a round of the exact marking searches, and what each way costs.
-///
-/// ## The measured comparison
-///
-/// Conversation 761 at link-deepest-10 with the limits off - the group the arms were built for -
-/// as medians of three runs with a cold pass discarded. Each arm holds its node count to the
-/// node across its runs, so the nodes are the arm and the seconds are the machine.
-///
-/// ```text
-///                        carried (bea707f)      dropped (35fccbc)
-///   per-target backward  131,399 ms  93.4M      5,198 ms  4.81M     25.3x
-///   pooled meeting        20,593 ms  14.7M      8,910 ms  6.44M      2.3x
-/// ```
-///
-/// THE RANKING IS THE REDUNDANT COUNTERS' DOING. They were worth an order of magnitude more to
-/// the per-target arm than to the pool, so the pool wins by 6.4x with them and loses by 1.7x
-/// without. The reading that fits, though nothing measures it on its own: one pooled race pays
-/// for a wide variable once a round where a per-target search pays for it again per target, so a
-/// redundant variable is worth most to the arm that revisits it.
-///
-/// ## All three, at two depths
-///
-/// Same group and same three-run medians, with the counters dropped:
-///
-/// ```text
-///                        unseen 5                 unseen 10
-///   per-target backward    4,262 ms  4.41M          5,193 ms  4.81M
-///   pooled meeting         6,249 ms  6.34M          8,874 ms  6.44M
-///   per-target meeting     6,715 ms  6.34M        454,450 ms   131M   settled 3 of 8
-/// ```
-///
-/// THE LAST FIGURE IS NOT A TIMING. At link-deepest-10 the per-target meeting does not answer
-/// the menu at all: it holds 27x the nodes the default holds and settles three options of eight,
-/// so its milliseconds are a floor rather than a cost. It reads half again past the five-minute
-/// wall because the clock is checked BETWEEN LAYERS and a layer at that depth is minutes - see
-/// de-j8eh, which is about the wall rather than about this arm.
-///
-/// WHAT COSTS IS THE FORWARD FRONT'S DEPTH, and not that it is rebuilt each round. Timed either
-/// side of the meeting, per round:
-///
-/// ```text
-///               front builds   forward layers     backward layers
-///   unseen 5     3 in 0 ms     21 in     165 ms   118 in  3,836 ms
-///   unseen 10    4 in 0 ms     43 in 440,008 ms   241 in 10,128 ms
-/// ```
-///
-/// Building a front costs nothing measurable, and the same walk is 165 ms at 21 layers and 440
-/// SECONDS at 43: the front's diagram grows exponentially with depth, so the forward half is free
-/// while it stays shallow and ruinous once it has to go deep. The pool never takes it deep,
-/// because the first meeting over ALL targets is the nearest one and the round stops there. The
-/// per-target arm has to answer each target the bound does not skip, so one distant target drags
-/// the shared front into the exponential region, where it then sits for the rest of the round.
-///
-/// Weighing fronts by entry count instead, which is what this arm was measured with when it was
-/// first evaluated, makes it worse again: 21,874 ms and 16.8M nodes at unseen 5.
-///
-/// The arms do not always mark the same options, and that is not a defect in any of them - see
-/// the rule in CLAUDE.md. `tests/menu_oracle.rs` runs every case under every arm, which is what
-/// holds each one to the distances exhaustive search finds.
-///
-/// It is an arm at all because the exact marking runs on 133 menus of 389. See de-y04p, and
-/// de-t329 for the ceiling: step 2 costs 451 ms across the whole game, over the 48 menus that
-/// reach it.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
-pub enum Rounds {
-    /// ONE BACKWARD CRAWL PER TARGET, in bound order, stopping at the first target whose bound
-    /// cannot beat the best distance proven this round. What the product does.
-    #[default]
-    PerTargetBackward,
-
-    /// PER TARGET, MEETING IN THE MIDDLE. The bound order, the attribution and what a round
-    /// claims are the default's; only the direction each pass walks differs, so a comparison
-    /// against the default says what meeting is worth on its own. The forward walk is the same
-    /// for every target in a round - the same options, the same cut - so it is built once and
-    /// grown as far as each target asks.
-    PerTargetMeeting,
-
-    /// THE SAME, WITH THE FRONT DROPPED BETWEEN TARGETS. Each target walks a forward front of
-    /// its own, as deep as that target needs, and it goes when its target is answered.
-    ///
-    /// The pair differs in one thing, which is what the sharing is worth: 6,108 ms against
-    /// 6,715 at unseen 5, so re-walking the shallow layers costs less than carrying the deep
-    /// ones, and this is the better of the two meeting arms - past the pool's 6,249 as well.
-    ///
-    /// AND IT CHANGES NOTHING AT DEPTH. At unseen 10 both spend 130,981,877 diagram nodes, to
-    /// the node, and both settle three options of eight before the wall. Sharing was never what
-    /// made the deep case unanswerable; the depth itself is.
-    PerTargetMeetingUnshared,
-
-    /// THE SAME AGAIN, SEEDED ONLY FROM THE OPTIONS THAT CAN GET THERE. A front is a union over
-    /// the options it starts from, and the union's breadth is what drives its depth - so a
-    /// target reachable from two options of eight is hunted from a front a quarter the width.
-    ///
-    /// The structural walk already knows which those are: `choice_bounds` is taken per option
-    /// per round to build the bound, and says which targets that option has any route to at all.
-    /// Collapsing it to a minimum throws that away, and this arm keeps it.
-    ///
-    /// WHICH OPTION WON IS THEN AN INDEX INTO THE SEEDS, not into the menu, and the caller maps
-    /// it back - a narrower front cannot credit an option it never walked from.
-    PerTargetMeetingNarrow,
-
-    /// ONE OPTION AT A TIME, so a front is never a union at all. Each option meets the target
-    /// from a front seeded by itself alone, and the round takes the least distance over them.
-    ///
-    /// THE NARROWEST A FORWARD FRONT CAN BE, which is the point: breadth drives depth, depth is
-    /// exponential, and a filter can only remove options a target is unreachable from - none, on
-    /// a hub-shaped group. This removes seven of eight by construction.
-    ///
-    /// AND IT IS THE WORST OF EVERY ARM HERE, BY TWO ORDERS OF MAGNITUDE. At link-deepest-FIVE,
-    /// where every union-seeded arm answers in four to seven seconds, this one spends 437,405 ms
-    /// and 118 million nodes to run TWO passes, settling nothing and starring nothing.
-    ///
-    /// WHICH IS WHAT NARROWING ACTUALLY BUYS: breadth is traded for depth, and depth is the
-    /// exponential axis. A union meets at the SHALLOWEST depth any of its options offers, while
-    /// a single-option front must be grown to that option's own distance - so the arm that
-    /// carries the fewest seeds does the most work. The pool is the widest arm and the best of
-    /// the meeting family for the same reason, read the other way round.
-    PerTargetMeetingPerOption,
-
-    /// ONE POOL FOR THE WHOLE ROUND, forward and backward. The shared walk of the meeting arm,
-    /// plus deciding the round's winner by whose crawl meets first - which proves nothing per
-    /// target, so the bound and the unreachable set stay empty and the next round starts from
-    /// nothing.
-    PooledMeeting,
 }
 
 impl Arms {

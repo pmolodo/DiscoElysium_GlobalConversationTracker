@@ -3,7 +3,7 @@
 use lookahead_engine::core::types::{DialogueNodeId, SeenState, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::oracle;
-use lookahead_engine::symbolic::arms::{Arms, Rounds};
+use lookahead_engine::symbolic::arms::Arms;
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
@@ -19,44 +19,11 @@ use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 mod common;
 
-/// Every arm a menu can be marked under.
-///
-/// AN ARM CHANGES THE ROUTE AND NOT THE CLAIM, so a case is worth nothing against one arm alone:
-/// what this file checks is that a marking's distances are the distances exhaustive search finds,
-/// and each arm makes that claim for itself. An arm no case here runs is an arm nothing checks.
-fn arms() -> [Arms; 6] {
-    [
-        Rounds::PerTargetBackward,
-        Rounds::PerTargetMeeting,
-        Rounds::PerTargetMeetingUnshared,
-        Rounds::PerTargetMeetingNarrow,
-        Rounds::PerTargetMeetingPerOption,
-        Rounds::PooledMeeting,
-    ]
-    .map(|rounds| Arms {
-        rounds,
-        ..Arms::shipped()
-    })
-}
-
-/// The whole menu, under every arm, each from its own manager.
-fn compare(
-    graph: &LookAheadGraph,
-    options: &[DialogueNodeId],
-    world: &dyn ILookAheadWorld,
-    seen_state: &impl Fn(DialogueNodeId) -> SeenState,
-) {
-    for arm in arms() {
-        compare_under(arm, graph, options, world, seen_state);
-    }
-}
-
 /// WHICH OPTION WON A ROUND IS READ OFF THE MARKING rather than asserted, because where several
 /// options are equally near, which one a round takes is the search's to decide and two arms may
 /// decide it differently. What is asserted of the winner is its CLASS and its DISTANCE, and that
 /// its witness is unclaimed and really that far away - the claim, which no arm gets to vary.
-fn compare_under(
-    arms: Arms,
+fn compare(
     graph: &LookAheadGraph,
     options: &[DialogueNodeId],
     world: &dyn ILookAheadWorld,
@@ -89,7 +56,7 @@ fn compare_under(
             compiler: &mut compiler,
             world,
             counter_cap: 16,
-            arms,
+            arms: Arms::shipped(),
         },
         seen_state,
         &contestants,
@@ -165,7 +132,7 @@ fn compare_under(
         }
     }
     let actual: Vec<_> = found.marks.iter().map(|m| (m.best, m.distance)).collect();
-    assert_eq!(actual, expected, "menu {options:?} under {arms:?}");
+    assert_eq!(actual, expected, "menu {options:?}");
 }
 
 #[test]

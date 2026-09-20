@@ -34,8 +34,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use super::arms::Rounds;
-use super::backward::{Backward, Budget as PassBudget, ForwardFront, Nearest, Position, Round};
+use super::backward::{Backward, Budget as PassBudget, Nearest, Position};
 
 use super::known::GroupShape;
 use super::search::Search;
@@ -643,22 +642,13 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
                 .iter()
                 .map(|i| contestants[*i].position.clone())
                 .collect();
-            // PER OPTION FIRST, THEN COLLAPSED. The bound a round works from is the least over
-            // the menu, but which options can reach a target AT ALL is a different fact and the
-            // same walk answers both - so it is kept rather than summed away. See
-            // `Rounds::PerTargetMeetingNarrow`, which seeds a front from only the options a
-            // target is structurally reachable from.
-            let reach: Vec<_> = positions
-                .iter()
-                .map(|position| choice_bounds(graph, position, &cut))
-                .collect();
             let mut bounds = HashMap::<DialogueNodeId, usize>::new();
-            for reached in &reach {
-                for (id, distance) in reached {
+            for position in &positions {
+                for (id, distance) in choice_bounds(graph, position, &cut) {
                     bounds
-                        .entry(*id)
-                        .and_modify(|d| *d = (*d).min(*distance))
-                        .or_insert(*distance);
+                        .entry(id)
+                        .and_modify(|d| *d = (*d).min(distance))
+                        .or_insert(distance);
                 }
             }
             for (id, distance) in &proven {
@@ -719,65 +709,12 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
                 break 'classes;
             }
             drop(pass);
-            // ONE POOL FOR THE WHOLE ROUND, where asked for. The forward half of a meeting
-            // search is the same walk for every target in the round - the same options, the
-            // same cut - so it is walked once and raced by every target's backward crawl, and
-            // the first meeting is the least distance over every option and every target still
-            // in play. It proves nothing per target, so the bound and the unreachable set stay
-            // empty and the next round starts from nothing. See `Backward::nearest_choices`.
-            // ONE FORWARD FRONT FOR THE ROUND, where the passes are meeting ones. It is the same
-            // walk for every target in the round, so it is built here and grown by whichever
-            // target needs it deeper. Rebuilt each round because the cut has changed: a round
-            // cuts the winning option, and a front walked under the old cut would keep routes
-            // the new one refuses.
-            let mut shared_front = if search.arms.rounds == Rounds::PerTargetMeeting {
-                match ForwardFront::of(search.reborrow(), &positions, &cut) {
-                    Some(front) => Some(front),
-                    None => {
-                        failure = Some((StoppedBy::Incomplete, true));
-                        break 'classes;
-                    }
-                }
-            } else {
-                None
-            };
-
             let mut best: Option<(usize, usize, DialogueNodeId)> = None;
-            if search.arms.rounds == Rounds::PooledMeeting {
-                let left = budget.wall.saturating_sub(began.elapsed());
-                if left.is_zero() {
-                    failure = Some((StoppedBy::Time, false));
-                    break 'classes;
-                }
-                answer.passes += 1;
-                match Backward::nearest_choices(
-                    search.reborrow(),
-                    &in_play,
-                    &cut,
-                    &pass_budget(left),
-                    &known,
-                    &positions,
-                ) {
-                    Round::Found {
-                        distance,
-                        winner,
-                        target,
-                    } => best = Some((distance, hunting[winner], target)),
-                    Round::Unreachable => break,
-                    Round::Unfinished { out_of_memory } => {
-                        failure = Some((StoppedBy::Incomplete, out_of_memory));
-                        break 'classes;
-                    }
-                }
-            }
 
             // IN BOUND ORDER, one target at a time, stopping at the first whose bound cannot
             // beat the best distance proven this round - ties included, since a tie cannot
             // change which distance is least.
             for &target in &in_play {
-                if search.arms.rounds == Rounds::PooledMeeting {
-                    break;
-                }
                 if best.is_some_and(|(nearest, _, _)| bounds[&target] >= nearest) {
                     break;
                 }
@@ -786,155 +723,19 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
                     failure = Some((StoppedBy::Time, false));
                     break 'classes;
                 }
-                // ONE PASS PER TARGET, except where the matrix arm runs one per option and
-                // counts them itself.
-                if search.arms.rounds != Rounds::PerTargetMeetingPerOption {
-                    answer.passes += 1;
-                }
-                // ONE FRONT OF ITS OWN, where the arm asks for no sharing. It is built here, grown
-                // only as far as this target needs, and dropped with the iteration - so the
-                // deepest layers one target drove it to are not carried into the next one's
-                // search. See `Rounds::PerTargetMeetingUnshared`.
-                //
-                // NARROW, WHERE THE ARM ASKS FOR THAT: seeded from the options this target is
-                // structurally reachable from rather than from all of them. `seeds` is the menu
-                // itself for every other arm, so one path serves all of them and the index a
-                // winner comes back as is an index into whatever seeded the front.
-                let seeds: Vec<Position> = match search.arms.rounds {
-                    Rounds::PerTargetMeetingNarrow => positions
-                        .iter()
-                        .zip(&reach)
-                        .filter(|(_, reached)| reached.contains_key(&target))
-                        .map(|(position, _)| position.clone())
-                        .collect(),
-                    _ => positions.clone(),
-                };
-                let seeded_by: Vec<usize> = match search.arms.rounds {
-                    Rounds::PerTargetMeetingNarrow => reach
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, reached)| reached.contains_key(&target))
-                        .map(|(option, _)| option)
-                        .collect(),
-                    _ => (0..positions.len()).collect(),
-                };
-                // A TARGET NOTHING REACHES IS NOT IN PLAY, since `bounds` holds it only where
-                // some option's structural walk found it - so this cannot empty. It is checked
-                // rather than assumed because an empty front would meet nothing and read as a
-                // target that is genuinely out of reach.
-                if seeds.is_empty() {
-                    unreachable.insert(target);
-                    continue;
-                }
-                let mut own_front = if matches!(
-                    search.arms.rounds,
-                    Rounds::PerTargetMeetingUnshared | Rounds::PerTargetMeetingNarrow
+                answer.passes += 1;
+                match Backward::nearest(
+                    search.reborrow(),
+                    target,
+                    &cut,
+                    &pass_budget(left),
+                    &known,
+                    &positions,
                 ) {
-                    match ForwardFront::of(search.reborrow(), &seeds, &cut) {
-                        Some(front) => Some(front),
-                        None => {
-                            failure = Some((StoppedBy::Incomplete, true));
-                            break 'classes;
-                        }
-                    }
-                } else {
-                    None
-                };
-                // THE MATRIX, WHERE THE ARM ASKS FOR IT: one meeting per option per target, each
-                // from a front seeded by that option alone. Both ends are then as narrow as they
-                // can be, and no front is a union.
-                //
-                // PRUNED ON THE OPTION AXIS TOO, by the same structural bounds the target axis
-                // uses - nearest bound first, and stop once a bound cannot beat what this target
-                // already has. AGAINST THIS TARGET'S BEST AND NOT THE ROUND'S, because the
-                // distance this loop returns is recorded as what the target IS: pruning against
-                // another target's answer would leave it too large, and a bound that is too
-                // large lets a later round skip a target that was nearer than it claimed.
-                let found = if search.arms.rounds == Rounds::PerTargetMeetingPerOption {
-                    let mut candidates: Vec<_> = reach
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(option, reached)| {
-                            reached.get(&target).map(|bound| (*bound, option))
-                        })
-                        .collect();
-                    candidates.sort_unstable();
-                    let mut nearest: Option<(usize, usize)> = None;
-                    let mut stopped = None;
-                    for (bound, option) in candidates {
-                        if nearest.is_some_and(|(distance, _)| bound >= distance) {
-                            break;
-                        }
-                        let left = budget.wall.saturating_sub(began.elapsed());
-                        if left.is_zero() {
-                            stopped = Some(Nearest::Unfinished {
-                                out_of_memory: false,
-                            });
-                            break;
-                        }
-                        answer.passes += 1;
-                        let seed = std::slice::from_ref(&positions[option]);
-                        let Some(mut front) = ForwardFront::of(search.reborrow(), seed, &cut)
-                        else {
-                            stopped = Some(Nearest::Unfinished {
-                                out_of_memory: true,
-                            });
-                            break;
-                        };
-                        match Backward::nearest_meeting(
-                            search.reborrow(),
-                            target,
-                            &cut,
-                            &pass_budget(left),
-                            &known,
-                            seed,
-                            &mut front,
-                        ) {
-                            Nearest::Found { distance, .. } => {
-                                if nearest.is_none_or(|(had, _)| distance < had) {
-                                    nearest = Some((distance, option));
-                                }
-                            }
-                            Nearest::Unreachable => {}
-                            unfinished => {
-                                stopped = Some(unfinished);
-                                break;
-                            }
-                        }
-                    }
-                    // AN UNFINISHED PASS DISCARDS WHAT THE OTHERS FOUND, because what this loop
-                    // returns is claimed as the target's exact distance, and a run that stopped
-                    // early has only searched some of the options that could beat it.
-                    match (stopped, nearest) {
-                        (Some(unfinished), _) => unfinished,
-                        (None, Some((distance, winner))) => Nearest::Found { distance, winner },
-                        (None, None) => Nearest::Unreachable,
-                    }
-                } else if let Some(front) = shared_front.as_mut().or(own_front.as_mut()) {
-                    Backward::nearest_meeting(
-                        search.reborrow(),
-                        target,
-                        &cut,
-                        &pass_budget(left),
-                        &known,
-                        &seeds,
-                        front,
-                    )
-                } else {
-                    Backward::nearest(
-                        search.reborrow(),
-                        target,
-                        &cut,
-                        &pass_budget(left),
-                        &known,
-                        &positions,
-                    )
-                };
-                match found {
                     Nearest::Found { distance, winner } => {
                         proven.insert(target, distance);
                         if best.is_none_or(|(nearest, _, _)| distance < nearest) {
-                            best = Some((distance, hunting[seeded_by[winner]], target));
+                            best = Some((distance, hunting[winner], target));
                         }
                     }
                     Nearest::Unreachable => {
