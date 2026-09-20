@@ -90,7 +90,9 @@ mod common;
 const COUNTER_CAP: i32 = 16;
 
 /// The group that fails, and the ones that finish, to read it against.
-const GROUPS: [i32; 6] = [362, 28, 368, 14, 631, 1030];
+/// The matrix's six, and 761 - the group every arm in de-ipzs was measured on, which this
+/// analysis predates and never covered.
+const GROUPS: [i32; 7] = [362, 28, 368, 14, 631, 1030, 761];
 
 fn main() {
     let Some(path) = common::conversation_index() else {
