@@ -125,6 +125,52 @@ changes with it in the same piece of work - otherwise a green test or a measured
 code the game does not run. The case that made this a rule: the menu matrix kept measuring menus
 with no walk after the shipped marking started cutting by one (de-r2xf.11).
 
+## Two algorithms marking a menu differently is not a defect in either
+
+**What a marking computes is GUIDANCE - which options lead the player towards content they have
+not seen - and that is a loosely defined goal rather than a function with one right answer.**
+Soonest by which measure of soonest? Towards which unseen thing, when they are not all worth the
+same? Spending how many of the menu's options to get there? Two algorithms can weigh those
+differently, both be a reasonable answer to where the player should go next, and star different
+options. Neither is wrong for disagreeing with the other.
+
+So a `starred` column that differs between two arms says the searches took different routes, or
+answered slightly different questions - not that one of them has a bug. What produces such a
+difference:
+
+- **Tie-break order, which is mostly just encounter order.** A round takes the first result it can
+  be sure nothing is LESS than, so among equals whichever arrives first wins, and a different
+  search arrives at a different one first. `menu::tied_targets_choose_one_winner_per_round` is
+  that case in miniature.
+- **A different distance metric.** Two arms that measure "soonest" differently are answering
+  slightly different questions, and each can be answering its own correctly.
+- Anything else that moves the order results are met in, or the bound they are accepted against.
+
+AND THE COUNT IS NO SHORTCUT EITHER. A different NUMBER of options starred is no more a defect
+than a different set: how many a menu marks falls out of how many rounds settled and what each
+round claimed, and an arm that reaches two targets through one option marks fewer than one that
+spends an option on each - which is a different idea of good guidance, not a worse execution of
+the same one. No column of this row lets a reader compare two arms and conclude a defect from the
+comparison alone.
+
+WHAT A DIFFERENCE IS GOOD FOR is asking which question each arm answered, and which of the two we
+would rather the player's menu answered. That is a judgement about guidance, taken by reading both
+answers against the dialogue. `tests/menu_oracle.rs` compares a marking against exhaustive
+concrete-state distances, so it settles whether an arm computes the distances IT claims - it does
+not make one arm's idea of guidance the standard the other has to meet.
+
+Two runs of the SAME arm differing is worth a look, but it is not proof of a defect either: a menu
+answered under a wall gives up where the wall falls, so a run that was interrupted at a different
+moment settles differently. `settled` and `partly` say whether that is what happened, and a
+difference among rows that all settled everything is the one that has no such explanation.
+
+None of this weakens the reason the column exists - de-2p8j.2, where a change that keeps the count
+while moving which options a menu recommends would read as no change at all in `rounds`. That is
+the shipped algorithm against ITSELF across a change, where no second search order is available to
+explain a difference away. The case that made this a rule: 761 stars 422,164,989,848 under the
+shipped arm and 422,416,164,989 under `--pooled-rounds`, and the pair was written up as a defect
+in one of them before anything asked what else could produce it (de-mqu3).
+
 ## Committed saves: never edit what the game wrote
 
 **A save that came from the game is never edited - above all one made in a real playthrough.**
