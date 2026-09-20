@@ -43,9 +43,11 @@ pub struct Arms {
     /// bound.
     ///
     /// OFF UNLESS ASKED, and the pool is the SLOWER of the two on the menu it was built for.
-    /// Measured 2026-09-19 at 16233b8, conversation 761 at link-deepest-10 with the limits off:
-    /// branch and bound answers in 4,810,836 diagram nodes and 6.2 seconds, the pool in
-    /// 6,444,119 and 10.7. What the pool once won by - tens of millions of nodes - was mostly a
+    /// Measured 2026-09-19 at ff1db64, conversation 761 at link-deepest-10 with the limits off,
+    /// medians of three runs with a cold pass discarded: branch and bound answers in 4,810,836
+    /// diagram nodes and 5.2 seconds, the pool in 6,444,119 and 8.9. Every run of each arm held
+    /// its arm's node count to the node, so the nodes are the arm and the seconds are the
+    /// machine. What the pool once won by - tens of millions of nodes - was mostly a
     /// redundant counter's doing, and dropping those took branch and bound from 93,353,567 nodes
     /// to the 4.8 million above without changing a mark. So a run measuring the pool is asking
     /// whether anything is left of its advantage, rather than turning on a known win.
