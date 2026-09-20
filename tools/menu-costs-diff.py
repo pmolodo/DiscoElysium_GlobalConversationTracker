@@ -42,7 +42,7 @@ it is a reading of the moment rather than of the machine.
 
 ## A different algorithm is warned about, not refused
 
-`DEGCT_MARKING` and the rest of `measurement_common.ALGORITHM_VARIABLES` differ between two folders
+The marking a run measured differs between two folders
 exactly when two algorithms are being compared, which is often the point. The difference is printed
 as a WARNING above the numbers, so they are not read as one algorithm's code changing.
 

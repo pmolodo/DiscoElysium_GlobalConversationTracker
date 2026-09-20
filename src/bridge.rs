@@ -2358,7 +2358,7 @@ pub fn mark_menu_as_shipped<F: Fn(DialogueNodeId) -> SeenState>(
         budget,
         shape,
         &returned,
-        // NO INERT CUT HERE. `DEGCT_MARKING=hybrid-spent` passes one - see
+        // NO INERT CUT HERE. The `hybrid-spent` arm passes one - see
         // `crate::symbolic::hub::spent_branches` for what it holds and where it may be applied.
         &HashSet::new(),
     )

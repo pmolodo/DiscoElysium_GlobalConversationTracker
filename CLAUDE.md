@@ -12,8 +12,8 @@ Genuinely instant things - `ls`, `git status`, reading a file - do not need it.
 
 ```sh
 tools/run-logged.sh --kind testing cargo full-suite -- cargo test --release
-DEGCT_CONVERSATION=631 tools/run-logged.sh --kind performance cargo shared-symbolic -- \
-  cargo run --release --example shared_symbolic
+tools/run-logged.sh --kind performance cargo menu-761 -- \
+  cargo run --release --example menu_matrix -- --conversation 761
 ```
 
 **`--kind` says which tree the log belongs in**, and the three are named the same way:
@@ -120,7 +120,7 @@ the walk a request carries and the hub cut it drives included - a default measur
 default in-game suite and a default offline test do the same.
 
 A different algorithm is for a comparison someone asked for, and is opt-in: a named arm such as
-`DEGCT_MARKING=hybrid-spent`, never the default. When the shipped algorithm changes, every default path
+`--marking hybrid-spent`, never the default. When the shipped algorithm changes, every default path
 changes with it in the same piece of work - otherwise a green test or a measured number describes
 code the game does not run. The case that made this a rule: the menu matrix kept measuring menus
 with no walk after the shipped marking started cutting by one (de-r2xf.11).

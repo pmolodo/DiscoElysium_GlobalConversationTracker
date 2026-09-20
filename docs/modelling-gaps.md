@@ -76,7 +76,7 @@ world although a dialogue action can change them.
 
 Where the guard compiler cannot build a formula, it leaves the guard undecided: both outcomes
 are open, which errs permissive. `GuardCompiler::fallback_reasons` counts them per group, and
-`tests/modelling_gaps.rs` names them for one group (`DEGCT_CONVERSATION`). The reasons are:
+`tests/modelling_gaps.rs` names them for the group it is about. The reasons are:
 
 | reason                                                                        | when                                                                                            |
 | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |

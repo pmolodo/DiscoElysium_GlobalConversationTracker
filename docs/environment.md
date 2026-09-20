@@ -4,6 +4,18 @@ Every environment variable this project defines is prefixed **`DEGCT_`**, and a 
 script in a session scratchpad uses **`DEGCTT_`**. The rule and the reasoning are in
 `CLAUDE.md`; this is the list.
 
+**There are five, and each one says at its own definition why it is not a CLI argument.** An
+option belongs on a command line, where it carries its own name, its own help and its own
+default, and where `--help` is never stale - so a driver's options are flags and a variable is
+what is left when a flag genuinely cannot do the job. See de-3dx9, which moved forty-five of
+them.
+
+**A shell script's own working variables carry the prefix too**, and are not in this table. The
+rule covers them because the collision that prompted it was a local - `GROUPS` is a built-in
+array whatever a script meant by it - but a variable a script assigns before it reads, never
+exports, and nothing else mentions is not an option anybody can set. `tests/environment_table.rs`
+tells the two apart, and the note there says why a table that listed both was mostly noise.
+
 ## Read them through the helper for your language, not by name
 
 The prefix is applied by a function so that a new variable is named right because there is no
@@ -21,9 +33,9 @@ whether it is set, set one, and read a FOREIGN one under its own name.
 that needs one gets a helper of its own, and `tests/environment_table.rs` gets the call shape to
 find it in the same change. Until then there is nothing for a door to open.
 
-Every one of them takes the **bare** name: `env("CONVERSATION")` reads `DEGCT_CONVERSATION`.
-They are all idempotent about an already-qualified name, because callers build names from both
-halves and `DEGCT_DEGCT_CONVERSATION` would be unset, silently, and read as a default.
+Every one of them takes the **bare** name: `env("RUN_KIND")` reads `DEGCT_RUN_KIND`. They are all
+idempotent about an already-qualified name, because callers build names from both halves and a
+doubled prefix would be unset, silently, and read as a default.
 
 ## What we do NOT rename
 
@@ -55,30 +67,30 @@ Checked against the code rather than trusted, by `tests/environment_table.rs`: i
 tracked file for a variable spelled out in full or asked for by bare name through the helper for
 its language, compares what it finds with the rows below and with the count in this sentence,
 and fails with the block to paste. So a stale table is a failing test rather than a reader
-looking for a variable that has been renamed. 17 variables.
+looking for a variable that has been renamed. 5 variables.
 
-A TEST RATHER THAN A GENERATOR because what is wanted is enforcement: a build script that
-rewrote this file would dirty the working tree on every build, which every measurement's log
-name would then carry as `-dirty`. Pasting by hand is fine as long as something fails when it is
-forgotten.
+**What each one is, and why it is not a flag.** The full argument lives at each definition; this
+is the shape of it.
+
+- **RUN_KIND, RUN_LOG and RUN_LOG_DIR** are one case. `tools/run-logged.sh` wraps `cargo`,
+  `dotnet`, a Python driver - anything - and adding a flag to somebody else's command line is
+  not a thing a wrapper may do. A tool that asked the wrapper for the name instead would derive
+  a SECOND one, since a run is named for the instant it started; the pairing between a
+  transcript and its rows has to be the one already decided, which means handing it over.
+- **ALL_COMMITTED_SAVES** forces the slow exhaustive pass over every committed save. Cargo owns
+  a test binary's command line, and this WIDENS three tests rather than selecting any, so
+  `#[ignore]` and `--ignored` do not fit either.
+- **MARKING** is not an option at all any more. Nothing sets it and no run can be asked for it:
+  it is the name a value was written under in the run records already in `performance/logs`,
+  read so that a later measurement can still be compared against them.
+
+The rows below are generated and pasted; the list above is the one to read.
 
 | `DEGCT_ALL_COMMITTED_SAVES` | `tests/common/mod.rs` |
-| `DEGCT_ARMS` | `tools/measure-residue-arms.sh` |
-| `DEGCT_ASKED_LOG_DIR` | `tools/measure-symbolic.sh` |
-| `DEGCT_BUDGET_MB` | `tools/measure-residue-arms.sh` |
-| `DEGCT_CONVERSATION` | `AGENTS.md`, `CLAUDE.md`, `docs/modelling-gaps.md`, `src/core/env.rs` |
-| `DEGCT_LOG_DIR` | `tools/measure-symbolic.sh`, `tools/run-logged.sh` |
-| `DEGCT_MARKING` | `AGENTS.md`, `CLAUDE.md`, `performance/README.md`, `src/bridge.rs`, `tools/measurement_common.py`, `tools/menu-costs-diff.py` |
-| `DEGCT_MEASUREMENT` | `tools/measure-symbolic.sh` |
-| `DEGCT_NOLIMIT` | `src/core/env.rs`, `tools/measurement_common.py` |
-| `DEGCT_OUT` | `tools/measure-residue-arms.sh` |
-| `DEGCT_OVERRIDE` | `tools/measure-residue-arms.sh` |
-| `DEGCT_REST` | `tools/measure-symbolic.sh` |
+| `DEGCT_MARKING` | `tools/measurement_common.py` |
 | `DEGCT_RUN_KIND` | `AGENTS.md`, `CLAUDE.md`, `tools/measure-menus.py`, `tools/measurement_common.py`, `tools/run-logged.sh` |
 | `DEGCT_RUN_LOG` | `tools/measurement_common.py`, `tools/run-logged.sh` |
 | `DEGCT_RUN_LOG_DIR` | `tools/measure-symbolic.sh`, `tools/measurement_common.py`, `tools/run-logged.sh` |
-| `DEGCT_RUN_NAME` | `tools/measure-symbolic.sh` |
-| `DEGCT_SEARCHES` | `tools/measure-residue-arms.sh` |
 
 ## Keeping this current
 

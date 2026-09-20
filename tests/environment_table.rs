@@ -23,6 +23,27 @@
 //!
 //! TWO IMPLEMENTATIONS OF "WHICH FILES NAME THIS VARIABLE" WOULD BE THE SAME DRIFT ONE LEVEL UP,
 //! so the script was deleted rather than kept beside this.
+//!
+//! ## Why it is still here with five rows to guard - de-3dx9.8
+//!
+//! The list went from fifty variables to five, and the obvious question is whether a test is
+//! worth keeping over a table a person can read at a glance. It is, and the run that shrank the
+//! list is the argument: this test caught three things in it that nobody was looking for.
+//!
+//! A ROW THAT SURVIVED ON A SENTENCE. Five variables stayed in the table after nothing read them,
+//! held there by an example in a helper's own header - because a MENTION is what puts a row here,
+//! and a helper naming a variable to show how the door works is a mention.
+//!
+//! A ROW FOR A VARIABLE THAT NEVER EXISTED. `command.env("GIT_INDEX_FILE", ..)` sets a variable
+//! GIT owns, and reading it as one of ours invented a `DEGCT_GIT_INDEX_FILE` that had a row for
+//! as long as the table has had rows.
+//!
+//! TEN ROWS OF A SCRIPT TALKING TO ITSELF, which is what [`is_a_script_local`] now tells apart.
+//!
+//! None of those is the drift the test was written for, and none would have been found by
+//! reading the table - they are what a reader BELIEVES when a table looks authoritative. A short
+//! list is a reason to keep a cheap guard rather than a reason to drop one: the shorter it is,
+//! the more each row is trusted.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -36,14 +57,15 @@ const TABLE: &str = "docs/environment.md";
 /// A file whose subject is the list cannot also be evidence for it: every name it uses to explain
 /// itself would become a row, and a name it stopped explaining would silently leave one.
 ///
-/// FOUR OF THEM. This file and `tools/survey-env.py` look for variables and name them as patterns
-/// to look for. The two shell HELPERS are the doors themselves - they take a name as a parameter
-/// and read nothing of their own - so every name in them is showing how the door works. Three
-/// rows survived in the table on the strength of an example in one of those headers, after
-/// nothing read the variables any more.
-const ABOUT: [&str; 4] = [
+/// FIVE OF THEM. This file and `tools/survey-env.py` look for variables and name them as patterns
+/// to look for. The three DOORS - one per language that has one - take a name as a parameter and
+/// read nothing of their own, so every name in them is showing how the door works. Five rows
+/// survived in the table on the strength of an example in one of those headers, after nothing
+/// read the variables any more.
+const ABOUT: [&str; 5] = [
     "tests/environment_table.rs",
     "tools/survey-env.py",
+    "src/core/env.rs",
     "tools/degct-env.sh",
     "tools/DegctEnv.psm1",
 ];
@@ -145,7 +167,7 @@ fn rows(root: &Path) -> Option<Vec<String>> {
         return None;
     }
 
-    let mut readers: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut readers: BTreeMap<String, BTreeSet<(String, bool)>> = BTreeMap::new();
     for path in String::from_utf8_lossy(&listed.stdout).lines() {
         if path == TABLE || ABOUT.contains(&path) {
             continue;
@@ -159,20 +181,74 @@ fn rows(root: &Path) -> Option<Vec<String>> {
         let Ok(text) = std::fs::read_to_string(root.join(path)) else {
             continue;
         };
+        let assigned = assignments_in(&text);
         for name in names_in(&text) {
-            readers.entry(name).or_default().insert(path.to_string());
+            let mine = assigned.contains(&name);
+            readers
+                .entry(name)
+                .or_default()
+                .insert((path.to_string(), mine));
         }
     }
 
     Some(
         readers
             .into_iter()
+            .filter(|(_, files)| !is_a_script_local(files))
             .map(|(name, files)| {
-                let files: Vec<String> = files.iter().map(|path| format!("`{path}`")).collect();
+                let files: Vec<String> =
+                    files.iter().map(|(path, _)| format!("`{path}`")).collect();
                 format!("| `{PREFIX}{name}` | {} |", files.join(", "))
             })
             .collect(),
     )
+}
+
+/// Whether every file that names this one also ASSIGNS it, which makes it a script's own
+/// variable rather than an option anybody can set.
+///
+/// ## Why the table must not list these
+///
+/// The DEGCT_ rule covers a shell script's locals as well as its exports, and for a good reason:
+/// the collision that started the rule was a local, and `GROUPS` is a built-in array whatever a
+/// script meant by it. So a script's working variables carry the prefix and always will.
+///
+/// But this table's job is to say WHAT CAN BE SET - the options that reach the project from
+/// outside - and a variable a script assigns before it reads, never exports, and nothing else
+/// mentions, cannot be one. Listing them made the table mostly noise: of seventeen rows, ten
+/// were one shell script talking to itself, which is exactly the state that makes a reader stop
+/// trusting the other seven.
+///
+/// A NAME SOME OTHER FILE READS IS NOT THIS, however many scripts assign it. `DEGCT_RUN_LOG_DIR`
+/// is set by `measure-symbolic.sh` for a child and read by `measurement_common.py`, so it
+/// crosses a boundary and stays.
+fn is_a_script_local(files: &BTreeSet<(String, bool)>) -> bool {
+    !files.is_empty() && files.iter().all(|(_, assigns)| *assigns)
+}
+
+/// Every bare name this text ASSIGNS, as a shell script assigns one: `DEGCT_NAME=` at the start
+/// of a word. Rust and Python do not assign into the environment this way, so only a shell file
+/// can produce one.
+fn assignments_in(text: &str) -> BTreeSet<String> {
+    let bytes = text.as_bytes();
+    let mut found = BTreeSet::new();
+    for at in matches(text, PREFIX) {
+        if at > 0 && is_word(bytes[at - 1]) {
+            continue;
+        }
+        let Some(name) = name_at(bytes, at + PREFIX.len()) else {
+            continue;
+        };
+        // `NAME=` and `NAME+=`, but not `NAME==` or `NAME=~`, which are comparisons.
+        let mut after = at + PREFIX.len() + name.len();
+        if bytes.get(after) == Some(&b'+') {
+            after += 1;
+        }
+        if bytes.get(after) == Some(&b'=') && bytes.get(after + 1) != Some(&b'=') {
+            found.insert(name);
+        }
+    }
+    found
 }
 
 /// Every bare name `text` asks for, by any of the ways there are to ask.

@@ -187,7 +187,7 @@ def env_is_set(name):
     """Whether one of ours is set at all, whatever it is set to.
 
     The shape a flag takes here: several measurements switch on PRESENCE rather than value, so
-    DEGCT_NOLIMIT=1 and DEGCT_NOLIMIT= mean the same and neither has to be parsed.
+    a flag set to 1 and a flag set to nothing mean the same, and neither has to be parsed.
     """
     return qualified(name) in os.environ
 
@@ -693,9 +693,15 @@ COMPARED_VARIABLES = frozenset(
     )
 )
 
-# DEGCT_ variables that choose WHICH algorithm a run measures. Comparing two algorithms is often the
-# very point of a comparison, so a difference in these is reported rather than refused - see
-# `algorithm_differences`. A resume still refuses one: a folder must not hold two algorithms' rows.
+# The name a run record used to carry the marking under, read ONLY to interpret the folders
+# already in performance/logs. A run takes `--marking` now and records it as a detail.
+#
+# WHY IT SURVIVES, which is the justification de-3dx9 asks of anything still spelled DEGCT_: it is
+# not an option any more. Nothing sets it, nothing offers it, and no run can be asked for it. It
+# is the name a value was WRITTEN under in records this project keeps precisely so that a later
+# measurement can be compared against them - persisted data in the old form, which is the one
+# thing that earns a reading path of its own. The day those folders stop being worth comparing
+# against, this goes with them.
 ALGORITHM_VARIABLES = frozenset({qualified("MARKING")})
 
 # What a run record calls the marking it measured, now that a driver takes it as an argument.
