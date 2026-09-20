@@ -34,7 +34,7 @@
 //!
 //! `tools/render-dot.py` runs graphviz over the `.dot` files this writes.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -42,7 +42,7 @@ use lookahead_engine::core::action::DialogueAction;
 use lookahead_engine::core::guard::{Guard, GuardExpression};
 use lookahead_engine::core::guard_value::GuardValueKind;
 use lookahead_engine::core::state::{NOT_A_VARIABLE, StateSymbols};
-use lookahead_engine::core::types::{DialogueCheckKind, Ternary};
+use lookahead_engine::core::types::{DialogueCheckKind, DialogueNodeId, Ternary};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::graph::node::LookAheadNode;
 use lookahead_engine::index::{Index, build_group_graph, read_index};
@@ -166,11 +166,34 @@ fn draw(index: &Index, conversation: i32, out: &Path) {
     );
 }
 
-/// One graph as graphviz.
+/// One graph as graphviz, laid out in layers away from the entry a play starts at.
+///
+/// ## The layering is ours, not graphviz's
+///
+/// Left to itself `dot` infers a hierarchy from the edges, and a dialogue's edges do not
+/// describe one: a hub every option loops back to has more arrows arriving than the start does,
+/// so the picture gets drawn around the hub and the entry a play actually begins at ends up
+/// somewhere in the middle. WE KNOW WHERE A PLAY BEGINS - it is entry 0 of the conversation
+/// asked for - so the ranks are worked out here, by steps from that entry, and handed over as
+/// `rank=same` groups.
+///
+/// ## What happens to an edge that does not descend
+///
+/// It is drawn dashed and grey, and told `constraint=false` so it takes no part in ranking.
+/// Both halves matter: without the first a loop back to the hub is indistinguishable from the
+/// dialogue moving forward, and without the second the edge fights the layer it was given and
+/// drags its target up the picture. See `constraint` in the graphviz attributes.
 fn dot(graph: &LookAheadGraph, conversation: i32) -> String {
+    let depths = depths_from_start(graph, conversation);
     let mut out = String::new();
     let _ = writeln!(out, "digraph conversation{conversation} {{");
     let _ = writeln!(out, "  rankdir=TB;");
+    // ORDERING KEEPS A MENU IN ITS OWN ORDER: the options leaving an entry are drawn left to
+    // right as the entry lists them, rather than in whatever order avoids the most crossings.
+    let _ = writeln!(out, "  ordering=out;");
+    // WITH RANKS OF OUR OWN, which is what `newrank` is for.
+    let _ = writeln!(out, "  newrank=true;");
+    let _ = writeln!(out, "  ranksep=0.5;");
     let _ = writeln!(out, "  node [fontname=\"monospace\" fontsize=9];");
     let mut ids: Vec<_> = graph.nodes().map(|node| node.id).collect();
     ids.sort_unstable_by_key(|id| (id.conversation_id, id.entry_id));
@@ -184,23 +207,94 @@ fn dot(graph: &LookAheadGraph, conversation: i32) -> String {
             label_of(node, graph.symbols())
         );
     }
+
+    let mut layers: BTreeMap<usize, Vec<DialogueNodeId>> = BTreeMap::new();
+    for id in &ids {
+        if let Some(depth) = depths.get(id) {
+            layers.entry(*depth).or_default().push(*id);
+        }
+    }
+    for (depth, layer) in &layers {
+        let _ = write!(out, "  {{ rank=same; /* {depth} steps */");
+        for id in layer {
+            let _ = write!(out, " \"{id}\";");
+        }
+        let _ = writeln!(out, " }}");
+    }
+
     for id in &ids {
         let Some(node) = graph.get(*id) else { continue };
         for link in &node.links {
-            let _ = writeln!(out, "  \"{}\" -> \"{}\";", node.id, link);
+            let descends = match (depths.get(id), depths.get(link)) {
+                (Some(from), Some(to)) => to > from,
+                _ => true,
+            };
+            let attributes = match descends {
+                true => "",
+                false => " [constraint=false color=gray50 style=dashed]",
+            };
+            let _ = writeln!(out, "  \"{}\" -> \"{}\"{attributes};", node.id, link);
         }
     }
     let _ = writeln!(out, "}}");
     out
 }
 
-/// A choice is a box, a group a folder, a check a corner-cut box, anything else an ellipse.
+/// How many steps each entry is from the one a play starts at.
 ///
-/// A CHECK IS NOT A DIAMOND, which is what a flow chart would draw and what a label of one line
-/// could live in. Graphviz fits a label to a shape's inscribed area, and a diamond's is a
-/// quarter of its box, so an entry carrying a guard and three actions grows a diamond wider than
-/// the picture and still prints its text across the border. `diagonals` cuts the corners of a
-/// box that is sized properly, which says the same thing and holds the label.
+/// A BREADTH-FIRST SWEEP, so an entry reachable by a short route and a long one sits at the
+/// short one's depth, which is where a reader looking for how soon something can happen expects
+/// to find it.
+///
+/// A GROUP IS SEVERAL CONVERSATIONS and only one of them was asked for, so the entries of the
+/// others are not reachable from its start at all. Each is seeded in turn, lowest id first, once
+/// everything reachable from the entry before it has been laid out - so a conversation the group
+/// pulled in is drawn below what reaches it rather than left out of the ranking.
+fn depths_from_start(graph: &LookAheadGraph, conversation: i32) -> HashMap<DialogueNodeId, usize> {
+    let mut ids: Vec<DialogueNodeId> = graph.nodes().map(|node| node.id).collect();
+    ids.sort_unstable_by_key(|id| {
+        (
+            id.conversation_id != conversation,
+            id.conversation_id,
+            id.entry_id,
+        )
+    });
+
+    let mut depths = HashMap::new();
+    let mut floor = 0;
+    for seed in ids {
+        if depths.contains_key(&seed) {
+            continue;
+        }
+        depths.insert(seed, floor);
+        let mut deepest = floor;
+        let mut pending = VecDeque::from([seed]);
+        while let Some(id) = pending.pop_front() {
+            let depth = depths[&id];
+            let Some(node) = graph.get(id) else { continue };
+            for &link in &node.links {
+                if graph.get(link).is_none() || depths.contains_key(&link) {
+                    continue;
+                }
+                depths.insert(link, depth + 1);
+                deepest = deepest.max(depth + 1);
+                pending.push_back(link);
+            }
+        }
+        floor = deepest + 1;
+    }
+    depths
+}
+
+/// A group is a folder, a check a corner-cut box, a choice a sharp box, anything else a rounded
+/// one.
+///
+/// EVERY SHAPE HERE IS A RECTANGLE, which a flow chart's diamond for a check and oval for a line
+/// of dialogue are not. Graphviz fits a label to a shape's INSCRIBED area, and a diamond's is a
+/// quarter of its box while an ellipse's is under two thirds, so an entry carrying a guard and
+/// three actions grows a diamond wider than the picture and still prints its text across the
+/// border. A box holds what it is given at any length, so the kind is said with the border
+/// instead: cut corners for a check, sharp for a choice, rounded for a line that just plays.
 fn shape_of(node: &LookAheadNode) -> &'static str {
     if node.is_group {
         return "shape=folder";
@@ -210,7 +304,7 @@ fn shape_of(node: &LookAheadNode) -> &'static str {
     }
     match node.choice {
         true => "shape=box",
-        false => "shape=ellipse",
+        false => "shape=box style=rounded",
     }
 }
 
