@@ -83,6 +83,8 @@ enum Report {
     Slots,
     /// A line per group: the runs of entries a play cannot stop inside, and what they hold
     Stretches,
+    /// A line per group: how far across the variable order each entry's relations reach
+    Spans,
 }
 
 /// TWO MEASUREMENTS IN ONE EXAMPLE, chosen by argument, because they share the classifier.
@@ -98,6 +100,7 @@ fn main() {
         Report::Groups => what_each_group_carries(),
         Report::Slots => list_the_slots(asked.groups.conversations.first().copied()),
         Report::Stretches => what_each_stretch_holds(&asked.groups.or(&CENSUS_GROUPS)),
+        Report::Spans => what_each_entry_reaches(&asked.groups.or(&CENSUS_GROUPS)),
     }
 }
 
@@ -260,6 +263,93 @@ fn walk_comparisons(
 /// The groups the stretch census reports on: the matrix's six, and 761, which every arm
 /// measured in de-ipzs was measured on.
 const CENSUS_GROUPS: [i32; 7] = [362, 28, 368, 14, 631, 1030, 761];
+
+/// How far across the variable order one entry's guard and actions reach, per group.
+///
+/// ## The question, and why the count of variables is not it
+///
+/// 1396a06 dropped two counters from 761 - 264 variables to 259, which is nothing - and took
+/// branch and bound from 93 million diagram nodes to 4.8 million. What made them expensive was
+/// SPAN: their relations reached across 142 and 179 of those 264 levels, so the diagram had to
+/// carry them through every level in between.
+///
+/// de-2knp compared whole ORDERINGS and the interning order won. Nobody has asked the narrower
+/// question: does a handful of entries account for the widest relations, so that moving those
+/// few would shorten them without reordering anything else? If the spans are flat there is
+/// nothing to target and the idea closes here, for the price of this report.
+///
+/// ## What a span is here
+///
+/// The slots one entry mentions - what its guard reads and what its actions write - mapped to
+/// their variable levels, widest minus narrowest. An entry mentioning one slot spans that
+/// slot's own bits and is not interesting; an entry relating a slot at level 5 to one at level
+/// 200 is a relation the diagram carries across 195 levels.
+fn what_each_entry_reaches(wanted: &[i32]) {
+    let Some(path) = common::conversation_index() else {
+        eprintln!("no conversation index; skipping.");
+        return;
+    };
+    let index = read_index(&path).expect("the index reads");
+    println!(
+        "{:>5} {:>6} {:>8} {:>8} {:>8} {:>8} {:>9}",
+        "conv", "vars", "relating", "median", "mean", "widest", "over half"
+    );
+    println!(
+        "  relating is entries that mention two slots or more, which are the only ones with a \
+         span; over half is how many of those reach across more than half the order."
+    );
+    for &conversation in wanted {
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            println!("{conversation:>5}  does not build");
+            continue;
+        };
+        let world = lookahead_engine::world::test_world::TestWorld::new();
+        let layout = DataLayout::for_group(&graph, &world, COUNTER_CAP);
+        let symbols = graph.symbols();
+        let mut spans = Vec::new();
+        for node in graph.nodes() {
+            let mut levels = Vec::new();
+            for name in DataLayout::read_by_nodes([node], symbols) {
+                if let Some(slot) = symbols.find(&name) {
+                    if let Some((first, bits)) = layout.slot(slot) {
+                        levels.push((first, first + u32::from(bits)));
+                    }
+                }
+            }
+            for slot in [
+                node.once_slot,
+                node.seen_slot,
+                node.flag_slot,
+                node.failed_flag_slot,
+            ] {
+                if slot >= 0 {
+                    if let Some((first, bits)) = layout.slot(slot as usize) {
+                        levels.push((first, first + u32::from(bits)));
+                    }
+                }
+            }
+            if levels.len() < 2 {
+                continue;
+            }
+            let low = levels.iter().map(|(first, _)| *first).min().unwrap_or(0);
+            let high = levels.iter().map(|(_, last)| *last).max().unwrap_or(0);
+            spans.push(high.saturating_sub(low));
+        }
+        spans.sort_unstable();
+        let total = layout.total_vars();
+        let median = spans.get(spans.len() / 2).copied().unwrap_or(0);
+        let mean = match spans.is_empty() {
+            true => 0.0,
+            false => spans.iter().map(|span| f64::from(*span)).sum::<f64>() / spans.len() as f64,
+        };
+        let widest = spans.last().copied().unwrap_or(0);
+        let wide = spans.iter().filter(|span| **span * 2 > total).count();
+        println!(
+            "{conversation:>5} {total:>6} {:>8} {median:>8} {mean:>8.1} {widest:>8} {wide:>9}",
+            spans.len(),
+        );
+    }
+}
 
 /// The runs of entries a play cannot stop in the middle of.
 ///
