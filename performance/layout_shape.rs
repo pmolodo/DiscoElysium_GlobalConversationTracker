@@ -447,7 +447,7 @@ fn what_each_stretch_holds(wanted: &[i32]) {
     };
     let index = read_index(&path).expect("the index reads");
     println!(
-        "{:>5} {:>8} {:>7} {:>8} {:>8} {:>7} {:>7} {:>7} {:>7} {:>7}",
+        "{:>5} {:>8} {:>7} {:>8} {:>8} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>6} {:>6}",
         "conv",
         "entries",
         "runs",
@@ -457,7 +457,10 @@ fn what_each_stretch_holds(wanted: &[i32]) {
         "slots",
         "in runs",
         "slots-",
-        "clear"
+        "clear",
+        "folded",
+        "vars",
+        "after"
     );
     println!(
         "  nodes- is what collapsing every run would remove; slots- is how many of the slots \
@@ -481,13 +484,20 @@ fn what_each_stretch_holds(wanted: &[i32]) {
             .nodes()
             .filter(|node| node.adds_nothing_to_a_route())
             .count();
+        // WHAT FOLDING ACTUALLY TAKES OUT, asked of the fold rather than of a rule restated
+        // here: entries gone, and the variables the layout is left carrying.
+        let folded = graph.collapsing_runs();
+        let world = lookahead_engine::world::test_world::TestWorld::new();
+        let before = DataLayout::for_group(&graph, &world, COUNTER_CAP).total_vars();
+        let after = DataLayout::for_group(&folded.graph, &world, COUNTER_CAP).total_vars();
+        let gone = folded.into_head.len();
         let shared: usize = runs
             .iter()
             .map(|run| slots_along(&graph, run).saturating_sub(1))
             .sum();
         println!(
             "{conversation:>5} {entries:>8} {:>7} {inside:>8} {longest:>8} {:>7} {slots:>7} \
-{held:>7} {shared:>7} {clear:>7}",
+{held:>7} {shared:>7} {clear:>7} {gone:>7} {before:>6} {after:>6}",
             runs.len(),
             inside - runs.len(),
         );

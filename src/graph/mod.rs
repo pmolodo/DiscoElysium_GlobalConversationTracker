@@ -750,3 +750,160 @@ mod iteration_order_tests {
         assert_eq!(one, other);
     }
 }
+
+/// The group with every run of entries a play cannot stop inside folded into one entry, and
+/// what each folded entry now stands for.
+///
+/// ## What a run is here
+///
+/// A chain where reaching the first entry means showing all of them: one way out of each, one
+/// way into each but the first, no choice to make, no guard to fail, no check whose outcome the
+/// world decides and nothing to pay. Nothing can divert, stop or arrive part way.
+///
+/// ## What folding one buys
+///
+/// FEWER ENTRIES for every sweep of the graph, and fewer SLOTS. A `once` fires while its own
+/// entry's slot is clear and raises it as it fires, so a run's onces - which can only ever fire
+/// together - need ONE slot between them rather than one each. That is the point of this rather
+/// than of any cheaper way to skip an entry: it is a layout change wearing a graph change's
+/// clothes, and the layout is where this engine's one large win came from.
+///
+/// ## What it cannot break, and what a caller must carry
+///
+/// THE DISTANCE. A layer is charged for LEAVING A CHOICE and a run holds none, so every entry
+/// in one is the same distance from everywhere and folding them moves nothing.
+///
+/// THE NAMES, which is what the map is for. A profile names entries, a witness is an entry and
+/// the plugin reads entry ids, so a caller translates the entries it cares about through
+/// [`Collapsed::into_head`] and reads answers back the same way. An entry folded away is
+/// represented by its run's head, which is a real entry of the real dialogue standing at the
+/// same distance.
+#[derive(Debug)]
+pub struct Collapsed {
+    pub graph: LookAheadGraph,
+    /// Where each folded entry went; absent for one that stands where it did.
+    pub into_head: HashMap<DialogueNodeId, DialogueNodeId>,
+}
+
+impl LookAheadGraph {
+    /// Folds every run of entries a play cannot stop inside into its head. See [`Collapsed`].
+    pub fn collapsing_runs(&self) -> Collapsed {
+        let mut arrivals: HashMap<DialogueNodeId, usize> = HashMap::new();
+        for node in self.nodes() {
+            for &link in &node.links {
+                *arrivals.entry(link).or_default() += 1;
+            }
+        }
+        // NOTHING TO DECIDE, FAIL, PAY OR REFUSE, which is what makes an entry one a play
+        // passes through rather than one it can be stopped at.
+        let foldable = |node: &LookAheadNode| {
+            !node.is_group
+                && !node.choice
+                && node.kind == DialogueCheckKind::None
+                && node.cost == 0
+                && node.click_cost == 0
+                && !node.cost_once
+                && !node.hidden_when_unaffordable
+                && matches!(
+                    node.guard.expression(),
+                    crate::core::guard::GuardExpression::Literal(value)
+                        if value.as_condition() == crate::core::types::Ternary::True
+                )
+        };
+        let follows = |id: DialogueNodeId| -> Option<DialogueNodeId> {
+            let node = self.get(id)?;
+            if node.links.len() != 1 || !foldable(node) {
+                return None;
+            }
+            let next = self.get(node.links[0])?;
+            let alone = arrivals.get(&next.id).copied().unwrap_or(0) == 1;
+            match alone && foldable(next) && next.id != id {
+                true => Some(next.id),
+                false => None,
+            }
+        };
+
+        let mut into_head = HashMap::new();
+        let mut folded_away = HashSet::new();
+        let mut runs: HashMap<DialogueNodeId, Vec<DialogueNodeId>> = HashMap::new();
+        // IN THE GRAPH'S OWN ORDER, so which entry heads a run cannot depend on a hash map.
+        for &id in &self.order {
+            if folded_away.contains(&id) {
+                continue;
+            }
+            let mut run = vec![id];
+            while let Some(next) = follows(*run.last().expect("a run has a head")) {
+                if folded_away.contains(&next) || run.contains(&next) {
+                    break;
+                }
+                run.push(next);
+            }
+            if run.len() < 2 {
+                continue;
+            }
+            for &member in &run[1..] {
+                folded_away.insert(member);
+                into_head.insert(member, id);
+            }
+            runs.insert(id, run);
+        }
+
+        let mut nodes = Vec::with_capacity(self.order.len() - folded_away.len());
+        for &id in &self.order {
+            if folded_away.contains(&id) {
+                continue;
+            }
+            let Some(node) = self.get(id) else { continue };
+            let mut folded = node.clone();
+            if let Some(run) = runs.get(&id) {
+                for &member in &run[1..] {
+                    let Some(behind) = self.get(member) else {
+                        continue;
+                    };
+                    folded.actions.extend(behind.actions.iter().cloned());
+                    folded.holds_the_screen |= behind.holds_the_screen;
+                }
+                folded.links = self
+                    .get(*run.last().expect("a run has a tail"))
+                    .map(|tail| tail.links.clone())
+                    .unwrap_or_default();
+                // RECOMPUTED FROM WHAT THE FOLDED ENTRY NOW DOES, since its actions are every
+                // member's rather than the head's.
+                folded.skill_moves =
+                    crate::core::skill_movers::SkillMoves::of(folded.all_actions(), self.symbols());
+                // ONE SLOT FOR THE RUN: cleared so the build interns a single one if the folded
+                // actions ask for it. The slots of the entries that are gone stay in the symbol
+                // table and are dropped by the layout, which keeps only what something reads.
+                folded.once_slot = -1;
+            }
+            nodes.push(folded);
+        }
+
+        // THE SLOTS OF THE ENTRIES THAT ARE GONE GO WITH THEM. Keeping the table whole leaves a
+        // once slot per folded entry in it, and every layout built from this graph sweeps and
+        // prunes them again - a fixed cost per menu, measured at 8 to 9 ms on groups whose
+        // search does nothing at all. `StateSymbols::retaining` drops them and says where the
+        // survivors moved to, which the entries' own slot fields are remapped through.
+        let mut keep = vec![true; self.symbols().count()];
+        for member in into_head.keys() {
+            if let Some(gone) = self.get(*member).map(|node| node.once_slot) {
+                if gone >= 0 {
+                    keep[gone as usize] = false;
+                }
+            }
+        }
+        let (symbols, moved) = self.symbols().retaining(&keep);
+        let remap = |slot: i32| match slot >= 0 {
+            true => moved.get(slot as usize).copied().unwrap_or(-1),
+            false => -1,
+        };
+        for node in &mut nodes {
+            node.seen_slot = remap(node.seen_slot);
+            node.flag_slot = remap(node.flag_slot);
+            node.failed_flag_slot = remap(node.failed_flag_slot);
+            node.once_slot = remap(node.once_slot);
+        }
+        let graph = LookAheadGraph::new(nodes, symbols).expect("folding cannot duplicate an entry");
+        Collapsed { graph, into_head }
+    }
+}

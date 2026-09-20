@@ -196,6 +196,7 @@
 //! three states. Neither is a claim about the other, so there is no setting for making them
 //! agree and no way for a row to assert a state they disagree about.
 
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use lookahead_engine::bridge::{NodeRef, SnapshotWorld, WorldSnapshot};
@@ -324,6 +325,10 @@ struct Options {
     // a state anybody reached: on 761 a walk from it shows 44 entries of 2,263, where a walk
     // from a real playthrough's save shows 144. Naming a save asks the same question of a world
     // a player was actually in.
+    /// Fold every run of entries a play cannot stop inside into one entry before measuring
+    #[arg(long = "collapse-runs")]
+    collapse_runs: bool,
+
     /// Which save a walked profile is built from
     #[arg(long, value_name = "NAME", default_value = save_world::TEMPLATE)]
     save: String,
@@ -848,34 +853,52 @@ fn main() {
         let prep = Prep::of(&shipped, before, built, started);
 
         let seen_any_game = profile.seen_any_game();
+        // FOLDED HERE, BEFORE THE LAYOUT, because the point of folding is the slots as much as
+        // the entries and the layout is built from the graph below. The profile stays the one
+        // the FULL graph produced - the same menu, the same entries called unseen - and is
+        // translated onto the folded group, so a folded row and a plain one answer the same
+        // question. See `LookAheadGraph::collapsing_runs` and de-f75o.
+        let folded = match asked.collapse_runs {
+            true => Some(graph.collapsing_runs()),
+            false => None,
+        };
+        let mut members: HashMap<DialogueNodeId, Vec<DialogueNodeId>> = HashMap::new();
+        if let Some(folded) = folded.as_ref() {
+            for (&member, &head) in &folded.into_head {
+                members.entry(head).or_default().push(member);
+            }
+        }
+        let graph = folded.as_ref().map_or(&graph, |folded| &folded.graph);
+        let into_head = |id: DialogueNodeId| {
+            folded
+                .as_ref()
+                .and_then(|folded| folded.into_head.get(&id).copied())
+                .unwrap_or(id)
+        };
+        // AN ENTRY STANDS FOR ITS WHOLE RUN, so it has been seen in some earlier game only where
+        // every entry it stands for has. Anything less and a run holding something unread would
+        // read as read, which is the one way folding could hide content from the marking.
+        let seen_any_game = |id: DialogueNodeId| {
+            seen_any_game(id)
+                && members
+                    .get(&id)
+                    .is_none_or(|run| run.iter().all(|member| seen_any_game(*member)))
+        };
+        let starts: Vec<_> = profile.starts.iter().map(|id| into_head(*id)).collect();
         match menu(
-            &graph,
+            graph,
             conversation,
-            &profile.starts,
+            &starts,
             &seen_any_game,
             budget,
             walked.as_ref(),
             &asked,
         ) {
-            Some(measured) => row(
-                conversation,
-                &graph,
-                profile.starts.len(),
-                "",
-                prep,
-                Some(&measured),
-            ),
+            Some(measured) => row(conversation, graph, starts.len(), "", prep, Some(&measured)),
             // THE MACHINE COULD NOT SUPPLY THE BUDGET, which is not a finding about the
             // menu. Loud, and a different word from a slow row, so a folder holding one is
             // not read as a measurement.
-            None => row(
-                conversation,
-                &graph,
-                profile.starts.len(),
-                NOT_MEASURED,
-                prep,
-                None,
-            ),
+            None => row(conversation, graph, starts.len(), NOT_MEASURED, prep, None),
         };
     }
 }
