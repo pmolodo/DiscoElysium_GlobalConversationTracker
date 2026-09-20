@@ -2018,14 +2018,19 @@ struct NoRoom;
 /// `performance/bidirectional_headroom.rs` measured as landing within ten per cent of the best
 /// split without being told where it is.
 ///
-/// TWO WAYS TO SAY HOW BIG A FRONT IS, and which is better is not settled - see [`Weigh`].
-fn weight_of(weigh: Weigh, carry: &HashMap<DialogueNodeId, BDDFunction>) -> usize {
-    weigh.of(carry)
+/// BY THE DIAGRAM THE FRONT HOLDS, which is the measure that survived being asked - see the
+/// note below for what else was tried and what each was worth.
+fn weight_of(carry: &HashMap<DialogueNodeId, BDDFunction>) -> usize {
+    carry.values().map(|states| states.node_count()).sum()
 }
 
-/// How a front's size is measured when the scheduler decides which one to grow.
+/// Why a front is weighed by its diagram, and what the alternatives measured.
 ///
-/// ## A switch because the answer depends on the profile, measured both ways
+/// This is a note rather than a switch. Six measures were built and swept and none beat the
+/// diagram, so what is left is the one the scheduler uses and the numbers that would let anyone
+/// re-open it - which is the shape this project keeps a settled question in.
+///
+/// ## The case for the diagram, and the case that was made against it
 ///
 /// The case for the DIAGRAM is that the entry count is nearly flat where the cost is not: on
 /// 761 the forward side carries 8 entries at its first layer and 251 at its fifteenth, while
@@ -2122,38 +2127,19 @@ fn weight_of(weigh: Weigh, carry: &HashMap<DialogueNodeId, BDDFunction>) -> usiz
 /// separates the arms on 761 is a factor of 1.8 that none of them touches. Whatever explains
 /// the inversions is not a property of the front being weighed. See de-ftde.
 ///
-/// The default stays [`Self::Nodes`], which is what the pooled search has always used, because
-/// the pooled search is itself opt-in - see `symbolic::menu::pooled_rounds` - and where it IS
-/// used today is the deep profile that nodes wins. If it ever becomes the default, this should
-/// flip with it. See de-z0ek.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Weigh {
-    /// How many entries the front carries.
-    Entries,
-    /// How many decision-diagram nodes the sets those entries hold add up to.
-    Nodes,
-}
-
-impl Weigh {
-    /// What `DEGCT_WEIGH_FRONTS` asks for, or [`Self::Nodes`], which is what ships.
-    ///
-    /// Read once per round rather than per decision: the scheduler asks this on every step of
-    /// every layer, and a run that changed its mind halfway would be measuring neither arm.
-    pub fn asked_for() -> Self {
-        match crate::core::env::var("WEIGH_FRONTS").as_deref() {
-            Ok("entries") => Self::Entries,
-            Ok("nodes") | Err(_) => Self::Nodes,
-            Ok(other) => panic!("DEGCT_WEIGH_FRONTS: no measure called {other:?}"),
-        }
-    }
-
-    fn of(self, carry: &HashMap<DialogueNodeId, BDDFunction>) -> usize {
-        match self {
-            Self::Entries => carry.len(),
-            Self::Nodes => carry.values().map(|states| states.node_count()).sum(),
-        }
-    }
-}
+/// SO THERE IS ONE MEASURE AND NO SWITCH - de-7azp.
+///
+/// A switch between two would be worth its keep if neither won everywhere. Neither did, once:
+/// the whole-game reading disagreed with the deep one. It no longer disagrees, and the deep one
+/// points at the diagram, so a switch here would offer a choice whose every arm is measured as
+/// no better - and an arm kept past the question it was added for is the failure mode that made
+/// the hysteresis ratio, branch and bound and hybrid-siblings worth killing.
+///
+/// WHAT MAKES IT REVERSIBLE is the tables above. They are what a later run would be compared
+/// against, and re-adding an arm to try one is a smaller change than this note is long. Do that
+/// if the marking moves, if the pooled scheduler stops being opt-in - see
+/// `symbolic::menu::pooled_rounds` - or if a profile turns up where a front's entry count and
+/// its diagram disagree about which side is cheaper.
 
 /// The nearest of MANY targets, and which option gets there first.
 ///
@@ -2203,9 +2189,6 @@ impl<'a> Backward<'a> {
                 out_of_memory: true,
             };
         }
-
-        // ASKED ONCE, not per decision - see `Weigh::asked_for`.
-        let weigh = Weigh::asked_for();
 
         // ONE CRAWL PER TARGET, each with its own sets and its own layers. They share the
         // manager and the forward crawl and nothing else.
@@ -2259,9 +2242,7 @@ impl<'a> Backward<'a> {
                     (false, false) => break,
                     (true, false) => true,
                     (false, true) => false,
-                    (true, true) => {
-                        weight_of(weigh, &forward.carry) <= weight_of(weigh, &theirs.carry)
-                    }
+                    (true, true) => weight_of(&forward.carry) <= weight_of(&theirs.carry),
                 };
                 let stop = if grow_forward_now {
                     grow_forward(search.reborrow(), cut, &mut reached, &mut forward).is_err()

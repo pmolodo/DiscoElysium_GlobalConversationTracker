@@ -55,7 +55,7 @@ Checked against the code rather than trusted, by `tests/environment_table.rs`: i
 tracked file for a variable spelled out in full or asked for by bare name through the helper for
 its language, compares what it finds with the rows below and with the count in this sentence,
 and fails with the block to paste. So a stale table is a failing test rather than a reader
-looking for a variable that has been renamed. 21 variables.
+looking for a variable that has been renamed. 20 variables.
 
 A TEST RATHER THAN A GENERATOR because what is wanted is enforcement: a build script that
 rewrote this file would dirty the working tree on every build, which every measurement's log
@@ -82,7 +82,6 @@ forgotten.
 | `DEGCT_RUN_NAME` | `tools/measure-symbolic.sh` |
 | `DEGCT_SEARCHES` | `tools/measure-residue-arms.sh` |
 | `DEGCT_VAR_ORDER` | `src/symbolic/var_order.rs` |
-| `DEGCT_WEIGH_FRONTS` | `src/symbolic/backward.rs` |
 
 ## Keeping this current
 
