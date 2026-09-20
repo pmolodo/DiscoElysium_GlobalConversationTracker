@@ -218,3 +218,9 @@ path = "performance/target_cost.rs"
 [[example]]
 name = "profile_closure"
 path = "performance/profile_closure.rs"
+
+# A group drawn as graphviz, for the questions whose answer is a shape rather than a number.
+# `tools/render-dot.py` turns what it writes into a picture.
+[[example]]
+name = "graph_dot"
+path = "performance/graph_dot.rs"
