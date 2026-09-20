@@ -81,12 +81,24 @@ pub struct Arms {
 /// the menu at all: it runs past a five-minute wall, holds 27x the nodes the default holds and
 /// settles three options of eight, so its milliseconds are a floor rather than a cost.
 ///
-/// A forward front is rebuilt every round, and with the counters gone the backward half it
-/// replaces is cheap - so the meeting arms now pay for the expensive half to save a cheap one.
-/// The pool at least stops a whole round at the first meeting; the per-target arm grows the
-/// shared front deeper for every target the bound does not skip. Weighing fronts by entry count
-/// instead, which is what this arm was measured with when it was first evaluated, makes it worse
-/// again: 21,874 ms and 16.8M nodes at unseen 5.
+/// WHAT COSTS IS THE FORWARD FRONT'S DEPTH, and not that it is rebuilt each round. Timed either
+/// side of the meeting, per round:
+///
+/// ```text
+///               front builds   forward layers     backward layers
+///   unseen 5     3 in 0 ms     21 in     165 ms   118 in  3,836 ms
+///   unseen 10    4 in 0 ms     43 in 440,008 ms   241 in 10,128 ms
+/// ```
+///
+/// Building a front costs nothing measurable, and the same walk is 165 ms at 21 layers and 440
+/// SECONDS at 43: the front's diagram grows exponentially with depth, so the forward half is free
+/// while it stays shallow and ruinous once it has to go deep. The pool never takes it deep,
+/// because the first meeting over ALL targets is the nearest one and the round stops there. The
+/// per-target arm has to answer each target the bound does not skip, so one distant target drags
+/// the shared front into the exponential region, where it then sits for the rest of the round.
+///
+/// Weighing fronts by entry count instead, which is what this arm was measured with when it was
+/// first evaluated, makes it worse again: 21,874 ms and 16.8M nodes at unseen 5.
 ///
 /// The arms do not always mark the same options, and that is not a defect in any of them - see
 /// the rule in CLAUDE.md. `tests/menu_oracle.rs` runs every case under every arm, which is what
