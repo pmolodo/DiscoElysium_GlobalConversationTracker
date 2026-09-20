@@ -78,8 +78,10 @@ pub struct Arms {
 /// ```
 ///
 /// THE LAST FIGURE IS NOT A TIMING. At link-deepest-10 the per-target meeting does not answer
-/// the menu at all: it runs past a five-minute wall, holds 27x the nodes the default holds and
-/// settles three options of eight, so its milliseconds are a floor rather than a cost.
+/// the menu at all: it holds 27x the nodes the default holds and settles three options of eight,
+/// so its milliseconds are a floor rather than a cost. It reads half again past the five-minute
+/// wall because the clock is checked BETWEEN LAYERS and a layer at that depth is minutes - see
+/// de-j8eh, which is about the wall rather than about this arm.
 ///
 /// WHAT COSTS IS THE FORWARD FRONT'S DEPTH, and not that it is rebuilt each round. Timed either
 /// side of the meeting, per round:
@@ -132,6 +134,36 @@ pub enum Rounds {
     /// the node, and both settle three options of eight before the wall. Sharing was never what
     /// made the deep case unanswerable; the depth itself is.
     PerTargetMeetingUnshared,
+
+    /// THE SAME AGAIN, SEEDED ONLY FROM THE OPTIONS THAT CAN GET THERE. A front is a union over
+    /// the options it starts from, and the union's breadth is what drives its depth - so a
+    /// target reachable from two options of eight is hunted from a front a quarter the width.
+    ///
+    /// The structural walk already knows which those are: `choice_bounds` is taken per option
+    /// per round to build the bound, and says which targets that option has any route to at all.
+    /// Collapsing it to a minimum throws that away, and this arm keeps it.
+    ///
+    /// WHICH OPTION WON IS THEN AN INDEX INTO THE SEEDS, not into the menu, and the caller maps
+    /// it back - a narrower front cannot credit an option it never walked from.
+    PerTargetMeetingNarrow,
+
+    /// ONE OPTION AT A TIME, so a front is never a union at all. Each option meets the target
+    /// from a front seeded by itself alone, and the round takes the least distance over them.
+    ///
+    /// THE NARROWEST A FORWARD FRONT CAN BE, which is the point: breadth drives depth, depth is
+    /// exponential, and a filter can only remove options a target is unreachable from - none, on
+    /// a hub-shaped group. This removes seven of eight by construction.
+    ///
+    /// AND IT IS THE WORST OF EVERY ARM HERE, BY TWO ORDERS OF MAGNITUDE. At link-deepest-FIVE,
+    /// where every union-seeded arm answers in four to seven seconds, this one spends 437,405 ms
+    /// and 118 million nodes to run TWO passes, settling nothing and starring nothing.
+    ///
+    /// WHICH IS WHAT NARROWING ACTUALLY BUYS: breadth is traded for depth, and depth is the
+    /// exponential axis. A union meets at the SHALLOWEST depth any of its options offers, while
+    /// a single-option front must be grown to that option's own distance - so the arm that
+    /// carries the fewest seeds does the most work. The pool is the widest arm and the best of
+    /// the meeting family for the same reason, read the other way round.
+    PerTargetMeetingPerOption,
 
     /// ONE POOL FOR THE WHOLE ROUND, forward and backward. The shared walk of the meeting arm,
     /// plus deciding the round's winner by whose crawl meets first - which proves nothing per
