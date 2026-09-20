@@ -34,6 +34,7 @@ use crate::core::state::{
 use crate::core::types::DialogueNodeId;
 use crate::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
+use crate::symbolic::arms::Arms;
 use crate::symbolic::var_order::Ordering;
 use crate::world::MONEY_QUERY;
 
@@ -587,12 +588,25 @@ impl DataLayout {
     /// different layout from the one that ships. Stated once instead.
     ///
     /// [`GuardCompiler::with_constant_clock`]: crate::symbolic::guard_formula::GuardCompiler::with_constant_clock
+    /// UNDER THE SHIPPED ARMS, which is what almost every caller means and what the game always
+    /// means. A caller varying one - a measurement comparing variable orderings - says so with
+    /// [`Self::for_group_under`] rather than setting something the rest of the process can see.
     pub fn for_group(
         graph: &LookAheadGraph,
         world: &dyn crate::world::ILookAheadWorld,
         counter_cap: i32,
     ) -> Self {
-        Self::for_group_entered_at(graph, world, counter_cap, None)
+        Self::for_group_under(graph, world, counter_cap, Arms::shipped())
+    }
+
+    /// The same, under arms a measurement chose. See [`crate::symbolic::arms`].
+    pub fn for_group_under(
+        graph: &LookAheadGraph,
+        world: &dyn crate::world::ILookAheadWorld,
+        counter_cap: i32,
+        arms: Arms,
+    ) -> Self {
+        Self::for_group_entered_at_under(graph, world, counter_cap, None, arms)
     }
 
     /// The same, narrowed to what a query ENTERING AT one conversation can reach.
@@ -638,6 +652,17 @@ impl DataLayout {
         counter_cap: i32,
         entered_at: Option<&[i32]>,
     ) -> Self {
+        Self::for_group_entered_at_under(graph, world, counter_cap, entered_at, Arms::shipped())
+    }
+
+    /// The same, under arms a measurement chose. See [`crate::symbolic::arms`].
+    pub fn for_group_entered_at_under(
+        graph: &LookAheadGraph,
+        world: &dyn crate::world::ILookAheadWorld,
+        counter_cap: i32,
+        entered_at: Option<&[i32]>,
+        arms: Arms,
+    ) -> Self {
         let reads = match entered_at {
             Some(conversations) => Self::read_by_some(
                 graph,
@@ -654,7 +679,7 @@ impl DataLayout {
         )
         .keeping_only_read(graph.symbols(), &reads)
         .dropping_redundant_counters(graph, world)
-        .in_variable_order(graph, Ordering::asked_for())
+        .in_variable_order(graph, arms.var_order)
     }
 
     /// Every entry reachable by links from any entry of `conversations`, those included.

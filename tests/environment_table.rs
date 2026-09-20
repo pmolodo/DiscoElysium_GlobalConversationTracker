@@ -199,6 +199,14 @@ fn names_in(text: &str) -> BTreeSet<String> {
             if at > 0 && is_word(bytes[at - 1]) {
                 continue;
             }
+            // A METHOD CALL IS NOT OUR DOOR. `command.env("GIT_INDEX_FILE", ..)` sets a variable
+            // GIT owns, on a child this project starts, and reading it as `env(` invented a
+            // DEGCT_GIT_INDEX_FILE that nothing has ever defined. Ours is `env::pass`, which
+            // applies the prefix - see `src/core/env.rs`, whose whole purpose is that the two
+            // cannot be confused at a call site.
+            if at > 0 && bytes[at - 1] == b'.' {
+                continue;
+            }
             if call == "env_for_child(" {
                 found.extend(keywords(&text[at + call.len()..]));
                 continue;

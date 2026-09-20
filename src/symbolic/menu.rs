@@ -36,17 +36,6 @@ use std::time::{Duration, Instant};
 
 use super::backward::{Backward, Budget as PassBudget, Nearest, Position, Round};
 
-/// Whether a round of the exact marking is searched by one pool rather than by branch and bound.
-///
-/// OFF UNLESS `DEGCT_POOLED_ROUNDS` ASKS. The pool was built, verified against
-/// `tests/menu_oracle.rs` and removed - on conversation 761 it answered in 10.1 million diagram
-/// nodes against 92.3 million, and was taken out because the cheap question had made the exact
-/// marking rare enough that nothing slow reached it. It is back behind a switch because the
-/// exact marking now runs on 133 menus of 389. See de-y04p.
-fn pooled_rounds() -> bool {
-    crate::core::env::var("POOLED_ROUNDS").as_deref() == Ok("1")
-}
-
 use super::known::GroupShape;
 use super::search::Search;
 use super::seen_state_search::{StoppedBy, choice_bounds};
@@ -727,7 +716,7 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
             // in play. It proves nothing per target, so the bound and the unreachable set stay
             // empty and the next round starts from nothing. See `Backward::nearest_choices`.
             let mut best: Option<(usize, usize, DialogueNodeId)> = None;
-            if pooled_rounds() {
+            if search.arms.pooled_rounds {
                 let left = budget.wall.saturating_sub(began.elapsed());
                 if left.is_zero() {
                     failure = Some((StoppedBy::Time, false));
@@ -759,7 +748,7 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
             // beat the best distance proven this round - ties included, since a tie cannot
             // change which distance is least.
             for &target in &in_play {
-                if pooled_rounds() {
+                if search.arms.pooled_rounds {
                     break;
                 }
                 if best.is_some_and(|(nearest, _, _)| bounds[&target] >= nearest) {
@@ -1072,6 +1061,7 @@ mod tests {
                 compiler,
                 world,
                 counter_cap: 16,
+                arms: Default::default(),
             };
             match which {
                 Which::Exact => mark_menu(search, &seen_state, contestants, &budget, &shape),

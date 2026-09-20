@@ -201,11 +201,13 @@ use std::time::{Duration, Instant};
 use lookahead_engine::bridge::{NodeRef, SnapshotWorld, WorldSnapshot};
 use lookahead_engine::core::types::{DialogueNodeId, SeenState, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;
+use lookahead_engine::symbolic::arms::Arms;
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
 use lookahead_engine::symbolic::reachability::seed_of;
+use lookahead_engine::symbolic::var_order::Ordering;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::symbolic::{menu, seen_state_search};
 
@@ -332,6 +334,25 @@ struct Options {
 
     #[command(flatten)]
     caching: prepared::Caching,
+
+    /// How the layout orders its variables
+    #[arg(long = "var-order", value_enum, default_value_t = Ordering::Slot)]
+    var_order: Ordering,
+
+    /// Search a round of the exact marking by one pool rather than by branch and bound
+    #[arg(long = "pooled-rounds")]
+    pooled_rounds: bool,
+}
+
+impl Options {
+    /// Which arms a row is taken under. `Arms::default()` is the shipped algorithm, so a run
+    /// that names neither of these measures what the game does.
+    fn arms(&self) -> Arms {
+        Arms {
+            var_order: self.var_order,
+            pooled_rounds: self.pooled_rounds,
+        }
+    }
 }
 
 impl Options {
@@ -983,6 +1004,7 @@ where
             compiler: &mut compiler,
             world: &world,
             counter_cap: COUNTER_CAP as u32,
+            arms: asked.arms(),
         };
         let marking_budget = if asked.nolimit {
             menu::Budget {

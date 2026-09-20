@@ -22,6 +22,7 @@
 
 pub mod action_image;
 pub mod answer;
+pub mod arms;
 pub mod backward;
 pub mod budget;
 pub mod data_layout;

@@ -51,6 +51,7 @@ fn compare(
             compiler: &mut compiler,
             world,
             counter_cap: 16,
+            arms: Default::default(),
         },
         seen_state,
         &contestants,

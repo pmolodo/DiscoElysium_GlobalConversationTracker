@@ -78,7 +78,10 @@ use crate::graph::LookAheadGraph;
 const FORCE_PASSES: usize = 20;
 
 /// Which ordering to lay the slots out in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+///
+/// A `ValueEnum` so a measurement can offer it as `--var-order` and clap refuses a misspelt one
+/// with the arms listed - which a hand-written parser had to panic to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
 pub enum Ordering {
     /// Slot index order, which is the order the names were interned in.
     #[default]
@@ -94,20 +97,6 @@ pub enum Ordering {
 }
 
 impl Ordering {
-    /// The ordering `DEGCT_VAR_ORDER` asks for, or the default where it says nothing.
-    ///
-    /// An unrecognised value is refused rather than ignored: a measurement that silently ran
-    /// the default because an arm was misspelled is a row that says the wrong thing.
-    pub fn asked_for() -> Self {
-        match crate::core::env::var("VAR_ORDER").as_deref() {
-            Ok("slot") | Err(_) => Self::Slot,
-            Ok("force") => Self::Force,
-            Ok("force-entries") => Self::ForceEntries,
-            Ok("dialogue") => Self::Dialogue,
-            Ok(other) => panic!("DEGCT_VAR_ORDER: no ordering called {other:?}"),
-        }
-    }
-
     /// The permutation of `0..slots` this ordering puts the slots in.
     pub fn of(self, graph: &LookAheadGraph, slots: usize) -> Vec<usize> {
         match self {

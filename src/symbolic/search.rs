@@ -21,6 +21,12 @@ pub struct Search<'s, 'a> {
     pub compiler: &'s mut GuardCompiler<'a>,
     pub world: &'s dyn ILookAheadWorld,
     pub counter_cap: u32,
+    /// WHICH ARMS THIS SEARCH IS TAKEN UNDER, carried rather than read where they are wanted.
+    ///
+    /// `Arms::default()` is the shipped algorithm, so a caller that means the product writes
+    /// `..Default::default()` and gets it. Everything below here that would otherwise ask the
+    /// environment asks this instead - see `symbolic::arms`.
+    pub arms: crate::symbolic::arms::Arms,
 }
 
 impl<'a> Search<'_, 'a> {
@@ -31,6 +37,7 @@ impl<'a> Search<'_, 'a> {
             compiler: &mut *self.compiler,
             world: self.world,
             counter_cap: self.counter_cap,
+            arms: self.arms,
         }
     }
 }

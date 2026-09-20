@@ -313,6 +313,7 @@ impl<'a> Backward<'a> {
                 compiler,
                 world,
                 counter_cap,
+                arms: Default::default(),
             },
             &[target],
             &HashSet::new(),
@@ -334,6 +335,7 @@ impl<'a> Backward<'a> {
             compiler,
             world,
             counter_cap,
+            ..
         } = search;
         let vars = compiler.vars();
         let mut image = ActionImage::for_world(vars, counter_cap, world);
@@ -980,6 +982,7 @@ impl<'a> Backward<'a> {
             compiler,
             world,
             counter_cap,
+            ..
         } = search;
         let vars = compiler.vars();
         let began = std::time::Instant::now();
@@ -2374,6 +2377,7 @@ fn grow_forward(
         compiler,
         world,
         counter_cap,
+        ..
     } = search;
     let vars = compiler.vars();
     let mut added = std::mem::take(&mut front.pending);

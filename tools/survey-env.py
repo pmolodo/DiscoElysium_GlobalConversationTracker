@@ -171,6 +171,11 @@ def asks_in(text):
                 # own, so the argument list is what says which of the two a line means.
                 if "foreign=True" in line[match.start() : line.find(")", match.end())]:
                     continue
+                # A METHOD CALL IS NOT OUR DOOR. `command.env("GIT_INDEX_FILE", ..)` sets a
+                # variable GIT owns, and reading it as `env(` invents a DEGCT_GIT_INDEX_FILE
+                # nothing has ever defined. `tests/environment_table.rs` skips it the same way.
+                if match.start() > 0 and line[match.start() - 1] == ".":
+                    continue
                 found.append((match.group(1).removeprefix(PREFIX), call, number))
         # `env_for_child(X=.., Y=..)` NAMES ITS VARIABLES AS KEYWORDS rather than as a quoted
         # first argument, so the shape above cannot see them. `tests/environment_table.rs` has
