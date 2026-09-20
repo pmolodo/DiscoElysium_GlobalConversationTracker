@@ -24,10 +24,11 @@ mod common;
 /// AN ARM CHANGES THE ROUTE AND NOT THE CLAIM, so a case is worth nothing against one arm alone:
 /// what this file checks is that a marking's distances are the distances exhaustive search finds,
 /// and each arm makes that claim for itself. An arm no case here runs is an arm nothing checks.
-fn arms() -> [Arms; 3] {
+fn arms() -> [Arms; 4] {
     [
         Rounds::PerTargetBackward,
         Rounds::PerTargetMeeting,
+        Rounds::PerTargetMeetingUnshared,
         Rounds::PooledMeeting,
     ]
     .map(|rounds| Arms {

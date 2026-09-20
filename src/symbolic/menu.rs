@@ -778,12 +778,26 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
                     break 'classes;
                 }
                 answer.passes += 1;
+                // ONE FRONT OF ITS OWN, where the arm asks for no sharing. It is built here, grown
+                // only as far as this target needs, and dropped with the iteration - so the
+                // deepest layers one target drove it to are not carried into the next one's
+                // search. See `Rounds::PerTargetMeetingUnshared`.
+                let mut own_front = if search.arms.rounds == Rounds::PerTargetMeetingUnshared {
+                    match ForwardFront::of(search.reborrow(), &positions, &cut) {
+                        Some(front) => Some(front),
+                        None => {
+                            failure = Some((StoppedBy::Incomplete, true));
+                            break 'classes;
+                        }
+                    }
+                } else {
+                    None
+                };
                 // MEETING, WHERE ASKED FOR, AND NOTHING ELSE CHANGED. The bound order, the
                 // attribution and what a round claims are the default's; only the direction each
-                // pass walks differs. The forward front is built once for the round and grown as
-                // each target asks, since it is the same walk for all of them - which is the
-                // sharing a pool does, without a pool deciding the winner.
-                let found = if let Some(front) = shared_front.as_mut() {
+                // pass walks differs. Sharing decides whether the front outlives this target;
+                // the pass itself cannot tell, and grows whichever it is handed.
+                let found = if let Some(front) = shared_front.as_mut().or(own_front.as_mut()) {
                     Backward::nearest_meeting(
                         search.reborrow(),
                         target,

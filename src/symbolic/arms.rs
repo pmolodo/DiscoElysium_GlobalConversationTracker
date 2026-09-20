@@ -121,6 +121,18 @@ pub enum Rounds {
     /// grown as far as each target asks.
     PerTargetMeeting,
 
+    /// THE SAME, WITH THE FRONT DROPPED BETWEEN TARGETS. Each target walks a forward front of
+    /// its own, as deep as that target needs, and it goes when its target is answered.
+    ///
+    /// The pair differs in one thing, which is what the sharing is worth: 6,108 ms against
+    /// 6,715 at unseen 5, so re-walking the shallow layers costs less than carrying the deep
+    /// ones, and this is the better of the two meeting arms - past the pool's 6,249 as well.
+    ///
+    /// AND IT CHANGES NOTHING AT DEPTH. At unseen 10 both spend 130,981,877 diagram nodes, to
+    /// the node, and both settle three options of eight before the wall. Sharing was never what
+    /// made the deep case unanswerable; the depth itself is.
+    PerTargetMeetingUnshared,
+
     /// ONE POOL FOR THE WHOLE ROUND, forward and backward. The shared walk of the meeting arm,
     /// plus deciding the round's winner by whose crawl meets first - which proves nothing per
     /// target, so the bound and the unreachable set stay empty and the next round starts from
