@@ -273,7 +273,7 @@ fn dot(
     for id in &ids {
         let Some(node) = graph.get(*id) else { continue };
         let leaves = node.links.iter().any(|link| !drawn.contains(link));
-        let mut label = label_of(node, graph.symbols());
+        let mut label = label_of(node, conversation, graph.symbols());
         if leaves {
             label.push_str("... beyond the picture\\l");
         }
@@ -416,9 +416,17 @@ fn shape_of(node: &LookAheadNode) -> &'static str {
 }
 
 /// Everything one entry is, as the lines of its label.
-fn label_of(node: &LookAheadNode, symbols: &StateSymbols) -> String {
+///
+/// AN ENTRY OF ANOTHER CONVERSATION SAYS SO. Entry numbers start again at 0 in each
+/// conversation of a group, so a bare number is only unambiguous within the one asked for - and
+/// a group can be eleven of them.
+fn label_of(node: &LookAheadNode, conversation: i32, symbols: &StateSymbols) -> String {
+    let spelled = match node.id.conversation_id == conversation {
+        true => node.id.entry_id.to_string(),
+        false => format!("{}:{}", node.id.conversation_id, node.id.entry_id),
+    };
     let mut lines = vec![
-        [node.id.entry_id.to_string()]
+        [spelled]
             .into_iter()
             .chain(what_it_is(node))
             .collect::<Vec<_>>()
@@ -533,12 +541,17 @@ fn escaped(text: &str) -> String {
 }
 
 /// Every slot the group holds, and who touches it.
+///
+/// AN ENTRY IS NAMED BY ITS CONVERSATION AND ITS NUMBER, the way the picture names it. A GROUP
+/// IS SEVERAL CONVERSATIONS - 640's is eleven - and entry numbers start again at 0 in each of
+/// them, so a bare number here names one entry per conversation in the group and nothing in
+/// particular. The first thing anyone does with this table is look an entry up in the picture.
 fn slots_md(graph: &LookAheadGraph, conversation: i32) -> String {
     let symbols = graph.symbols();
-    let mut writers: BTreeMap<usize, BTreeSet<i32>> = BTreeMap::new();
-    let mut readers: BTreeMap<usize, BTreeSet<i32>> = BTreeMap::new();
+    let mut writers: BTreeMap<usize, BTreeSet<(i32, i32)>> = BTreeMap::new();
+    let mut readers: BTreeMap<usize, BTreeSet<(i32, i32)>> = BTreeMap::new();
     for node in graph.nodes() {
-        let entry = node.id.entry_id;
+        let entry = (node.id.conversation_id, node.id.entry_id);
         for (_, slot) in slots_of(node) {
             if let Ok(slot) = usize::try_from(slot) {
                 writers.entry(slot).or_default().insert(entry);
@@ -607,13 +620,13 @@ fn kind_of(name: &str) -> &str {
         .unwrap_or("variable")
 }
 
-/// A set of entries for one cell of the table.
-fn entries(which: Option<&BTreeSet<i32>>) -> String {
+/// A set of entries for one cell of the table, each named as the picture names it.
+fn entries(which: Option<&BTreeSet<(i32, i32)>>) -> String {
     match which {
         None => "-".to_string(),
         Some(entries) => entries
             .iter()
-            .map(|entry| entry.to_string())
+            .map(|(conversation, entry)| format!("{conversation}:{entry}"))
             .collect::<Vec<_>>()
             .join(", "),
     }
