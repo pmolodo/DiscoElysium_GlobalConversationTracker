@@ -124,6 +124,8 @@ struct Options {
     /// What one pass is allowed, in milliseconds
     #[arg(long = "each-ms", value_name = "MS", default_value_t = EACH_MS)]
     each_ms: u64,
+    #[command(flatten)]
+    caching: prepared::Caching,
 }
 
 fn main() {
@@ -132,7 +134,7 @@ fn main() {
         eprintln!("no shipped index; skipping.");
         return;
     };
-    let shipped = Shipped::at(path);
+    let shipped = Shipped::at(path, asked.caching);
     let budget = DiagramBudget::new(asked.budget.bytes());
     let save = asked.save.clone();
 

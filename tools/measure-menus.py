@@ -755,8 +755,10 @@ def get_parser():
         default="",
         metavar="ARGS",
         help=(
-            "arguments to pass every group's driver, as one quoted string, e.g. "
-            "--driver='--nolimit --starts 24'; see `menu_matrix --help` for what it takes"
+            "arguments to pass every group's driver, as one string ATTACHED WITH '=' - "
+            "--driver=--no-cache, --driver='--nolimit --starts 24'. The '=' is not optional: "
+            "argparse reads a separate value that looks like a single option as an option. "
+            "See `menu_matrix --help` for what the driver takes"
         ),
     )
     Settling.add_arguments(parser, SETTLE_MS)

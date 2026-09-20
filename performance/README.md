@@ -131,7 +131,7 @@ is what `prepared::DERIVATION` is for: bump it when the meaning changes.
 
 The values that ARE the code's - the parsed index, a group's graph - carry it in their key, so a
 kept value cannot outlive the code that derived it: a rebuild costs one pass at full price and
-the passes after it are the cheap ones. `DEGCT_NO_CACHE=1` derives everything, and `DEGCT_CACHE_VERIFY=1`
+the passes after it are the cheap ones. `--no-cache` derives everything, and `--cache-verify`
 derives everything AND checks it against what was kept, which is what `tests/kept_cache.rs`
 runs over a handful of groups.
 

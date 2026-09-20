@@ -111,6 +111,8 @@ struct Options {
     /// Also replay every session and report on stderr whether it still walks
     #[arg(long = "verify-replay")]
     verify_replay: bool,
+    #[command(flatten)]
+    caching: prepared::Caching,
 }
 
 /// One canonical start per distinct group, smallest first.
@@ -305,7 +307,7 @@ fn main() {
     // index built them - see `save_world::kept_at`.
     let started = Instant::now();
     let index = read_index(&path).expect("the index reads");
-    let shipped = Shipped::read(path, index, started.elapsed());
+    let shipped = Shipped::read(path, index, started.elapsed(), asked.caching);
 
     let wanted: Vec<i32> = if asked.groups.conversations.is_empty() {
         group_starts(shipped.index())

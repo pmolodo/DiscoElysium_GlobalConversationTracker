@@ -215,6 +215,19 @@ class OptionsReachTheRun(unittest.TestCase):
             ["--nolimit", "--save", "a name with spaces"],
         )
 
+    def test_a_single_pass_through_option_needs_the_equals_form(self):
+        """Attached it parses; separate, argparse reads it as an option of this tool and refuses.
+
+        WORTH A TEST BECAUSE THE HELP HAD TO LEARN IT THE HARD WAY. `--driver "--nolimit --starts
+        24"` works - argparse takes a value with a space in it - and `--driver "--no-cache"` does
+        not, which makes the failure look arbitrary. It is the one shape a caller reaches for
+        most: one flag, passed straight through.
+        """
+        self.assertEqual(self.parse("--driver=--no-cache", "368").driver, "--no-cache")
+        with self.assertRaises(SystemExit):
+            with redirect_stderr(StringIO()):
+                self.parse("--driver", "--no-cache", "368")
+
 
 if __name__ == "__main__":
     unittest.main()

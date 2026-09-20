@@ -21,7 +21,7 @@
 //! that quietly stopped working would pass every agreement check ever written, because building
 //! everything fresh always agrees with itself.
 //!
-//! THEN, THAT WHAT IS KEPT AGREES. `DEGCT_CACHE_VERIFY=1` makes each kept value be derived again
+//! THEN, THAT WHAT IS KEPT AGREES. `Caching::verifying` makes each kept value be derived again
 //! and compared with what was read back, inside the code that reads it, and a disagreement
 //! panics rather than being reported - see `prepared::verified` and `save_world::verified`.
 
@@ -43,9 +43,10 @@ use prepared::Shipped;
 /// value whose size is what breaks it has somewhere to show.
 const GROUPS: [i32; 2] = [1494, 640];
 
-/// The whole thing, in one test, because it drives a process-wide environment variable and
-/// Rust runs a file's tests on threads of one process. One test is what makes the order it
-/// depends on the order it gets.
+/// The whole thing in one test, because each stage rests on what the one before it left: the
+/// cache has to be filled before a second reader can find it there, and read back before a
+/// verifying reader can be shown checking it. Three tests would be three orders cargo is free
+/// to choose between.
 #[test]
 fn what_is_kept_agrees_with_what_this_build_derives() {
     let Some(path) = common::shipped_index() else {
@@ -55,7 +56,7 @@ fn what_is_kept_agrees_with_what_this_build_derives() {
     // FILLING IT, and whether this run derives anything is not the point and not asserted: the
     // cache outlives the process, so a second run of this test finds its own values already
     // there. What the test is about is what a process that has been told nothing gets.
-    let filling = Shipped::at(path.clone());
+    let filling = Shipped::at(path.clone(), prepared::Caching::default());
     for group in GROUPS {
         let graph = prepared::group_graph(&filling, group)
             .expect("the group builds")
@@ -69,7 +70,7 @@ fn what_is_kept_agrees_with_what_this_build_derives() {
     }
     // READING IT BACK, in a process that has been told nothing. The index is read when the
     // first thing needs it, so a `took` of zero says nothing did.
-    let kept = Shipped::at(path.clone());
+    let kept = Shipped::at(path.clone(), prepared::Caching::default());
     for group in GROUPS {
         let held = prepared::group_graph(&kept, group).expect("the group builds");
         assert!(
@@ -97,11 +98,11 @@ fn what_is_kept_agrees_with_what_this_build_derives() {
     // verification on, the world's process-local memo is skipped, so every world handed out is
     // one that was checked.
     //
-    // SAFETY: this is the only test in this binary, and no thread has been started. The
-    // variable is read by `kept::verifying`, which nothing has called since.
-    unsafe { std::env::set_var("DEGCT_CACHE_VERIFY", "1") };
-
-    let checked = Shipped::at(path);
+    // ASKED FOR ON THIS `Shipped` ALONE, which is why the two above are unaffected by it. It
+    // used to be `std::env::set_var` - a global, process-wide, unsafe mutation, carrying a
+    // safety note arguing that no other thread had started and that nothing had read the
+    // variable since. See de-3dx9.4.4.
+    let checked = Shipped::at(path, prepared::Caching::verifying());
     for group in GROUPS {
         let graph = prepared::group_graph(&checked, group)
             .expect("the group builds")
@@ -119,10 +120,6 @@ fn what_is_kept_agrees_with_what_this_build_derives() {
         checked.took() > std::time::Duration::ZERO,
         "a verifying run derives everything it was given, which means reading the index"
     );
-
-    // SAFETY: as above, and the value is put back so that nothing else in this process inherits
-    // a verifying cache.
-    unsafe { std::env::remove_var("DEGCT_CACHE_VERIFY") };
 }
 
 /// The cache lives under the build output and nowhere else, since it is derived, it is large,

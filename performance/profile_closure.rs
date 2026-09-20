@@ -168,6 +168,8 @@ struct Options {
     groups: options::Groups,
     #[command(flatten)]
     unseen: options::Unseen<UNSEEN>,
+    #[command(flatten)]
+    caching: prepared::Caching,
 }
 
 fn main() {
@@ -176,7 +178,7 @@ fn main() {
         eprintln!("no shipped index; nothing to check.");
         return;
     };
-    let shipped = Shipped::at(path);
+    let shipped = Shipped::at(path, asked.caching);
     let unseen_wanted = asked.unseen.unseen;
 
     let groups = asked_about(&asked.groups.conversations);

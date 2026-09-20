@@ -35,7 +35,7 @@
 //! Deriving the list builds a graph for every conversation in the game to see what each group
 //! reaches, which is most of what asking costs. So the answer is kept - transparently, the way a
 //! memo is, except on disk - and a later call reads it. Nothing about the call says which
-//! happened; `DEGCT_NO_CACHE=1` derives it, as it does everything else kept.
+//! happened; `--no-cache` derives it, as it does everything else kept.
 //!
 //! ## How to run it
 //!
@@ -201,12 +201,21 @@ fn offers_the_player(graph: &lookahead_engine::graph::LookAheadGraph, id: Dialog
     false
 }
 
+/// What this driver takes. It enumerates the whole game, so there is no group to name.
+#[derive(clap::Parser)]
+#[command(about = "Which groups are worth measuring, one row each.")]
+struct Options {
+    #[command(flatten)]
+    caching: prepared::Caching,
+}
+
 fn main() {
+    let asked = <Options as clap::Parser>::parse();
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; nothing to enumerate.");
         return;
     };
-    let shipped = Shipped::at(path);
+    let shipped = Shipped::at(path, asked.caching);
     for group in valid_groups(&shipped) {
         println!(
             "{}\t{}\t{}\t{}\t{}",

@@ -55,7 +55,7 @@ Checked against the code rather than trusted, by `tests/environment_table.rs`: i
 tracked file for a variable spelled out in full or asked for by bare name through the helper for
 its language, compares what it finds with the rows below and with the count in this sentence,
 and fails with the block to paste. So a stale table is a failing test rather than a reader
-looking for a variable that has been renamed. 24 variables.
+looking for a variable that has been renamed. 22 variables.
 
 A TEST RATHER THAN A GENERATOR because what is wanted is enforcement: a build script that
 rewrote this file would dirty the working tree on every build, which every measurement's log
@@ -65,7 +65,6 @@ forgotten.
 | `DEGCT_ALL_COMMITTED_SAVES` | `tests/common/mod.rs` |
 | `DEGCT_ARMS` | `tools/measure-residue-arms.sh` |
 | `DEGCT_BUDGET_MB` | `tools/measure-residue-arms.sh` |
-| `DEGCT_CACHE_VERIFY` | `performance/README.md`, `performance/kept.rs`, `performance/prepared.rs`, `performance/save_world.rs`, `tests/kept_cache.rs` |
 | `DEGCT_CONVERSATION` | `AGENTS.md`, `CLAUDE.md`, `docs/modelling-gaps.md`, `src/core/env.rs`, `tools/degct-env.sh`, `tools/measurement_common.py` |
 | `DEGCT_GIT_INDEX_FILE` | `build.rs` |
 | `DEGCT_HEADER` | `tools/measurement_common.py` |
@@ -74,7 +73,6 @@ forgotten.
 | `DEGCT_MEASUREMENT` | `tools/measure-symbolic.sh` |
 | `DEGCT_MENUS_OUT` | `AGENTS.md`, `CLAUDE.md`, `performance/README.md`, `tools/DegctEnv.psm1`, `tools/degct-env.sh`, `tools/measure-menus.py`, `tools/measurement_common.py` |
 | `DEGCT_NOLIMIT` | `src/core/env.rs`, `tools/DegctEnv.psm1`, `tools/degct-env.sh`, `tools/measurement_common.py` |
-| `DEGCT_NO_CACHE` | `performance/README.md`, `performance/group_list.rs`, `performance/kept.rs`, `performance/prepared.rs`, `performance/save_world.rs` |
 | `DEGCT_OUT` | `tools/degct-env.sh` |
 | `DEGCT_POOLED_ROUNDS` | `src/symbolic/menu.rs` |
 | `DEGCT_ROW_SECONDS` | `tools/DegctEnv.psm1`, `tools/degct-env.sh` |

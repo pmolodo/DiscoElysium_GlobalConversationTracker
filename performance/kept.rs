@@ -50,22 +50,65 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-/// Whether `DEGCT_NO_CACHE` says to derive everything rather than trusting what was kept.
+/// What a run has been told to do about the cache.
+///
+/// ## Why it is carried rather than read where it is wanted
 ///
 /// A CACHE UNDERNEATH A MEASUREMENT HAS TO HAVE A WAY OFF. Every performance number this
 /// repository produces is taken against values derived here, and a cache that cannot be
-/// disabled is one whose correctness can only be argued about rather than checked.
-pub fn no_cache() -> bool {
-    lookahead_engine::core::env::var("NO_CACHE").as_deref() == Ok("1")
+/// disabled is one whose correctness can only be argued about rather than checked. So the two
+/// settings are real and have to reach a dozen places.
+///
+/// WHAT THEY USED TO BE is two functions reading the environment, called from seven places
+/// across three files that every driver includes - so the setting was decided in the middle of
+/// the work rather than by the caller. A test that wanted the verifying arm had no way to ask
+/// for it but `std::env::set_var`, which is a global, process-wide, unsafe mutation, and the
+/// comment justifying it had to argue that no other thread had started yet.
+///
+/// IT RIDES ON `Shipped` instead - see `prepared::Shipped::caching` - because every one of
+/// those places already has one in hand, so nothing gained a parameter and a driver decides it
+/// once on its command line.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::Args)]
+pub struct Caching {
+    /// Derive everything rather than trusting what was kept
+    #[arg(long = "no-cache")]
+    pub no_cache: bool,
+
+    /// Derive everything AND check it against what was kept
+    ///
+    /// The answer a run reports is the derived one either way, so a verifying run measures the
+    /// uncached cost and cannot be quietly wrong about what it compared. `tests/kept_cache.rs`
+    /// is what runs it over a handful of groups.
+    #[arg(long = "cache-verify")]
+    pub verify: bool,
 }
 
-/// Whether `DEGCT_CACHE_VERIFY` says to derive everything AND check it against what was kept.
-///
-/// The answer a run reports is the derived one either way, so a verifying run measures the
-/// uncached cost and cannot be quietly wrong about what it compared. See `tests/kept_cache.rs`,
-/// which is what runs this over a handful of groups.
-pub fn verifying() -> bool {
-    lookahead_engine::core::env::var("CACHE_VERIFY").as_deref() == Ok("1")
+impl Caching {
+    /// Nothing kept is trusted: everything is derived.
+    pub fn none() -> Self {
+        Self {
+            no_cache: true,
+            verify: false,
+        }
+    }
+
+    /// Everything kept is derived again and compared where it is read.
+    pub fn verifying() -> Self {
+        Self {
+            no_cache: false,
+            verify: true,
+        }
+    }
+
+    /// Whether what was kept may be trusted at all.
+    pub fn no_cache(self) -> bool {
+        self.no_cache
+    }
+
+    /// Whether what was kept must be checked against a fresh derivation.
+    pub fn verifying_reads(self) -> bool {
+        self.verify
+    }
 }
 
 /// Where a value of this `kind` described by `about` is kept, or `None` where it cannot safely

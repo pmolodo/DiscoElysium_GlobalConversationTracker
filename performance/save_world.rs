@@ -44,7 +44,7 @@ mod kept;
 // example that included it, so two copies of this one would be two distinct `Shipped` types and
 // the world a measurement asks for could not be asked with the one it holds. Every example that
 // includes this file declares `mod prepared` beside it.
-use crate::prepared::Shipped;
+use crate::prepared::{Caching, Shipped};
 
 /// What this process has already built, so it is not built twice.
 ///
@@ -88,7 +88,7 @@ pub const TEMPLATE: &str = "save_template";
 /// The world `save` puts `conversation`'s group in, built the way `tests/scenario_suites.rs`
 /// builds one.
 ///
-/// Built once per process per group and kept - see [`Built`]. `DEGCT_NO_CACHE=1` builds it
+/// Built once per process per group and kept - see [`Built`]. `--no-cache` builds it
 /// every time, for when an answer is in doubt.
 pub fn of_save(
     graph: &LookAheadGraph,
@@ -100,18 +100,23 @@ pub fn of_save(
     // NOT WHILE VERIFYING, because the memo is what the disk cache would otherwise never be
     // asked past: a run that asked for the same world twice would check the first answer and
     // hand back the second unchecked. A verifying run pays for every world it is given.
-    if !kept::no_cache()
-        && !kept::verifying()
+    let caching = shipped.caching();
+    if !caching.no_cache()
+        && !caching.verifying_reads()
         && let Some(held) = memo().lock().expect("the cache is not poisoned").get(&key)
     {
         return held.clone();
     }
 
-    let on_disk = (!kept::no_cache())
+    let on_disk = (!caching.no_cache())
         .then(|| kept_at(graph, conversation, shipped, save))
         .flatten();
     let built = match on_disk.as_ref().and_then(|path| read_kept(path)) {
-        Some(held) => verified(held, || build_of_save(graph, conversation, shipped, save)),
+        Some(held) => verified(
+            held,
+            || build_of_save(graph, conversation, shipped, save),
+            caching,
+        ),
         None => {
             let fresh = build_of_save(graph, conversation, shipped, save);
             if let Some(path) = on_disk.as_ref() {
@@ -121,7 +126,7 @@ pub fn of_save(
         }
     };
 
-    if !kept::no_cache() {
+    if !caching.no_cache() {
         memo()
             .lock()
             .expect("the cache is not poisoned")
@@ -138,7 +143,7 @@ pub fn of_save(
 /// other thing every kept value depends on.
 ///
 /// THE SAVE IS KEYED BY NAME, since a save the game wrote is never edited - that is a rule of
-/// this repository rather than an assumption about this cache - and `DEGCT_NO_CACHE=1` is the
+/// this repository rather than an assumption about this cache - and `--no-cache` is the
 /// way out if one ever is.
 fn kept_at(
     graph: &LookAheadGraph,
@@ -157,13 +162,17 @@ fn kept_at(
 }
 
 /// `held`, having checked it against a freshly built world - but only where
-/// `DEGCT_CACHE_VERIFY` asked for that check. See `kept::verifying`.
+/// `--cache-verify` asked for that check. See `kept::Caching`.
 ///
 /// ON THE ANSWERS, which is what a measurement reads a world for: the variables it holds, what
 /// it calls seen, and which checks pass. A world stale for either reason the key guards against
 /// - another index, another build of the engine - differs in exactly those.
-fn verified(held: WorldSnapshot, fresh: impl FnOnce() -> WorldSnapshot) -> WorldSnapshot {
-    if !kept::verifying() {
+fn verified(
+    held: WorldSnapshot,
+    fresh: impl FnOnce() -> WorldSnapshot,
+    caching: Caching,
+) -> WorldSnapshot {
+    if !caching.verifying_reads() {
         return held;
     }
     let built = fresh();

@@ -329,6 +329,9 @@ struct Options {
     /// Which scenario a row is taken in; see `walked_profile`
     #[arg(long = "walked-profile", value_name = "NAME", default_value = WALK_DEEPEST)]
     walked_profile: String,
+
+    #[command(flatten)]
+    caching: prepared::Caching,
 }
 
 impl Options {
@@ -608,7 +611,7 @@ fn main() {
     // NOT READ HERE, and that is the point: a group whose graph and whose world are both kept
     // never needs the index at all. See `prepared::Shipped`, and `Prep::index` for the column
     // that says what it cost when something did need it.
-    let shipped = Shipped::at(path);
+    let shipped = Shipped::at(path, asked.caching);
 
     // ASKED FOR ON ITS OWN, like the header, and for the same reason: a whole-game run has to
     // know which groups there are before it measures any, and a list kept anywhere else can

@@ -53,7 +53,7 @@ use lookahead_engine::index::{Index, build_group_graph, read_index};
 #[path = "kept.rs"]
 mod kept;
 
-pub use kept::{no_cache, verifying};
+pub use kept::Caching;
 
 /// An index that is read when something actually needs it, and not before.
 ///
@@ -68,24 +68,33 @@ pub use kept::{no_cache, verifying};
 pub struct Shipped {
     path: PathBuf,
     read: OnceLock<(Index, Duration)>,
+    /// WHAT THIS RUN WAS TOLD ABOUT THE CACHE, carried rather than read where it is wanted.
+    /// Everything under this module that consults the cache already has a `Shipped`, so this
+    /// is what lets the driver decide it once. See `kept::Caching`.
+    caching: kept::Caching,
 }
 
 impl Shipped {
     /// An index at `path`, not yet read.
-    pub fn at(path: PathBuf) -> Self {
+    pub fn at(path: PathBuf, caching: kept::Caching) -> Self {
         Self {
             path,
             read: OnceLock::new(),
+            caching,
         }
     }
 
     /// An index already in hand, for a caller that read one for its own reasons.
     ///
     /// `took` is what that read cost, so a caller which timed it does not lose the number.
-    pub fn read(path: PathBuf, index: Index, took: Duration) -> Self {
+    pub fn read(path: PathBuf, index: Index, took: Duration, caching: kept::Caching) -> Self {
         let read = OnceLock::new();
         let _ = read.set((index, took));
-        Self { path, read }
+        Self {
+            path,
+            read,
+            caching,
+        }
     }
 
     /// The index, read now if this is the first thing to ask for it.
@@ -94,9 +103,14 @@ impl Shipped {
             .read
             .get_or_init(|| {
                 let started = Instant::now();
-                (read_index_kept(&self.path), started.elapsed())
+                (read_index_kept(&self.path, self.caching), started.elapsed())
             })
             .0
+    }
+
+    /// What this run was told about the cache, for everything that has a `Shipped` in hand.
+    pub fn caching(&self) -> kept::Caching {
+        self.caching
     }
 
     /// What reading it cost, or nothing at all where nothing has needed it.
@@ -121,15 +135,15 @@ impl Shipped {
 /// matters as much as the file: what is packed is this build's idea of what an index record
 /// holds, and reading it back into another build's idea is exactly the silent staleness the
 /// keys exist to prevent.
-fn read_index_kept(path: &std::path::Path) -> Index {
-    let at = (!no_cache())
+fn read_index_kept(path: &std::path::Path, caching: kept::Caching) -> Index {
+    let at = (!caching.no_cache())
         .then(|| kept::at("index", &kept::stamp(path)?))
         .flatten();
 
     if let Some(at) = at.as_ref()
         && let Some(held) = kept::read_packed::<Index>(at)
     {
-        if verifying() {
+        if caching.verifying_reads() {
             let fresh = read_index(path).expect("the index reads");
             assert_eq!(
                 held.len(),
@@ -194,10 +208,10 @@ pub fn content_of(index: &Index, conversations: &[i32]) -> String {
 /// the graph builder's own and are never kept: a group that does not build is a fast answer
 /// already, and keeping a failure would mean keeping a reason to distrust the cache.
 ///
-/// `DEGCT_NO_CACHE=1` builds it, and `DEGCT_CACHE_VERIFY=1` builds it AND checks what was kept
+/// `--no-cache` builds it, and `--cache-verify` builds it AND checks what was kept
 /// against what was built - see `verified`.
 pub fn group_graph(shipped: &Shipped, conversation: i32) -> Result<Prepared, String> {
-    let at = (!no_cache())
+    let at = (!shipped.caching().no_cache())
         .then(|| {
             let stamp = shipped.stamp()?;
             kept::at("graphs", &format!("{conversation}\u{1}{stamp}"))
@@ -207,7 +221,11 @@ pub fn group_graph(shipped: &Shipped, conversation: i32) -> Result<Prepared, Str
     if let Some(path) = at.as_ref()
         && let Some(held) = kept::read_packed::<Prepared>(path)
     {
-        return Ok(verified(held, || build(shipped, conversation)));
+        return Ok(verified(
+            held,
+            || build(shipped, conversation),
+            shipped.caching(),
+        ));
     }
 
     let built = build(shipped, conversation)?;
@@ -233,7 +251,7 @@ fn build(shipped: &Shipped, conversation: i32) -> Result<Prepared, String> {
 }
 
 /// `held`, having checked it against what building it fresh gives - but only where
-/// `DEGCT_CACHE_VERIFY` asked for that check.
+/// `--cache-verify` asked for that check.
 ///
 /// A CACHE NOTHING VERIFIES IS A CACHE NOBODY SHOULD TRUST, and this one sits underneath every
 /// performance number the project produces. The comparison is on what a measurement reads off a
@@ -244,8 +262,12 @@ fn build(shipped: &Shipped, conversation: i32) -> Result<Prepared, String> {
 /// PANICS RATHER THAN REPORTS, because a run that has found its cache wrong has already
 /// measured something nobody can interpret, and going on would file the numbers as if nothing
 /// had happened.
-fn verified(held: Prepared, fresh: impl FnOnce() -> Result<Prepared, String>) -> Prepared {
-    if !verifying() {
+fn verified(
+    held: Prepared,
+    fresh: impl FnOnce() -> Result<Prepared, String>,
+    caching: kept::Caching,
+) -> Prepared {
+    if !caching.verifying_reads() {
         return held;
     }
     let built = fresh().expect("the graph builds, since the kept one did");
@@ -296,8 +318,8 @@ pub struct Group {
 /// engine reads them, it does not decide them, and no setting can change them. So the answer
 /// outlives any number of rebuilds and any way of asking. It is every conversation's content
 /// hash rather than the index FILE, so a regenerated index that says the same thing keeps it.
-fn list_at(content: &str) -> Option<std::path::PathBuf> {
-    if no_cache() || content.is_empty() {
+fn list_at(content: &str, caching: kept::Caching) -> Option<std::path::PathBuf> {
+    if caching.no_cache() || content.is_empty() {
         return None;
     }
     kept::at_data("groups", &format!("{DERIVATION}\u{1}{content}"))
@@ -324,11 +346,11 @@ const DERIVATION: u32 = 1;
 pub fn group_list(shipped: &Shipped, build: impl FnOnce() -> Vec<Group>) -> Vec<Group> {
     let index = shipped.index();
     let content = content_of(index, &index.keys().copied().collect::<Vec<i32>>());
-    let at = list_at(&content);
+    let at = list_at(&content, shipped.caching());
 
     if let Some(at) = at.as_ref()
         && let Some(held) = kept::read_packed::<Vec<Group>>(at)
-        && !verifying()
+        && !shipped.caching().verifying_reads()
     {
         return held;
     }
