@@ -168,7 +168,7 @@ None of this weakens the reason the column exists - de-2p8j.2, where a change th
 while moving which options a menu recommends would read as no change at all in `rounds`. That is
 the shipped algorithm against ITSELF across a change, where no second search order is available to
 explain a difference away. The case that made this a rule: 761 stars 422,164,989,848 under the
-shipped arm and 422,416,164,989 under `--pooled-rounds`, and the pair was written up as a defect
+shipped arm and 422,416,164,989 under `--rounds pooled-meeting`, and the pair was written up as a defect
 in one of them before anything asked what else could produce it (de-mqu3).
 
 ## Committed saves: never edit what the game wrote

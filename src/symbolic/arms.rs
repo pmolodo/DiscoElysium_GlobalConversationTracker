@@ -39,40 +39,81 @@ pub struct Arms {
     /// arm at all rather than a decision taken once.
     pub var_order: Ordering,
 
-    /// Whether a round of the exact marking is searched by one pool rather than by branch and
-    /// bound.
+    /// How a round of the exact marking searches for the nearest target.
     ///
-    /// OFF UNLESS ASKED, and the pool is the SLOWER of the two on the menu it was built for.
-    /// Measured 2026-09-19 at ff1db64, conversation 761 at link-deepest-10 with the limits off,
-    /// medians of three runs with a cold pass discarded: branch and bound answers in 4,810,836
-    /// diagram nodes and 5.2 seconds, the pool in 6,444,119 and 8.9. Every run of each arm held
-    /// its arm's node count to the node, so the nodes are the arm and the seconds are the
-    /// machine.
-    ///
-    /// THE RANKING IS THE REDUNDANT COUNTERS' DOING, and they were worth an order of magnitude
-    /// more to one arm than the other. The same menu, the same three-run medians, either side of
-    /// the layout dropping them:
-    ///
-    /// ```text
-    ///                  carried (bea707f)     dropped (35fccbc)
-    ///   branch/bound   131,399 ms  93.4M     5,198 ms  4.81M     25.3x
-    ///   pooled          20,593 ms  14.7M     8,910 ms  6.44M      2.3x
-    /// ```
-    ///
-    /// So the pool wins by 6.4x with them and loses by 1.7x without. The reading that fits,
-    /// though nothing here measures it on its own: one pooled race pays for a wide variable once
-    /// a round where branch and bound pays per target, so a redundant variable is worth most to
-    /// the arm that revisits it. Neither arm's marks moved. A run
-    /// measuring the pool is therefore asking whether anything is left of its advantage, rather
-    /// than turning on a known win.
-    ///
-    /// The two do not always mark the same options, and that is not a defect in either - see the
-    /// rule in CLAUDE.md. On this menu they star four each, agreeing on three.
-    ///
-    /// It is an arm at all because the exact marking runs on 133 menus of 389. See de-y04p, and
-    /// de-t329 for the ceiling: step 2 costs 451 ms across the whole game, over the 48 menus
-    /// that reach it.
-    pub pooled_rounds: bool,
+    /// THREE SEARCHES FOR ONE QUESTION, and they disagree about cost rather than about the
+    /// answer. See [`Rounds`] for what each one does and what it measured.
+    pub rounds: Rounds,
+}
+
+/// How a round of the exact marking searches, and what each way costs.
+///
+/// ## The measured comparison
+///
+/// Conversation 761 at link-deepest-10 with the limits off - the group the arms were built for -
+/// as medians of three runs with a cold pass discarded. Each arm holds its node count to the
+/// node across its runs, so the nodes are the arm and the seconds are the machine.
+///
+/// ```text
+///                        carried (bea707f)      dropped (35fccbc)
+///   per-target backward  131,399 ms  93.4M      5,198 ms  4.81M     25.3x
+///   pooled meeting        20,593 ms  14.7M      8,910 ms  6.44M      2.3x
+/// ```
+///
+/// THE RANKING IS THE REDUNDANT COUNTERS' DOING. They were worth an order of magnitude more to
+/// the per-target arm than to the pool, so the pool wins by 6.4x with them and loses by 1.7x
+/// without. The reading that fits, though nothing measures it on its own: one pooled race pays
+/// for a wide variable once a round where a per-target search pays for it again per target, so a
+/// redundant variable is worth most to the arm that revisits it.
+///
+/// ## All three, at two depths
+///
+/// Same group and same three-run medians, with the counters dropped:
+///
+/// ```text
+///                        unseen 5                 unseen 10
+///   per-target backward    4,262 ms  4.41M          5,193 ms  4.81M
+///   pooled meeting         6,249 ms  6.34M          8,874 ms  6.44M
+///   per-target meeting     6,715 ms  6.34M        454,450 ms   131M   settled 3 of 8
+/// ```
+///
+/// THE LAST FIGURE IS NOT A TIMING. At link-deepest-10 the per-target meeting does not answer
+/// the menu at all: it runs past a five-minute wall, holds 27x the nodes the default holds and
+/// settles three options of eight, so its milliseconds are a floor rather than a cost.
+///
+/// A forward front is rebuilt every round, and with the counters gone the backward half it
+/// replaces is cheap - so the meeting arms now pay for the expensive half to save a cheap one.
+/// The pool at least stops a whole round at the first meeting; the per-target arm grows the
+/// shared front deeper for every target the bound does not skip. Weighing fronts by entry count
+/// instead, which is what this arm was measured with when it was first evaluated, makes it worse
+/// again: 21,874 ms and 16.8M nodes at unseen 5.
+///
+/// The arms do not always mark the same options, and that is not a defect in any of them - see
+/// the rule in CLAUDE.md. `tests/menu_oracle.rs` runs every case under every arm, which is what
+/// holds each one to the distances exhaustive search finds.
+///
+/// It is an arm at all because the exact marking runs on 133 menus of 389. See de-y04p, and
+/// de-t329 for the ceiling: step 2 costs 451 ms across the whole game, over the 48 menus that
+/// reach it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum Rounds {
+    /// ONE BACKWARD CRAWL PER TARGET, in bound order, stopping at the first target whose bound
+    /// cannot beat the best distance proven this round. What the product does.
+    #[default]
+    PerTargetBackward,
+
+    /// PER TARGET, MEETING IN THE MIDDLE. The bound order, the attribution and what a round
+    /// claims are the default's; only the direction each pass walks differs, so a comparison
+    /// against the default says what meeting is worth on its own. The forward walk is the same
+    /// for every target in a round - the same options, the same cut - so it is built once and
+    /// grown as far as each target asks.
+    PerTargetMeeting,
+
+    /// ONE POOL FOR THE WHOLE ROUND, forward and backward. The shared walk of the meeting arm,
+    /// plus deciding the round's winner by whose crawl meets first - which proves nothing per
+    /// target, so the bound and the unreachable set stay empty and the next round starts from
+    /// nothing.
+    PooledMeeting,
 }
 
 impl Arms {

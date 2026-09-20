@@ -201,7 +201,7 @@ use std::time::{Duration, Instant};
 use lookahead_engine::bridge::{NodeRef, SnapshotWorld, WorldSnapshot};
 use lookahead_engine::core::types::{DialogueNodeId, SeenState, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;
-use lookahead_engine::symbolic::arms::Arms;
+use lookahead_engine::symbolic::arms::{Arms, Rounds};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
@@ -346,9 +346,9 @@ struct Options {
     #[arg(long = "var-order", value_enum, default_value_t = Ordering::Slot)]
     var_order: Ordering,
 
-    /// Search a round of the exact marking by one pool rather than by branch and bound
-    #[arg(long = "pooled-rounds")]
-    pooled_rounds: bool,
+    /// How a round of the exact marking searches for the nearest target
+    #[arg(long, value_enum, default_value_t = Rounds::PerTargetBackward)]
+    rounds: Rounds,
 }
 
 impl Options {
@@ -357,7 +357,7 @@ impl Options {
     fn arms(&self) -> Arms {
         Arms {
             var_order: self.var_order,
-            pooled_rounds: self.pooled_rounds,
+            rounds: self.rounds,
         }
     }
 }

@@ -34,7 +34,8 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use super::backward::{Backward, Budget as PassBudget, Nearest, Position, Round};
+use super::arms::Rounds;
+use super::backward::{Backward, Budget as PassBudget, ForwardFront, Nearest, Position, Round};
 
 use super::known::GroupShape;
 use super::search::Search;
@@ -715,8 +716,25 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
             // the first meeting is the least distance over every option and every target still
             // in play. It proves nothing per target, so the bound and the unreachable set stay
             // empty and the next round starts from nothing. See `Backward::nearest_choices`.
+            // ONE FORWARD FRONT FOR THE ROUND, where the passes are meeting ones. It is the same
+            // walk for every target in the round, so it is built here and grown by whichever
+            // target needs it deeper. Rebuilt each round because the cut has changed: a round
+            // cuts the winning option, and a front walked under the old cut would keep routes
+            // the new one refuses.
+            let mut shared_front = if search.arms.rounds == Rounds::PerTargetMeeting {
+                match ForwardFront::of(search.reborrow(), &positions, &cut) {
+                    Some(front) => Some(front),
+                    None => {
+                        failure = Some((StoppedBy::Incomplete, true));
+                        break 'classes;
+                    }
+                }
+            } else {
+                None
+            };
+
             let mut best: Option<(usize, usize, DialogueNodeId)> = None;
-            if search.arms.pooled_rounds {
+            if search.arms.rounds == Rounds::PooledMeeting {
                 let left = budget.wall.saturating_sub(began.elapsed());
                 if left.is_zero() {
                     failure = Some((StoppedBy::Time, false));
@@ -748,7 +766,7 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
             // beat the best distance proven this round - ties included, since a tie cannot
             // change which distance is least.
             for &target in &in_play {
-                if search.arms.pooled_rounds {
+                if search.arms.rounds == Rounds::PooledMeeting {
                     break;
                 }
                 if best.is_some_and(|(nearest, _, _)| bounds[&target] >= nearest) {
@@ -760,14 +778,32 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
                     break 'classes;
                 }
                 answer.passes += 1;
-                match Backward::nearest(
-                    search.reborrow(),
-                    target,
-                    &cut,
-                    &pass_budget(left),
-                    &known,
-                    &positions,
-                ) {
+                // MEETING, WHERE ASKED FOR, AND NOTHING ELSE CHANGED. The bound order, the
+                // attribution and what a round claims are the default's; only the direction each
+                // pass walks differs. The forward front is built once for the round and grown as
+                // each target asks, since it is the same walk for all of them - which is the
+                // sharing a pool does, without a pool deciding the winner.
+                let found = if let Some(front) = shared_front.as_mut() {
+                    Backward::nearest_meeting(
+                        search.reborrow(),
+                        target,
+                        &cut,
+                        &pass_budget(left),
+                        &known,
+                        &positions,
+                        front,
+                    )
+                } else {
+                    Backward::nearest(
+                        search.reborrow(),
+                        target,
+                        &cut,
+                        &pass_budget(left),
+                        &known,
+                        &positions,
+                    )
+                };
+                match found {
                     Nearest::Found { distance, winner } => {
                         proven.insert(target, distance);
                         if best.is_none_or(|(nearest, _, _)| distance < nearest) {
