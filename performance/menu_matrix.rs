@@ -181,9 +181,9 @@
 //! EVERY ROW IS WALK-DEEPEST-X BY DEFAULT, where X is `--unseen`: each menu is asked in a
 //! state a greedy playthrough reached, with the deepest entries THAT WALK REACHES still to come.
 //! The world it hands the engine IS the walk's own, so there is one account of what the player
-//! has read rather than two that can disagree. `--walked-profile menu` asks instead about
-//! the menu the player is standing at; it is the more honest profile and the weaker
-//! measurement, and `menu_profile::Starts` carries the numbers.
+//! has read rather than two that can disagree. The starts are the entries that can reach
+//! something still unseen rather than the menu the player is standing at, which is what makes
+//! every one of them pay for a real search - see `menu_profile::walked_profile`.
 //!
 //! THE FRESH-SAVE PAIR asks the same menu of a save that has never opened the conversation, and
 //! differs only in what an EARLIER playthrough left unread: `=synthetic-menu` takes the deepest
@@ -461,8 +461,6 @@ const SYNTHETIC_MENU_WALK_DEEPEST: &str = "synthetic-menu-walk-deepest";
 /// The FIRST menu a walk-up from the conversation's start reaches, with walk-deepest-X globally
 /// unseen. See `Scenario`.
 const FIRST_MENU: &str = "first-menu";
-/// The menu the player is standing at, rather than starts chosen for reaching the unseen.
-const WALKED_ON_SCREEN: &str = "menu";
 /// What 21 rows already in `performance/logs` name `WALK_DEEPEST` as, kept so they stay
 /// reproducible. Nothing else spells it this way any more.
 const WALKED_FLAG: &str = "1";
@@ -478,7 +476,6 @@ const WALKED_FLAG: &str = "1";
 fn walked_profile_names() -> clap::builder::PossibleValuesParser {
     let named = [
         WALK_DEEPEST,
-        WALKED_ON_SCREEN,
         SYNTHETIC_MENU,
         SYNTHETIC_MENU_WALK_DEEPEST,
         FIRST_MENU,
@@ -528,15 +525,13 @@ fn walked_profile_names() -> clap::builder::PossibleValuesParser {
 /// the command line is refused before that, by [`walked_profile_names`].
 fn walked_profile(named: &str) -> Scenario {
     match named {
-        "" | WALKED_FLAG | WALK_DEEPEST => Scenario::Walked(menu_profile::Starts::Reaching),
-        WALKED_ON_SCREEN => Scenario::Walked(menu_profile::Starts::OnScreen),
+        "" | WALKED_FLAG | WALK_DEEPEST => Scenario::Walked,
         SYNTHETIC_MENU => Scenario::SyntheticMenu(Globally::LinkDeepest),
         SYNTHETIC_MENU_WALK_DEEPEST => Scenario::SyntheticMenu(Globally::WalkDeepest),
         FIRST_MENU => Scenario::FirstMenu,
         other => panic!(
             "--walked-profile {other:?}: expected {WALK_DEEPEST} (or {WALKED_FLAG}), \
-             {WALKED_ON_SCREEN}, {SYNTHETIC_MENU}, {SYNTHETIC_MENU_WALK_DEEPEST} or \
-             {FIRST_MENU}"
+             {SYNTHETIC_MENU}, {SYNTHETIC_MENU_WALK_DEEPEST} or {FIRST_MENU}"
         ),
     }
 }
@@ -578,7 +573,7 @@ enum Globally {
 enum Scenario {
     /// Walk-deepest-X globally unseen, asked in the world the walk stopped in. The walk has
     /// shown a great deal, so most one-time effects have already fired.
-    Walked(menu_profile::Starts),
+    Walked,
     /// ARTIFICIAL MENU, NOTHING SHOWN. The structural start set of `MenuProfile::of`, which is
     /// not a menu any player can stand at, asked on a save that has never opened the
     /// conversation - so every `once` in the group is still pending. Everything outside the
@@ -781,7 +776,7 @@ fn main() {
                     continue;
                 }
             }
-        } else if let Scenario::Walked(which) = scenario {
+        } else if matches!(scenario, Scenario::Walked) {
             // THE SAME WORLD THE DATASET'S WALK USES, declared table included. A walk cannot
             // decide a variable nothing declares without it, so it refuses and stops short -
             // and this walk and `greedy_playthrough`'s would then be two different walks
@@ -799,7 +794,6 @@ fn main() {
                 WALK_CEILING,
                 unseen_wanted,
                 starts_wanted,
-                which,
             ) {
                 // THE WALK'S OWN WORLD, less what it has now shown and what its variables now
                 // hold. Everything else - the character sheet, the checks, the inventory - is
