@@ -112,6 +112,11 @@ pub struct Service {
     /// workspace has to be exclusive: two requests racing to build one would put two
     /// managers on two threads for the same group.
     workspace: std::sync::Mutex<Option<crate::workspace::Workspace>>,
+    /// Where what a group implies is kept between runs - see [`crate::index::facts`].
+    ///
+    /// Beside the index, because it is derived from it and worthless without it. `None` for a
+    /// service opened over nothing, which has no index to put it beside.
+    facts: Option<crate::index::facts::FactStore>,
 }
 
 impl Service {
@@ -130,6 +135,7 @@ impl Service {
         // An index whose header names a version this build does not read is refused
         // outright rather than half-understood: it would pass a content check while
         // missing fields the engine has since started reading.
+        let facts = Some(crate::index::facts::FactStore::beside(index));
         let (index, header) = read_index_with_header(index).map_err(|_| Status::IndexUnreadable)?;
 
         Ok(Self {
@@ -137,6 +143,7 @@ impl Service {
             declared,
             header,
             workspace: Default::default(),
+            facts,
         })
     }
 
@@ -149,6 +156,7 @@ impl Service {
             declared: None,
             header: None,
             workspace: Default::default(),
+            facts: None,
         }
     }
 
@@ -306,6 +314,13 @@ impl Service {
             else {
                 return crate::bridge::answer(&self.index, self.declared.clone(), &request);
             };
+            // BEFORE THE WORKSPACE TAKES THE GRAPH, and on the miss path rather than every
+            // request, which is the same place the graph itself is built: a workspace that
+            // serves the next request serves it with the facts this gave its graph.
+            if let Some(facts) = &self.facts {
+                let content = crate::index::facts::content_of(&self.index, &group);
+                facts.fill(&graph, &group, &content);
+            }
             *held = crate::workspace::Workspace::open(
                 graph,
                 group,

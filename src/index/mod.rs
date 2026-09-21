@@ -217,6 +217,7 @@ pub fn conversation_fields_read() -> Vec<String> {
     names
 }
 
+pub mod facts;
 pub mod journal;
 pub mod price;
 

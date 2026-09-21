@@ -43,7 +43,7 @@
 
 #![allow(dead_code)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -122,6 +122,11 @@ impl Shipped {
     pub fn stamp(&self) -> Option<String> {
         kept::stamp(&self.path)
     }
+
+    /// Where the index is, which is where what a group implies is kept beside it.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
 }
 
 /// The index at `path`, packed beside the build output the first time it is parsed.
@@ -187,19 +192,10 @@ pub struct Prepared {
 
 /// What a group's data reduces to, from the content hashes the index carries.
 pub fn content_of(index: &Index, conversations: &[i32]) -> String {
-    let mut ordered: Vec<i32> = conversations.to_vec();
-    ordered.sort_unstable();
-    let mut key = String::new();
-    for conversation in ordered {
-        let Some(record) = index.get(&conversation) else {
-            return String::new();
-        };
-        if record.hash.is_empty() {
-            return String::new();
-        }
-        key.push_str(&format!("{conversation}:{}\u{1}", record.hash));
-    }
-    key
+    // THE ENGINE'S OWN ROUTINE, because this key now says whether a stored answer the ENGINE
+    // reads is still good - see `index::facts`. Two copies of it would be two ideas of when a
+    // cache is stale, and a measurement would then exercise one the product does not.
+    lookahead_engine::index::facts::content_of(index, conversations)
 }
 
 /// A group's graph and the conversations it is made of, built once and kept.
@@ -221,10 +217,9 @@ pub fn group_graph(shipped: &Shipped, conversation: i32) -> Result<Prepared, Str
     if let Some(path) = at.as_ref()
         && let Some(held) = kept::read_packed::<Prepared>(path)
     {
-        return Ok(verified(
-            held,
-            || build(shipped, conversation),
-            shipped.caching(),
+        return Ok(with_facts(
+            shipped,
+            verified(held, || build(shipped, conversation), shipped.caching()),
         ));
     }
 
@@ -232,7 +227,29 @@ pub fn group_graph(shipped: &Shipped, conversation: i32) -> Result<Prepared, Str
     if let Some(path) = at.as_ref() {
         kept::write_packed(path, &built);
     }
-    Ok(built)
+    Ok(with_facts(shipped, built))
+}
+
+/// The same group, with what it implies read off disk rather than worked out again.
+///
+/// THE SAME STORE THE PRODUCT USES, `index::facts`, rather than a second one keyed the
+/// measurement's way. A row taken over a graph that worked its facts out by itself measures
+/// something no request does - see the rule in CLAUDE.md about measuring what ships.
+///
+/// NOT FOLDED INTO WHAT `kept` ALREADY HOLDS, even though a graph is kept whole: what the graph
+/// derives is left out of what is serialised deliberately - see `LookAheadGraph::inert` - so a
+/// kept graph arrives without it and would work it out per process, which is the cost this
+/// avoids.
+/// THE KEY COMES OFF THE PREPARED GROUP, never off the index: a process whose graph was kept
+/// has not read the index and must not be made to - see `tests/kept_cache.rs`, which fails if
+/// anything here does.
+fn with_facts(shipped: &Shipped, prepared: Prepared) -> Prepared {
+    lookahead_engine::index::facts::FactStore::beside(shipped.path()).fill(
+        &prepared.graph,
+        &prepared.conversations,
+        &prepared.content,
+    );
+    prepared
 }
 
 /// A group prepared from the index, which is what `group_graph` answers with when it has to.

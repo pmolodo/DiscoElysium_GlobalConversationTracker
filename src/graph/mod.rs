@@ -258,6 +258,20 @@ impl LookAheadGraph {
         self.inert.get_or_init(|| self.slots_no_write_reaches())
     }
 
+    /// Takes an answer somebody else already has, instead of working one out.
+    ///
+    /// WHAT A KEPT ANSWER IS FOR - see [`crate::index::facts`], which reads one off disk and
+    /// hands it over here. Working it out costs 14 ms on a group of four thousand entries and
+    /// reading it back costs 0.10, and it is the same answer every time because it depends on
+    /// the dialogue alone.
+    ///
+    /// IGNORED IF THE ANSWER IS ALREADY KNOWN, because it is the same answer: whoever asked
+    /// first either read this one or worked out one equal to it. Nothing needs to hear about a
+    /// race that cannot change a value.
+    pub fn remember_inert_slots(&self, slots: HashSet<usize>) {
+        let _ = self.inert.set(slots);
+    }
+
     /// Works [`Self::inert_slots`] out.
     ///
     /// ## Reaching definitions, not a search per slot
