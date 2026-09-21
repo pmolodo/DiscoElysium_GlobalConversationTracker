@@ -100,9 +100,20 @@ impl Fitting {
                 // it succeeds. Unknown is the common answer rather than the exotic one - the
                 // snapshot carries an outcome only for the checks the plugin evaluated - and
                 // Unknown means the slot is not settled.
-                if node.kind != DialogueCheckKind::None
-                    && crate::world::passive_outcome(node, world)
-                        != crate::core::types::Ternary::True
+                //
+                // ASKED ONLY OF THE KINDS AN OUTCOME GATES. A `KimSwitch` is entered
+                // unconditionally where it is `boolean_only`, and a `Test` is entered and goes
+                // nowhere - neither has a roll or a validator, so neither has an outcome for
+                // the world to state. Asking anyway got Unknown back and rejected the
+                // candidate, which cost a slot that could have been predetermined. One entry
+                // in the shipped database reaches this: 29:493, a Kim switch. See de-m11s.2.
+                if !matches!(
+                    node.kind,
+                    DialogueCheckKind::None
+                        | DialogueCheckKind::KimSwitch
+                        | DialogueCheckKind::Test
+                ) && crate::world::passive_outcome(node, world)
+                    != crate::core::types::Ternary::True
                 {
                     return false;
                 }
