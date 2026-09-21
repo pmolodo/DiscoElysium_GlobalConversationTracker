@@ -201,69 +201,6 @@ fn read_only_as_thresholds(graph: &LookAheadGraph) -> HashSet<usize> {
         .collect()
 }
 
-/// Sets the bit for `slot`, where the slot is one.
-///
-/// A SLOT FIELD SPELLS "NONE" AS A NEGATIVE NUMBER and a node has four of them, so taking the
-/// field's own type and ignoring what is not a slot is what keeps the callers free of the same
-/// two-line conversion four times over. A slot past the end of the set is ignored for the same
-/// reason: a symbol table can be wider than the layout built from it.
-fn raise(bits: &mut [u64], slot: i32) {
-    let Ok(slot) = usize::try_from(slot) else {
-        return;
-    };
-    if slot < bits.len() * 64 {
-        bits[slot / 64] |= 1 << (slot % 64);
-    }
-}
-
-/// Whether the bit for `slot` is set.
-fn holds(bits: &[u64], slot: usize) -> bool {
-    slot < bits.len() * 64 && bits[slot / 64] >> (slot % 64) & 1 == 1
-}
-
-/// Which slots some path may have written by the time it ARRIVES at each entry.
-///
-/// Reaching definitions over the links: what leaves an entry is what arrived plus what the
-/// entry writes, and what arrives at an entry is the union of what leaves the entries linking
-/// to it. Nothing has been written on arrival at an entry nothing links to, which is where the
-/// fixed point starts.
-///
-/// A WORKLIST RATHER THAN SWEEPS, because a dialogue loops: an entry whose arrivals grow has to
-/// tell the entries it links to, and a pass in any fixed order would take as many passes as the
-/// longest chain. Bits only ever go up, so it terminates.
-fn reaching_writes(
-    entries: &[&LookAheadNode],
-    at_of: &HashMap<DialogueNodeId, usize>,
-    writes: &[u64],
-    words: usize,
-) -> Vec<u64> {
-    let mut arriving = vec![0u64; entries.len() * words];
-    let mut pending: std::collections::VecDeque<usize> = (0..entries.len()).collect();
-    let mut queued = vec![true; entries.len()];
-    while let Some(at) = pending.pop_front() {
-        queued[at] = false;
-        let leaving: Vec<u64> = (0..words)
-            .map(|word| arriving[at * words + word] | writes[at * words + word])
-            .collect();
-        for link in &entries[at].links {
-            let Some(&onward) = at_of.get(link) else {
-                continue;
-            };
-            let mut grew = false;
-            for word in 0..words {
-                let joined = arriving[onward * words + word] | leaving[word];
-                grew |= joined != arriving[onward * words + word];
-                arriving[onward * words + word] = joined;
-            }
-            if grew && !queued[onward] {
-                queued[onward] = true;
-                pending.push_back(onward);
-            }
-        }
-    }
-    arriving
-}
-
 /// What one sweep of a group's guards says about how each slot is read.
 ///
 /// ONE SWEEP RATHER THAN THREE. Two questions want this - how wide a slot has to be, and
@@ -740,7 +677,7 @@ impl DataLayout {
             false,
         )
         .keeping_only_read(graph.symbols(), &reads)
-        .dropping_slots_written_too_late(graph, walkable.as_deref())
+        .dropping_slots_written_too_late(graph)
         .dropping_redundant_counters(graph, world)
         .in_variable_order(graph, arms.var_order)
     }
@@ -860,100 +797,19 @@ impl DataLayout {
     /// `GuardCompiler`, where a variable the layout carries no slot for is the world's number
     /// everywhere. Both remove a variable and change no answer.
     ///
-    /// ## Why the case is common
+    /// ## Which slots those are is the GRAPH'S to say
     ///
-    /// A latch written at the end of a branch and read by a guard near the top of the
-    /// conversation is how a dialogue remembers what was done LAST time it was entered. The
-    /// write reaches the read through a save, not along any path of one search. Conversation
-    /// 761's entry 6 writes `seafort.deserter_no_gun_exit_done` and has no outgoing links at
-    /// all, while the guards reading it are at entries 3 and 4, which reach 6 rather than the
-    /// other way round.
+    /// [`LookAheadGraph::inert_slots`] works it out, once, and keeps it: the answer reads the
+    /// links, the actions' kinds and the guards, and never the world - so it is the same for
+    /// every layout built over that graph and for every world it is fitted to. Working it out
+    /// here instead cost 761 an extra 43 ms a menu and 368 an extra 27, several times what the
+    /// slots give back.
     ///
     /// It takes 10 slots out of 640 and 10 out of 761, which is 10 variables off each of their
     /// layouts - 223 to 213 and 259 to 249.
-    ///
-    /// ## Reaching definitions, not a search per slot
-    ///
-    /// What is wanted is the set of slots some path may have written before arriving at an
-    /// entry, which is the textbook forward dataflow: what leaves an entry is what arrived plus
-    /// what it writes, and what arrives at an entry is the union over the entries linking to
-    /// it. One fixed point over bitsets answers it for every slot at once, where a search per
-    /// slot would walk the group once per slot.
-    ///
-    /// ## What it will not touch
-    ///
-    /// AN ENTRY'S GUARD IS TESTED BEFORE ITS OWN ACTIONS APPLY - see
-    /// [`crate::symbolic::reachability`] - so an entry writing what it also reads has NOT
-    /// written it by the time it reads it. That falls out of the dataflow rather than being a
-    /// case: what arrives is what predecessors left, and an entry reaches itself only around a
-    /// loop, which the fixed point follows like any other path.
-    ///
-    /// THE ENGINE'S OWN SLOTS, which it writes where no action does: `once:`, `seen:` and a
-    /// rolled check's pass and fail flags. Their writes are not in any entry's actions, so an
-    /// analysis of actions alone would call them unwritten and strand every one of them.
-    ///
-    /// A SLOT NO ACTION IN THE WALKABLE SET WRITES, which is left to the rules that already
-    /// cover it rather than dropped from here on the grounds that nothing wrote it.
-    pub fn dropping_slots_written_too_late(
-        mut self,
-        graph: &LookAheadGraph,
-        walkable: Option<&[crate::core::types::DialogueNodeId]>,
-    ) -> Self {
-        let symbols = graph.symbols();
-        let entries: Vec<&LookAheadNode> = match walkable {
-            Some(ids) => ids.iter().filter_map(|id| graph.get(*id)).collect(),
-            None => graph.nodes().collect(),
-        };
-        let words = self.slots.len().div_ceil(64);
-        if words == 0 || entries.is_empty() {
-            return self;
-        }
-        let at_of: HashMap<crate::core::types::DialogueNodeId, usize> = entries
-            .iter()
-            .enumerate()
-            .map(|(at, node)| (node.id, at))
-            .collect();
-
-        let mut writes = vec![0u64; entries.len() * words];
-        let mut the_engine_writes = vec![0u64; words];
-        let mut an_action_writes = vec![0u64; words];
-        for (at, node) in entries.iter().enumerate() {
-            for slot in [
-                node.once_slot,
-                node.seen_slot,
-                node.flag_slot,
-                node.failed_flag_slot,
-            ] {
-                raise(&mut the_engine_writes, slot);
-            }
-            for action in node.all_actions() {
-                if action.writes_slot() {
-                    raise(&mut writes[at * words..(at + 1) * words], action.slot());
-                    raise(&mut an_action_writes, action.slot());
-                }
-            }
-        }
-
-        let arriving = reaching_writes(&entries, &at_of, &writes, words);
-
-        let mut a_write_arrives = vec![0u64; words];
-        for (at, node) in entries.iter().enumerate() {
-            let arrived = &arriving[at * words..(at + 1) * words];
-            for name in Self::read_by_nodes([*node], symbols) {
-                if let Some(slot) = symbols.find(&name)
-                    && holds(arrived, slot)
-                {
-                    raise(&mut a_write_arrives, slot as i32);
-                }
-            }
-        }
-
-        for slot in 0..self.slots.len() {
-            let stranded = self.slots[slot].1 != 0
-                && holds(&an_action_writes, slot)
-                && !holds(&the_engine_writes, slot)
-                && !holds(&a_write_arrives, slot);
-            if stranded {
+    pub fn dropping_slots_written_too_late(mut self, graph: &LookAheadGraph) -> Self {
+        for &slot in graph.inert_slots() {
+            if slot < self.slots.len() {
                 self.slots[slot].1 = 0;
             }
         }
@@ -1240,32 +1096,65 @@ impl DataLayout {
         symbols: &StateSymbols,
     ) -> HashSet<String> {
         let mut names = HashSet::new();
-
         for node in nodes {
-            Self::read_by_guard(&node.guard, &mut names);
-            if Self::reads_any_slot_contents(&node.guard) {
-                // Which item a slot holds is the world's to say, so a question about whether
-                // a slot is filled reads every item the group can take away.
-                names.extend(
-                    (0..symbols.count())
-                        .filter_map(|slot| symbols.name_of(slot))
-                        .filter(|name| name.starts_with(UNEQUIPPED_PREFIX))
-                        .map(str::to_string),
-                );
-            }
+            Self::read_by_node_into(node, symbols, &mut names);
+        }
+        names
+    }
 
-            for slot in [node.flag_slot, node.failed_flag_slot] {
-                if let Ok(slot) = usize::try_from(slot)
-                    && let Some(name) = symbols.name_of(slot)
-                {
-                    names.insert(name.to_string());
-                }
-            }
-
-            names.extend(Self::tested_by_actions(node, symbols));
+    /// The names ONE entry reads, added to `names`.
+    ///
+    /// THE RULES THEMSELVES, so the sweep above and any caller asking entry by entry share one
+    /// implementation - a second copy of the reading rules is a copy that drifts, and the
+    /// modelling-gaps report carries the scar of exactly that.
+    ///
+    /// TAKING THE SET RATHER THAN RETURNING ONE, because a caller asking about every entry of a
+    /// group in turn would otherwise allocate one per entry: `LookAheadGraph::inert_slots`
+    /// clears one buffer and hands it back four thousand times.
+    pub fn read_by_node_into(
+        node: &LookAheadNode,
+        symbols: &StateSymbols,
+        names: &mut HashSet<String>,
+    ) {
+        Self::read_by_guard(&node.guard, names);
+        if Self::reads_any_slot_contents(&node.guard) {
+            // Which item a slot holds is the world's to say, so a question about whether
+            // a slot is filled reads every item the group can take away.
+            names.extend(
+                (0..symbols.count())
+                    .filter_map(|slot| symbols.name_of(slot))
+                    .filter(|name| name.starts_with(UNEQUIPPED_PREFIX))
+                    .map(str::to_string),
+            );
         }
 
-        names
+        for slot in [node.flag_slot, node.failed_flag_slot] {
+            if let Ok(slot) = usize::try_from(slot)
+                && let Some(name) = symbols.name_of(slot)
+            {
+                names.insert(name.to_string());
+            }
+        }
+
+        names.extend(Self::tested_by_actions(node, symbols));
+    }
+
+    /// Whether an entry can read no slot at all, which needs no symbol table to answer.
+    ///
+    /// THE CHEAP TEST A SWEEP SKIPS ON. Most entries of a group carry no guard, no check flags
+    /// and no conditional write, and [`Self::read_by_node_into`] would walk a guard, build
+    /// names and hand back an empty set for every one of them. `false` where the answer is not
+    /// certain, so a caller skipping on this reads exactly what the rules above would give it.
+    pub fn reads_no_slot(node: &LookAheadNode) -> bool {
+        node.flag_slot < 0
+            && node.failed_flag_slot < 0
+            && node.actions.iter().all(|action| action.unless().is_none())
+            && !node.guard.nodes().any(|part| {
+                matches!(
+                    part.expression(),
+                    GuardExpression::Variable(_) | GuardExpression::Call(..)
+                )
+            })
     }
 
     /// The names a node's conditional writes TEST, which an action reads as surely as a guard.
@@ -1482,7 +1371,7 @@ mod tests {
     fn line_layout(graph: &LookAheadGraph) -> DataLayout {
         DataLayout::for_graph(graph, 16, None, false)
             .keeping_only_read(graph.symbols(), &DataLayout::read_by(graph))
-            .dropping_slots_written_too_late(graph, None)
+            .dropping_slots_written_too_late(graph)
     }
 
     /// A write below every read of it holds a value no search can see, so it gets no slot.

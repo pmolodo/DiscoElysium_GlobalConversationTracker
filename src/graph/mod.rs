@@ -5,6 +5,7 @@ pub mod node;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
+use std::sync::OnceLock;
 
 use crate::core::action::ActionCondition;
 use crate::core::state::StateSymbols;
@@ -94,6 +95,12 @@ pub struct LookAheadGraph {
     /// per link followed. This keeps both at what they were.
     order: Vec<DialogueNodeId>,
     symbols: StateSymbols,
+    /// The answer [`Self::inert_slots`] gives, worked out the first time anything asks.
+    ///
+    /// NOT SERIALISED, because it is derived from the rest of this struct: a graph that
+    /// arrives over the wire works it out again on demand rather than carrying it.
+    #[serde(skip)]
+    inert: OnceLock<HashSet<usize>>,
 }
 
 impl LookAheadGraph {
@@ -217,7 +224,128 @@ impl LookAheadGraph {
             nodes: map,
             order,
             symbols,
+            inert: OnceLock::new(),
         })
+    }
+
+    /// The slots no write of can reach any read of, so nothing a search does to them can
+    /// change what it can reach.
+    ///
+    /// ## What it is for
+    ///
+    /// A slot like this holds ONE NUMBER for the whole of any search - the one the world
+    /// arrived with - so it need not be carried at all: see
+    /// [`crate::symbolic::data_layout::DataLayout::dropping_slots_written_too_late`], which
+    /// takes the answer and drops them, and `GuardCompiler`, where a variable with no slot
+    /// is the world's number everywhere. It takes 10 slots off 640's layout and 10 off
+    /// 761's.
+    ///
+    /// ## A FACT ABOUT THE DIALOGUE, WHICH IS WHY IT LIVES HERE AND IS KEPT
+    ///
+    /// It reads the links, the actions' KINDS and the guards - never the world. `fit` can
+    /// turn an action off for a world, and an action turned off writes nothing, so a fitted
+    /// graph can only have FEWER writes reaching reads than this says: the answer stays
+    /// sound and is not worth recomputing per world. Nor per layout: `entered_at` narrows
+    /// which entries a search can walk, and narrowing the start set can only strand more
+    /// writes, never fewer.
+    ///
+    /// SO IT IS WORKED OUT ONCE AND KEPT, lazily, for the life of the graph - which
+    /// `workspace::Workspace` holds across every request sharing its key, so consecutive
+    /// menus in a conversation pay for it once between them. Measured before it was kept:
+    /// running this per layout build cost 761 an extra 43 ms a menu and 368 an extra 27,
+    /// which is several times what dropping the slots gives back.
+    pub fn inert_slots(&self) -> &HashSet<usize> {
+        self.inert.get_or_init(|| self.slots_no_write_reaches())
+    }
+
+    /// Works [`Self::inert_slots`] out.
+    ///
+    /// ## Reaching definitions, not a search per slot
+    ///
+    /// What is wanted is the set of slots some path may have written before arriving at an
+    /// entry, which is the textbook forward dataflow: what leaves an entry is what arrived
+    /// plus what it writes, and what arrives is the union over the entries linking to it. One
+    /// fixed point over bitsets answers it for every slot at once, where a walk per slot would
+    /// cross the group once per slot.
+    ///
+    /// ## What it will not touch
+    ///
+    /// AN ENTRY'S GUARD IS TESTED BEFORE ITS OWN ACTIONS APPLY - see
+    /// [`crate::symbolic::reachability`] - so an entry writing what it also reads has not
+    /// written it by the time it reads it. That falls out of the dataflow rather than being a
+    /// case: what ARRIVES is what predecessors left, and an entry reaches itself only around a
+    /// loop, which the fixed point follows like any other path.
+    ///
+    /// THE ENGINE'S OWN SLOTS, which it writes where no action does: `once:`, `seen:` and a
+    /// rolled check's pass and fail flags. Their writes are in no entry's actions, so an
+    /// analysis of actions alone would call them unwritten and strand every one.
+    ///
+    /// A SLOT NO ACTION WRITES, which is left to the rules that already cover it rather than
+    /// dropped here on the grounds that nothing wrote it.
+    fn slots_no_write_reaches(&self) -> HashSet<usize> {
+        use crate::symbolic::data_layout::DataLayout;
+
+        let words = self.symbols.count().div_ceil(64);
+        let entries: Vec<&LookAheadNode> = self.nodes().collect();
+        if words == 0 || entries.is_empty() {
+            return HashSet::new();
+        }
+        let at_of: HashMap<DialogueNodeId, usize> = entries
+            .iter()
+            .enumerate()
+            .map(|(at, node)| (node.id, at))
+            .collect();
+
+        let mut writes = vec![0u64; entries.len() * words];
+        let mut the_engine_writes = vec![0u64; words];
+        let mut an_action_writes = vec![0u64; words];
+        for (at, node) in entries.iter().enumerate() {
+            for slot in [
+                node.once_slot,
+                node.seen_slot,
+                node.flag_slot,
+                node.failed_flag_slot,
+            ] {
+                raise(&mut the_engine_writes, slot);
+            }
+            for action in node.all_actions() {
+                if action.writes_slot() {
+                    raise(&mut writes[at * words..(at + 1) * words], action.slot());
+                    raise(&mut an_action_writes, action.slot());
+                }
+            }
+        }
+
+        let arriving = reaching_writes(&entries, &at_of, &writes, words);
+
+        // ONE SET, REUSED. The reading rules are `DataLayout`'s and are asked for one entry at
+        // a time, so the buffer they fill is cleared and handed back rather than allocated
+        // 4,000 times - and an entry that can read nothing at all is not asked.
+        let mut a_write_arrives = vec![0u64; words];
+        let mut names = HashSet::new();
+        for (at, node) in entries.iter().enumerate() {
+            if DataLayout::reads_no_slot(node) {
+                continue;
+            }
+            names.clear();
+            DataLayout::read_by_node_into(node, &self.symbols, &mut names);
+            let arrived = &arriving[at * words..(at + 1) * words];
+            for name in &names {
+                if let Some(slot) = self.symbols.find(name)
+                    && holds(arrived, slot)
+                {
+                    raise(&mut a_write_arrives, slot as i32);
+                }
+            }
+        }
+
+        (0..self.symbols.count())
+            .filter(|slot| {
+                holds(&an_action_writes, *slot)
+                    && !holds(&the_engine_writes, *slot)
+                    && !holds(&a_write_arrives, *slot)
+            })
+            .collect()
     }
 
     pub fn symbols(&self) -> &StateSymbols {
@@ -906,4 +1034,70 @@ impl LookAheadGraph {
         let graph = LookAheadGraph::new(nodes, symbols).expect("folding cannot duplicate an entry");
         Collapsed { graph, into_head }
     }
+}
+/// Sets the bit for `slot`, where the slot is one.
+///
+/// A SLOT FIELD SPELLS "NONE" AS A NEGATIVE NUMBER and a node has four of them, so taking the
+/// field's own type and ignoring what is not a slot is what keeps the callers free of the same
+/// two-line conversion four times over. A slot past the end of the set is ignored for the same
+/// reason: a symbol table can be wider than the layout built from it.
+fn raise(bits: &mut [u64], slot: i32) {
+    let Ok(slot) = usize::try_from(slot) else {
+        return;
+    };
+    if slot < bits.len() * 64 {
+        bits[slot / 64] |= 1 << (slot % 64);
+    }
+}
+
+/// Whether the bit for `slot` is set.
+fn holds(bits: &[u64], slot: usize) -> bool {
+    slot < bits.len() * 64 && bits[slot / 64] >> (slot % 64) & 1 == 1
+}
+
+/// Which slots some path may have written by the time it ARRIVES at each entry.
+///
+/// Reaching definitions over the links: what leaves an entry is what arrived plus what the
+/// entry writes, and what arrives at an entry is the union of what leaves the entries linking
+/// to it. Nothing has been written on arrival at an entry nothing links to, which is where the
+/// fixed point starts.
+///
+/// A WORKLIST RATHER THAN SWEEPS, because a dialogue loops: an entry whose arrivals grow has to
+/// tell the entries it links to, and a pass in any fixed order would take as many passes as the
+/// longest chain. Bits only ever go up, so it terminates.
+fn reaching_writes(
+    entries: &[&LookAheadNode],
+    at_of: &HashMap<DialogueNodeId, usize>,
+    writes: &[u64],
+    words: usize,
+) -> Vec<u64> {
+    let mut arriving = vec![0u64; entries.len() * words];
+    let mut pending: std::collections::VecDeque<usize> = (0..entries.len()).collect();
+    let mut queued = vec![true; entries.len()];
+    // ONE SCRATCH SET FOR THE WHOLE FIXED POINT. What leaves an entry is rebuilt on every pop,
+    // and a pop happens once per entry per growth of its arrivals - hundreds of thousands of
+    // times over a group this size, which is no place to allocate.
+    let mut leaving = vec![0u64; words];
+    while let Some(at) = pending.pop_front() {
+        queued[at] = false;
+        for word in 0..words {
+            leaving[word] = arriving[at * words + word] | writes[at * words + word];
+        }
+        for link in &entries[at].links {
+            let Some(&onward) = at_of.get(link) else {
+                continue;
+            };
+            let mut grew = false;
+            for word in 0..words {
+                let joined = arriving[onward * words + word] | leaving[word];
+                grew |= joined != arriving[onward * words + word];
+                arriving[onward * words + word] = joined;
+            }
+            if grew && !queued[onward] {
+                queued[onward] = true;
+                pending.push_back(onward);
+            }
+        }
+    }
+    arriving
 }
