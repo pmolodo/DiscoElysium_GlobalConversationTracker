@@ -263,7 +263,7 @@ fn report(
         .expect("the request writes");
     }
 
-    let response = answer(&index, None, &request);
+    let response = answer(&index, None, None, &request);
     assert!(response.error.is_none(), "{:?}", response.error);
 
     println!();

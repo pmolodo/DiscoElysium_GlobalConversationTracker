@@ -126,7 +126,7 @@ fn request(
 fn reaches(index: &Index, start: i32, target: i32, amounts: [i32; 4], thought_fixed: bool) -> bool {
     let request = request(index, start, target, amounts, thought_fixed);
     let start = request.starts[0];
-    let response = answer(index, None, &request);
+    let response = answer(index, None, None, &request);
     assert!(response.error.is_none(), "{:?}", response.error);
     let reply = response
         .find(start, None)

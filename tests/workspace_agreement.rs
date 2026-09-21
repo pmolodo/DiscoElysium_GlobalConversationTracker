@@ -102,7 +102,7 @@ fn a_kept_manager_answers_what_a_fresh_one_answers() {
             };
 
             let through_workspace = service.answer_request(request.clone());
-            let direct = answer(&index, None, &request);
+            let direct = answer(&index, None, None, &request);
 
             assert_eq!(
                 through_workspace.error, direct.error,
@@ -187,7 +187,7 @@ fn a_world_answering_the_wrong_questions_is_refused_through_a_workspace() {
         };
 
         let through_workspace = service.answer_request(request.clone());
-        let direct = answer(&index, None, &request);
+        let direct = answer(&index, None, None, &request);
 
         let reason = through_workspace
             .error

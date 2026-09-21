@@ -288,4 +288,41 @@ mod tests {
         assert_ne!(both, content_of(&index, &[1, 2]));
         assert_eq!(both, format!("1:first\u{1}2:second\u{1}"));
     }
+
+    /// A stored answer is TAKEN rather than worked out again, which is the whole point of
+    /// keeping one.
+    ///
+    /// THE ANSWER PUT ON DISK IS ONE THE GRAPH COULD NOT REACH BY ITSELF - an empty graph has
+    /// no slots at all, so a slot 7 that comes back came off the disk. A test that stored the
+    /// right answer would pass whether or not the file was ever opened.
+    #[test]
+    fn a_stored_answer_is_the_one_the_graph_uses() {
+        let (store, root) = store_at("degct-facts-taken");
+        let index = index_holding(1, "a-hash");
+        let content = content_of(&index, &[1]);
+        let graph = crate::graph::LookAheadGraph::new(vec![], Default::default()).unwrap();
+
+        let invented = vec![crate::graph::settled::Candidate {
+            slot: 7,
+            written_at: Vec::new(),
+        }];
+        FactStore::write(
+            &store.at(&[1]),
+            &Stored {
+                format: FORMAT_VERSION,
+                content: content.clone(),
+                facts: GroupFacts {
+                    inert_slots: vec![3],
+                    settled: invented.clone(),
+                },
+            },
+        )
+        .expect("the answer writes");
+
+        store.fill(&graph, &[1], &content);
+
+        assert_eq!(graph.settled_candidates(), &invented);
+        assert!(graph.inert_slots().contains(&3));
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

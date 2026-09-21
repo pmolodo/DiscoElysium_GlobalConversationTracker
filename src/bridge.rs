@@ -1777,12 +1777,26 @@ pub fn entered_at_of(request: &LookAheadRequest) -> Vec<i32> {
 pub fn answer(
     index: &Index,
     declared: Option<Arc<VariableTable>>,
+    facts: Option<&crate::index::facts::FactStore>,
     request: &LookAheadRequest,
 ) -> LookAheadResponse {
     let (mut graph, group) = match build_group_graph(index, request.conversation) {
         Ok(built) => built,
         Err(reason) => return LookAheadResponse::failed(reason),
     };
+
+    // WHAT THE GROUP IMPLIES, off disk where it is there. Both of the things
+    // `index::facts` keeps are worked out from this graph the moment anything asks - the
+    // fit below asks for one of them - and each costs more than the whole of the rest of
+    // this setup. A machine too small to hold a workspace takes THIS path for every
+    // request, which makes it the last place to rederive them. See de-0lu0.
+    if let Some(facts) = facts {
+        facts.fill(
+            &graph,
+            &group,
+            &crate::index::facts::content_of(index, &group),
+        );
+    }
 
     // The questions this group asks, so positional answers can be put back onto their
     // names. Derived from the graph just built rather than by building it again.

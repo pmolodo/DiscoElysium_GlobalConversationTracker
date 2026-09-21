@@ -521,7 +521,7 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
                 }
 
                 let request = staged.asking(&walk);
-                let response = answer(&index, None, &request);
+                let response = answer(&index, None, None, &request);
                 assert!(
                     response.error.is_none(),
                     "{}/{}: {:?}",
@@ -740,7 +740,7 @@ fn every_offline_claim_holds_over_the_whole_group() {
                         starts: about.clone(),
                         ..staged.request.clone()
                     };
-                    let response = answer(&index, None, &request);
+                    let response = answer(&index, None, None, &request);
                     assert!(
                         response.error.is_none(),
                         "{}/{}: {:?}",

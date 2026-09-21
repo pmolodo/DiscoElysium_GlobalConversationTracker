@@ -284,14 +284,26 @@ impl Service {
         // taken from the starts rather than assumed, because nothing enforces that.
         let entered_at = crate::bridge::entered_at_of(&request);
         if group.is_empty() {
-            return crate::bridge::answer(&self.index, self.declared.clone(), &request);
+            return crate::bridge::answer(
+                &self.index,
+                self.declared.clone(),
+                self.facts.as_ref(),
+                &request,
+            );
         }
 
         let mut held = match self.workspace.lock() {
             Ok(held) => held,
             // A poisoned lock means a previous request panicked inside this. The per-request
             // path is stateless and cannot be poisoned, so it is the honest fallback.
-            Err(_) => return crate::bridge::answer(&self.index, self.declared.clone(), &request),
+            Err(_) => {
+                return crate::bridge::answer(
+                    &self.index,
+                    self.declared.clone(),
+                    self.facts.as_ref(),
+                    &request,
+                );
+            }
         };
 
         let serves = held.as_ref().is_some_and(|workspace| {
@@ -312,7 +324,12 @@ impl Service {
             let Ok((graph, group)) =
                 crate::index::build_group_graph(&self.index, request.conversation)
             else {
-                return crate::bridge::answer(&self.index, self.declared.clone(), &request);
+                return crate::bridge::answer(
+                    &self.index,
+                    self.declared.clone(),
+                    self.facts.as_ref(),
+                    &request,
+                );
             };
             // BEFORE THE WORKSPACE TAKES THE GRAPH, and on the miss path rather than every
             // request, which is the same place the graph itself is built: a workspace that
@@ -347,7 +364,12 @@ impl Service {
             Some(Err(reason)) => crate::bridge::LookAheadResponse::failed(reason),
             // The owner thread is gone, or could never be started. Answer the request the
             // way this always did rather than failing it.
-            None => crate::bridge::answer(&self.index, self.declared.clone(), &request),
+            None => crate::bridge::answer(
+                &self.index,
+                self.declared.clone(),
+                self.facts.as_ref(),
+                &request,
+            ),
         }
     }
 }

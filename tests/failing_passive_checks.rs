@@ -139,7 +139,7 @@ fn menu_markers(consult_the_sheet: bool) -> Option<Vec<(i32, String)>> {
         ..Default::default()
     };
 
-    let response = answer(&index, None, &request);
+    let response = answer(&index, None, None, &request);
     assert!(response.error.is_none(), "{:?}", response.error);
 
     Some(
@@ -255,7 +255,7 @@ fn best_reachable(start: (i32, i32), candidate: (i32, i32)) -> Option<i32> {
         ..Default::default()
     };
 
-    let response = answer(&index, None, &request);
+    let response = answer(&index, None, None, &request);
     assert!(response.error.is_none(), "{:?}", response.error);
     Some(response.answers.first().expect("one start").best)
 }

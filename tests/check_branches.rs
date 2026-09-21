@@ -91,7 +91,7 @@ fn a_rolled_check_comes_back_with_both_outcomes() {
         ..Default::default()
     };
 
-    let response = answer(&index, None, &request);
+    let response = answer(&index, None, None, &request);
     assert!(response.error.is_none(), "{:?}", response.error);
     // THREE ANSWERS FROM TWO STARTS: the roll is two options wearing one line of text,
     // so it is answered once per outcome, and the ordinary entry once.
@@ -153,7 +153,7 @@ fn every_rolled_check_in_the_corpus_answers() {
             ..Default::default()
         };
 
-        let response = answer(&index, None, &request);
+        let response = answer(&index, None, None, &request);
         assert!(
             response.error.is_none(),
             "{conversation}: {:?}",
@@ -223,7 +223,7 @@ fn a_red_check_and_a_white_check_both_answer() {
                 ..Default::default()
             };
 
-            let response = answer(&index, None, &request);
+            let response = answer(&index, None, None, &request);
             assert!(
                 response.error.is_none(),
                 "{conversation}: {:?}",
@@ -281,7 +281,7 @@ fn an_outcome_on_the_top_rung_is_not_searched() {
         ..Default::default()
     };
 
-    let response = answer(&index, None, &request);
+    let response = answer(&index, None, None, &request);
     assert!(response.error.is_none(), "{:?}", response.error);
 
     let (pass, fail) = response.outcomes(rolled).expect("a roll comes back as two");

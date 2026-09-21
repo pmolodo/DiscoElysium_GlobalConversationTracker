@@ -238,7 +238,7 @@ fn main() -> anyhow::Result<()> {
             ..Default::default()
         };
 
-        let response = answer(&index, None, &request);
+        let response = answer(&index, None, None, &request);
         if let Some(error) = response.error {
             anyhow::bail!("the bridge refused the request: {error}");
         }
@@ -297,6 +297,7 @@ fn main() -> anyhow::Result<()> {
 
     let response = answer(
         &index,
+        None,
         None,
         &LookAheadRequest {
             conversation: args.conversation_id,
