@@ -178,18 +178,27 @@
 //! `--nolimit` takes the limits off: a 6144 MB manager and a five-minute wall, which is
 //! also each pass's ration.
 //!
-//! EVERY ROW IS WALK-DEEPEST-X BY DEFAULT, where X is `--unseen`: each menu is asked in a
-//! state a greedy playthrough reached, with the deepest entries THAT WALK REACHES still to come.
-//! The world it hands the engine IS the walk's own, so there is one account of what the player
-//! has read rather than two that can disagree. The starts are the entries that can reach
-//! something still unseen rather than the menu the player is standing at, which is what makes
-//! every one of them pay for a real search - see `menu_profile::walked_profile`.
+//! ## The two things a row varies
 //!
-//! THE FRESH-SAVE PAIR asks the same menu of a save that has never opened the conversation, and
-//! differs only in what an EARLIER playthrough left unread: `=synthetic-menu` takes the deepest
-//! entries by LINK DISTANCE, whether or not a play can stand where they are still unread, and
-//! `=synthetic-menu-walk-deepest` takes a set a walk vouches for. See [`Scenario`], and
-//! [`walked_profile`] for why neither is the default.
+//! `--menu` says WHICH MENU is asked - the first one a walk-up reaches, which the game really
+//! draws, or a synthetic set of the shallowest entries that can reach a target, which no player
+//! can stand at. `--targets` says WHICH ENTRIES are called never-seen - the last a greedy
+//! playthrough reaches, or the furthest by link distance. See [`MenuKind`] and [`Targets`].
+//!
+//! EVERYTHING ELSE IS FIXED, because a measurement does not want the easy cases. Every row
+//! STARTS from the template save, which has not opened this conversation, so every one-time
+//! effect in the group is still pending and every slot a `once` would fire is a live variable
+//! rather than a constant. The world a playthrough STOPPED in was once a setting and is the
+//! easy case: it has spent most of those already. See de-fox9.
+//!
+//! WHAT THE WALK-UP SHOWS IS THE WORLD'S. `--menu=first` plays to its menu, so the entries it
+//! displayed and the variables it moved are in the world the row measures - the save is where
+//! that walk STARTED, not where it ends. A synthetic menu has no such walk to play: its route
+//! is built structurally to one of its options, which is a walk the hub cut can read and not a
+//! sequence anybody pressed, so it moves nothing.
+//!
+//! THE DEFAULT IS THE NEAREST THING TO A REAL REQUEST: `--menu=first --targets=walk-deepest`,
+//! a menu the game draws, walked up to, asked about content a play can leave unread.
 //!
 //! NOTHING RECONCILES THE TWO SCOPES, because nothing has to: a profile says what ANY game has
 //! shown and a world says what THIS one has, and `world::seen_state` maps the pair onto the
@@ -333,16 +342,13 @@ struct Options {
     #[arg(long, value_name = "NAME", default_value = save_world::TEMPLATE)]
     save: String,
 
-    // THE NAMES ARE THE HELP'S, through `walked_profile_names`, so `--help` lists what this
-    // takes rather than naming a function only a reader of the source can follow.
-    /// Which scenario a row is taken in; see `walked_profile`
-    #[arg(
-        long = "walked-profile",
-        value_name = "NAME",
-        default_value = WALK_DEEPEST,
-        value_parser = walked_profile_names(),
-    )]
-    walked_profile: String,
+    /// Which menu a row asks about
+    #[arg(long, value_enum, default_value_t = MenuKind::First)]
+    menu: MenuKind,
+
+    /// Which entries a row calls never seen in any game
+    #[arg(long, value_enum, default_value_t = Targets::WalkDeepest)]
+    targets: Targets,
 
     #[command(flatten)]
     caching: prepared::Caching,
@@ -433,172 +439,49 @@ const STARTS: usize = 8;
 /// How many of the group's deepest entries are unread.
 const UNSEEN: usize = 10;
 
-/// What one leg of a walked profile's search may hold, where `--walked-profile` asks for
+/// What one leg of a profile's walk may hold, where a menu or a target set asks for
 /// one. The same bound `greedy_playthrough` uses, so a profile built here is the one that
 /// generator caches.
 const WALK_CEILING: usize = 200_000;
 
-/// Where a walked profile left the player: the world it stopped in, and what the conversation
-/// has shown them since it last started.
+/// WHICH MENU a row asks about, which is one of the two things that vary.
 ///
-/// The two travel together because they are one reading of one moment - the walk that produced
-/// the world is the walk the hubs are followed along - and separating them is how a measurement
-/// ends up asking a menu in one world about a player standing in another.
-struct Standing {
-    world: WorldSnapshot,
-    walk: Vec<DialogueNodeId>,
-}
-
-/// The default. The X unseen entries are the deepest ones A WALK REACHES: `--unseen` is the
-/// X in walk-deepest-X, and a run of keypresses is the witness that a player can stand there.
-const WALK_DEEPEST: &str = "walk-deepest";
-/// A start set nobody can stand at, asked on a save that has shown nothing: the structural menu
-/// of `MenuProfile::of` with link-deepest-X globally unseen and no walk-up. See `Scenario`.
-const SYNTHETIC_MENU: &str = "synthetic-menu";
-/// The SAME menu and the same fresh save as [`SYNTHETIC_MENU`], with walk-deepest-X globally
-/// unseen instead of link-deepest-X. The pair differs in one thing. See `Scenario`.
-const SYNTHETIC_MENU_WALK_DEEPEST: &str = "synthetic-menu-walk-deepest";
-/// The FIRST menu a walk-up from the conversation's start reaches, with walk-deepest-X globally
-/// unseen. See `Scenario`.
-const FIRST_MENU: &str = "first-menu";
-/// What 21 rows already in `performance/logs` name `WALK_DEEPEST` as, kept so they stay
-/// reproducible. Nothing else spells it this way any more.
-const WALKED_FLAG: &str = "1";
-
-/// What `--walked-profile` takes, so the help lists the scenarios and a misspelt one is refused
-/// by name, with the names printed - which is what [`walked_profile`]'s panic had to do from
-/// inside the run. The same reason `--marking` is an enum. See [`Marking`].
+/// THE WORLD IS NOT A CHOICE: every row starts from `save_world::of_save` of the template save,
+/// which knows its variables, its inventory and its check outcomes, and
+/// it has not opened this conversation - so every one-time effect in the group is still pending
+/// and every slot a `once` would fire is still a live variable rather than a constant. The world
+/// a playthrough STOPPED in was the other option and is the easy case: it has spent most of
+/// those already.
 ///
-/// THE SPELLINGS ARE THE CONSTANTS, not a list beside them, so a name cannot be offered here and
-/// go unmatched below. [`WALKED_FLAG`] and the empty string are hidden: both reach
-/// [`WALK_DEEPEST`], which is already listed, so printing them would offer a reader a choice that
-/// is not one.
-fn walked_profile_names() -> clap::builder::PossibleValuesParser {
-    let named = [
-        WALK_DEEPEST,
-        SYNTHETIC_MENU,
-        SYNTHETIC_MENU_WALK_DEEPEST,
-        FIRST_MENU,
-    ]
-    .map(clap::builder::PossibleValue::new);
-    let spelled = [WALKED_FLAG, ""].map(|name| clap::builder::PossibleValue::new(name).hide(true));
-    clap::builder::PossibleValuesParser::new(named.into_iter().chain(spelled))
-}
-
-/// Which scenario a row is taken in: the walked one by default, a fresh-save one on request.
-///
-/// ## The world says what is seen, and nothing else does
-///
-/// walk-deepest-X takes a greedy playthrough from the template save, stops it with `--unseen`
-/// entries still to come, and measures THAT: the unseen entries are the last ones a nearest-first
-/// play reaches, the seen set is what it displayed, and the variables are what its walk left them
-/// at. There is ONE account of what the player has read - the world - and the seen state function
-/// agrees with it because it was derived from it.
-///
-/// THE FRESH-SAVE SCENARIOS SHOW NOTHING AT ALL. The globally unseen entries are unseen in any
-/// game, everything else was read in an EARLIER playthrough, and nothing whatever is seen this
-/// game - so no `once` has fired and no `seen` slot is set. That is a state a player can be in,
-/// and the one in which the most once-slots are still live variables rather than constants,
-/// which is what makes it adversarial.
-///
-/// WHAT NEITHER CAN BE is a save that has read almost everything IN THIS GAME while none of its
-/// one-time effects have fired. Saying so is what makes a profile incoherent, and the arithmetic
-/// of it is worth keeping: a `seen` slot shuts an entry that shuts once seen, so a world told
-/// that most of the conversation was read this game closes the routes to the rest, and 761
-/// answered in 511 ms STARRING NOTHING - the cost of proving an empty menu. An entry unseen ANY
-/// game closes nothing.
-///
-/// ## A fresh-save row does not reproduce the runs it descends from
-///
-/// It is the nearest thing still available to them, not a rerun of them. Those rows were taken
-/// when a row could be asked with NO world at all, and the world is mandatory now - so
-/// `synthetic-menu` pairs the old asserted unseen set with a world that has to be there. Where
-/// an old figure and a `synthetic-menu` figure differ, that gap is a candidate explanation and
-/// not a regression. Treat the old numbers as history, and re-take anything a decision rests on.
-///
-/// ROWS ARE NOT COMPARABLE ACROSS IT, which is why it is in `COMPARED_VARIABLES`: each is a
-/// different question about a different world, not the same question measured better.
-///
-/// # Panics
-///
-/// On any other value, so a misspelt run does not quietly measure something else. A name typed on
-/// the command line is refused before that, by [`walked_profile_names`].
-fn walked_profile(named: &str) -> Scenario {
-    match named {
-        "" | WALKED_FLAG | WALK_DEEPEST => Scenario::Walked,
-        SYNTHETIC_MENU => Scenario::SyntheticMenu(Globally::LinkDeepest),
-        SYNTHETIC_MENU_WALK_DEEPEST => Scenario::SyntheticMenu(Globally::WalkDeepest),
-        FIRST_MENU => Scenario::FirstMenu,
-        other => panic!(
-            "--walked-profile {other:?}: expected {WALK_DEEPEST} (or {WALKED_FLAG}), \
-             {SYNTHETIC_MENU}, {SYNTHETIC_MENU_WALK_DEEPEST} or {FIRST_MENU}"
-        ),
-    }
-}
-
-/// Which entries a scenario calls never seen in ANY game.
-///
-/// ## Two knobs, not one
-///
-/// What a player has EVER seen and what THIS save has displayed are separate facts, and the
-/// scenarios below vary them separately. This is the first: where the globally unseen set comes
-/// from. It says nothing about the world, which is the save's to say.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Globally {
-    /// LINK-DEEPEST-X, by edge depth, asserted rather than reached.
+/// NEITHER PAIRING IS A STATE A PLAYER IS LITERALLY IN. Reaching a menu means having walked to
+/// it, and walking to it shows entries this world says are unshown. The default is the closest
+/// reachable approximation rather than a claim about a real save. See de-fox9.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+enum MenuKind {
+    /// THE FIRST MENU A WALK-UP REACHES, which is a menu the game would really draw: its options
+    /// are offered together and a player can stand where they are all in front of them.
     ///
-    /// IT IS MOSTLY NOT A STATE ANY PLAY CAN LEAVE, measured by `profile_closure` at
-    /// link-deepest-10 over the game: 306 of 395 groups are NOT reachable-closed, 761 among
-    /// them. Some entry the set calls seen is reachable only THROUGH an entry it calls unseen,
-    /// so seeing it would have meant seeing that one, and no number of playthroughs arrives
-    /// where the scenario says the player is standing.
-    ///
-    /// SO IT IS AN UPPER BOUND, NOT A PLAYER. It is the most adversarial assignment of seen
-    /// states the group admits, and a row taken on it says what the engine would cost if one
-    /// existed. What a real player pays is [`Self::WalkDeepest`], and the pair is how far apart
-    /// the two are: on 761, 2,099 ms settling nothing against 184 ms settling all eight.
-    LinkDeepest,
-    /// WALK-DEEPEST-X, the last X entries a greedy playthrough reaches. Closed by construction:
-    /// a walk reached everything before them, so "everything seen except these" is a state
-    /// earlier playthroughs could have left behind.
+    /// ITS OPTIONS ARE NOT CHOSEN TO REACH THE TARGETS, unlike the synthetic menu - it is a real
+    /// menu and gets to be whatever it is - so an option with nothing to hunt is refused by the
+    /// baseline it already lands on, and a row can honestly mark nothing.
+    First,
+    /// THE SHALLOWEST ENTRIES THAT CAN REACH A TARGET, `--starts` of them. Adversarial by
+    /// construction: every option has something better beyond it, so none is refused before a
+    /// diagram is touched. Not a menu any player can stand at - nothing offers these together.
+    SyntheticFarthest,
+}
+
+/// WHICH ENTRIES a row calls never seen in any game, which is the other thing that varies.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+enum Targets {
+    /// The last `--unseen` entries a greedy playthrough reaches. A SET A PLAY CAN LEAVE UNREAD:
+    /// a walk got to everything before them, so "all seen but these" is a state some number of
+    /// playthroughs arrives at.
     WalkDeepest,
-}
-
-/// Which scenario a row is taken in: which menu is asked, in what world, with what globally
-/// unseen.
-///
-/// THE GAME HAS TWO SCOPES OF SEEN and these differ in both, so each names both. Global state is
-/// what this player has ever seen; save state is what THIS game has displayed, and is what fires
-/// a `once`. See `menu_profile::MenuProfile::seen_state`.
-enum Scenario {
-    /// Walk-deepest-X globally unseen, asked in the world the walk stopped in. The walk has
-    /// shown a great deal, so most one-time effects have already fired.
-    Walked,
-    /// ARTIFICIAL MENU, NOTHING SHOWN. The structural start set of `MenuProfile::of`, which is
-    /// not a menu any player can stand at, asked on a save that has never opened the
-    /// conversation - so every `once` in the group is still pending. Everything outside the
-    /// globally unseen set is `UnseenThisGame`.
-    ///
-    /// The most adversarial state that is still internally consistent: nothing here contradicts
-    /// anything, it simply is not a position a player can be in.
-    ///
-    /// THE MENU IS THE SAME WHICHEVER SET IS GLOBALLY UNSEEN, which is the point of the pair -
-    /// see [`Globally`].
-    SyntheticMenu(Globally),
-    /// THE REAL MENU, WALKED UP TO. The conversation is opened and played forward until a menu
-    /// is on screen, choosing nothing - so the starts are the options the game would draw and
-    /// the only entries shown this game are the ones it takes to get there. Walk-deepest-X is
-    /// globally unseen.
-    ///
-    /// What a veteran player meets on a fresh save: they have read almost all of this before,
-    /// in another game, and none of it in this one.
-    ///
-    /// THE FIRST MENU, WHICH IS USUALLY BUT NOT ALWAYS THE MAIN HUB. A conversation generally
-    /// opens with a few lines and then offers its topics; a long one may put an intro menu in
-    /// front of that. Taking the first is what makes the walk-up short and the arrival honest -
-    /// it is where a player IS a few presses in. On 761 it is a seven-option menu three entries
-    /// from the start, which is a menu worth asking about rather than a two-option doorway.
-    FirstMenu,
+    /// The `--unseen` entries furthest from the start by LINK DISTANCE. Asserted rather than
+    /// walked to, so no play is known to stand where these are still unread - but it depends on
+    /// the links alone, so it is the same set in every world.
+    LinkDeepest,
 }
 
 const COUNTER_CAP: i32 = 16;
@@ -690,154 +573,88 @@ fn main() {
         // THROUGH `MenuProfile`, for the reason it exists: a menu whose starts have nothing
         // better beyond them is refused before a diagram is touched, and the whole row reads
         // as a fast engine while measuring nothing.
-        let scenario = walked_profile(&asked.walked_profile);
-        let (profile, walked) = if let Scenario::SyntheticMenu(globally) = scenario {
-            // NO WALK-UP AND NOTHING SHOWN. The world is the save as it is - no `seen` slot set,
-            // no `once` fired - and the starts are the structural set, which is why there is no
-            // walk to stand at them by. `walked` stays None, so no hub cut is taken either.
-            let Some(structural) = MenuProfile::of(&graph, root, unseen_wanted, starts_wanted)
-            else {
-                no_profile(conversation);
-                continue;
-            };
-            let built = match globally {
-                Globally::LinkDeepest => Some(structural),
-                // THE SAME MENU, A DIFFERENT GLOBAL SET. The starts stay the ones the structural
-                // rule picked, so the pair of rows differs in one thing; only which entries an
-                // earlier playthrough left unread changes. The walk that supplies them is taken
-                // against the template save and then thrown away - what it SHOWED is not this
-                // save's, which has displayed nothing.
-                Globally::WalkDeepest => {
-                    let base = SnapshotWorld::declaring(
-                        save_world::of_save(&graph, conversation, &shipped, &asked.save),
-                        save_world::declared(),
-                    );
-                    menu_profile::walk_deepest_unseen(
-                        &graph,
-                        &base,
-                        conversation,
-                        WALK_CEILING,
-                        unseen_wanted,
-                    )
-                    .and_then(|unseen| MenuProfile::crossing(structural.starts, unseen))
-                }
-            };
-            match built {
-                Some(found) => (found, None),
-                None => {
-                    no_profile(conversation);
-                    continue;
-                }
-            }
-        } else if let Scenario::FirstMenu = scenario {
-            let base = SnapshotWorld::declaring(
-                save_world::of_save(&graph, conversation, &shipped, &asked.save),
-                save_world::declared(),
-            );
-            match menu_profile::first_menu_profile(
+        // THE WORLD EVERY ROW IS TAKEN IN, whichever menu and whichever targets: the template
+        // save as it stands, which has not opened this conversation. See `Menu`.
+        let mut snapshot = save_world::of_save(&graph, conversation, &shipped, &asked.save);
+        // DECLARED FOR THE WALK, which cannot decide a variable nothing declares and would stop
+        // short without the table - see de-qy5t. The measured world is built from the same
+        // snapshot below, as a request builds it.
+        let base = SnapshotWorld::declaring(snapshot.clone(), save_world::declared());
+        let Some(unseen) = (match asked.targets {
+            Targets::LinkDeepest => Some(menu_profile::link_deepest_unseen(
+                &graph,
+                root,
+                unseen_wanted,
+            )),
+            Targets::WalkDeepest => menu_profile::walk_deepest_unseen(
                 &graph,
                 &base,
                 conversation,
                 WALK_CEILING,
                 unseen_wanted,
-            ) {
-                Some(found) => {
-                    // WHICH MENU THE WALK-UP LANDED ON, and how far it had to go. The first menu
-                    // a conversation offers is usually its main hub, and in a long one it may be
-                    // an intro menu in front of that - the row cannot say which, so this does.
-                    eprintln!(
-                        "conversation {conversation}: walked up {} entries to a menu of {} \
-                         options {:?}, with {} of {} entries globally unseen",
-                        found.seen.len(),
-                        found.profile.starts.len(),
-                        found
-                            .profile
-                            .starts
-                            .iter()
-                            .map(|id| id.entry_id)
-                            .collect::<Vec<_>>(),
-                        found.profile.unseen.len(),
-                        found.reachable,
-                    );
-                    let mut world =
-                        save_world::of_save(&graph, conversation, &shipped, &asked.save);
-                    world.seen = found.seen.iter().copied().map(NodeRef::from).collect();
-                    world.variables = found.variables;
-                    (
-                        found.profile,
-                        Some(Standing {
-                            world,
-                            walk: found.walk,
-                        }),
-                    )
-                }
-                None => {
-                    no_profile(conversation);
-                    continue;
+            ),
+        }) else {
+            no_profile(conversation);
+            continue;
+        };
+
+        let (profile, walk) = match asked.menu {
+            MenuKind::SyntheticFarthest => {
+                let starts = menu_profile::synthetic_menu(&graph, root, &unseen, starts_wanted);
+                // NO PLAYER BEHIND IT, so the walk a request carries is built instead: the
+                // shortest route from the conversation's start to one of these options. See
+                // `hub::walk_to_menu`, and `MenuKind::SyntheticFarthest` for why no route can reach
+                // them all.
+                let walk =
+                    lookahead_engine::symbolic::hub::walk_to_menu(&graph, conversation, &starts);
+                match MenuProfile::aimed_at(unseen, starts) {
+                    Some(found) => (found, walk),
+                    None => {
+                        no_profile(conversation);
+                        continue;
+                    }
                 }
             }
-        } else if matches!(scenario, Scenario::Walked) {
-            // THE SAME WORLD THE DATASET'S WALK USES, declared table included. A walk cannot
-            // decide a variable nothing declares without it, so it refuses and stops short -
-            // and this walk and `greedy_playthrough`'s would then be two different walks
-            // called by one name. Giving the table to one and not the other is what made 761's
-            // cached playthrough run fourteen legs while the profile measured here stopped at
-            // seven. See de-qy5t.
-            let base = SnapshotWorld::declaring(
-                save_world::of_save(&graph, conversation, &shipped, &asked.save),
-                save_world::declared(),
-            );
-            match menu_profile::walked_profile(
-                &graph,
-                &base,
-                conversation,
-                WALK_CEILING,
-                unseen_wanted,
-                starts_wanted,
-            ) {
-                // THE WALK'S OWN WORLD, less what it has now shown and what its variables now
-                // hold. Everything else - the character sheet, the checks, the inventory - is
-                // the save's, since the walk never changed those.
-                Some(found) => {
-                    // HOW MUCH OF THE GROUP THE WALK REACHED, on stderr beside the row. A
-                    // walked row is read very differently depending on whether the playthrough
-                    // behind it covered most of the group or a corner of it, and the row cannot
-                    // say, being the same shape as every other row. On 761 the walk reaches 44
-                    // entries of 2,263 from the template save, which is the difference between
-                    // a menu asked in a well-explored conversation and one asked in a doorway.
-                    //
-                    // NOT THE UNSEEN COUNT, which is `--unseen` and the same every time by
-                    // construction: printing it would have looked like a measurement and been
-                    // a restatement of the setting.
-                    let entries = graph.nodes().filter(|node| !node.is_group).count();
-                    eprintln!(
-                        "conversation {conversation}: the walk reaches {} of {entries} entries, \
-                         and the profile is taken {} in",
-                        found.reachable, found.shown,
-                    );
-                    let mut world =
-                        save_world::of_save(&graph, conversation, &shipped, &asked.save);
-                    world.seen = found.seen.iter().copied().map(NodeRef::from).collect();
-                    world.variables = found.variables;
-                    (
-                        found.profile,
-                        Some(Standing {
-                            world,
-                            walk: found.walk,
-                        }),
-                    )
-                }
-                None => {
-                    no_profile(conversation);
-                    continue;
-                }
-            }
-        } else {
-            match MenuProfile::of(&graph, root, unseen_wanted, starts_wanted) {
-                Some(found) => (found, None),
-                None => {
-                    no_profile(conversation);
-                    continue;
+            MenuKind::First => {
+                match menu_profile::first_menu_profile(
+                    &graph,
+                    &base,
+                    conversation,
+                    WALK_CEILING,
+                    unseen,
+                ) {
+                    Some(found) => {
+                        // WHICH MENU THE WALK-UP LANDED ON, and how far it had to go. The first
+                        // menu a conversation offers is usually its main hub, and in a long one
+                        // it may be an intro menu in front of that - the row cannot say which,
+                        // so this does.
+                        eprintln!(
+                            "conversation {conversation}: walked up {} entries to a menu of {} \
+                             options {:?}, with {} of {} entries globally unseen",
+                            found.seen.len(),
+                            found.profile.starts.len(),
+                            found
+                                .profile
+                                .starts
+                                .iter()
+                                .map(|id| id.entry_id)
+                                .collect::<Vec<_>>(),
+                            found.profile.unseen.len(),
+                            found.reachable,
+                        );
+                        // THE WALK-UP REALLY HAPPENED, so what it showed and what it left the
+                        // variables at are the world's now. The template save is where it
+                        // STARTED, not where it ends: a row that asked about this menu while
+                        // claiming the entries leading to it were unshown would describe a
+                        // player who is not standing where the menu is.
+                        snapshot.seen = found.seen.iter().copied().map(NodeRef::from).collect();
+                        snapshot.variables = found.variables;
+                        (found.profile, found.walk)
+                    }
+                    None => {
+                        no_profile(conversation);
+                        continue;
+                    }
                 }
             }
         };
@@ -854,7 +671,7 @@ fn main() {
         // that read it - so a row taken over an UNFITTED graph is a row about an engine the
         // game does not run. See the rule in CLAUDE.md about measuring the shipped algorithm,
         // and de-j4kg for what this was measured to move.
-        fitted_to(&mut graph, walked.as_ref());
+        fitted_to(&mut graph, &snapshot);
         // FOLDED HERE, BEFORE THE LAYOUT, because the point of folding is the slots as much as
         // the entries and the layout is built from the graph below. The profile stays the one
         // the FULL graph produced - the same menu, the same entries called unseen - and is
@@ -893,7 +710,8 @@ fn main() {
             &starts,
             &seen_any_game,
             budget,
-            walked.as_ref(),
+            &snapshot,
+            &walk,
             &asked,
         ) {
             Some(measured) => row(conversation, graph, starts.len(), "", prep, Some(&measured)),
@@ -910,21 +728,10 @@ fn main() {
 /// `conversation` is the row's, whose start the `hybrid-hub` marking walks from.
 /// Fits a group's graph to the world its row will be measured in.
 ///
-/// THE WORLD IS BUILT THE SAME WAY `menu` BUILDS ITS OWN - the standing world where a profile
-/// walked one, and the default otherwise - because it has to be the same world: a graph fitted
+/// THE SAME WORLD `menu` MEASURES IN, wrapped the same way, because it has to be: a graph fitted
 /// to one world and measured in another describes neither.
-fn fitted_to(graph: &mut LookAheadGraph, walked: Option<&Standing>) {
-    let world = SnapshotWorld::declaring(
-        match walked {
-            Some(standing) => standing.world.clone(),
-            None => WorldSnapshot {
-                day_minutes: 720,
-                day_counter: 1,
-                ..Default::default()
-            },
-        },
-        None,
-    );
+fn fitted_to(graph: &mut LookAheadGraph, world: &WorldSnapshot) {
+    let world = SnapshotWorld::declaring(world.clone(), None);
     graph.fit(&lookahead_engine::graph::Fitting::read(graph, &world));
 }
 
@@ -934,7 +741,8 @@ fn menu<F>(
     starts: &[DialogueNodeId],
     seen_any_game: &F,
     budget: DiagramBudget,
-    walked: Option<&Standing>,
+    snapshot: &WorldSnapshot,
+    walk: &[DialogueNodeId],
     asked: &Options,
 ) -> Option<Menu>
 where
@@ -947,45 +755,20 @@ where
     F: Fn(DialogueNodeId) -> bool + Sync,
 {
     isolated::on_its_own_thread(|| {
-        // WHERE A PLAYER WOULD HAVE WALKED FROM, built before the clock starts: it stands in for
-        // the walk the plugin records as the conversation plays, which costs the engine nothing.
-        // What the engine does with it - the group's hubs, the cut - is inside the timing below.
-        //
-        // THE PLAYTHROUGH'S OWN WALK WHERE THERE IS ONE. A walked profile knows what the
-        // conversation has shown the player since it last started, which is what a request
-        // carries. `hub::walk_to_menu` is the stand-in for a profile with no player behind it,
-        // and it leaves a far shallower hub stack - measured on 761, a walk cut of ONE ENTRY
-        // against a sitting of twenty-six presses. See de-aqxa.9.
-        let walk = match walked {
-            Some(standing) => standing.walk.clone(),
-            None => lookahead_engine::symbolic::hub::walk_to_menu(graph, conversation, starts),
-        };
-
+        // THE WALK IS THE CALLER'S, built before the clock starts: it stands in for the walk the
+        // plugin records as the conversation plays, which costs the engine nothing. What the
+        // engine does with it - the group's hubs, the cut - is inside the timing below. Which
+        // walk it is depends on the menu asked about; see `MenuKind`.
         let began = Instant::now();
         let symbols = graph.symbols().clone();
-        // THE WALKED WORLD WHERE THERE IS ONE, and it is taken WHOLE rather than patched: it
-        // came out of a playthrough that reached the state it describes, and editing a field of
-        // it would put it back among the worlds nobody walked to.
+        // THE SAVE AS IT STANDS, taken WHOLE rather than patched: it is a world a playthrough
+        // really was in, and editing a field of it would put it back among the worlds nobody
+        // walked to. Nothing has opened this conversation, so no `once` has fired and no `seen`
+        // slot is set - the entries it calls read were read in an EARLIER playthrough, which is
+        // the seen-any-game set and the profile's to say.
         //
-        // THE SAME WORLD `main` FITTED THE GRAPH TO, built again here rather than handed over:
-        // it is a clone of the standing world either way, and threading it through would put a
-        // second lifetime on this signature for no answer that differs. See `fitted_to` there.
-        let world = SnapshotWorld::declaring(
-            match walked {
-                Some(standing) => standing.world.clone(),
-                None => WorldSnapshot {
-                    day_minutes: 720,
-                    day_counter: 1,
-                    // NOTHING SEEN THIS GAME, which is the whole of what a profile with no walk
-                    // behind it asserts: a save that has never opened this conversation, so no
-                    // `once` has fired and no `seen` slot is set. The entries it calls read were
-                    // read in an EARLIER playthrough, which is the seen-any-game set and the
-                    // profile's to say.
-                    ..Default::default()
-                },
-            },
-            None,
-        );
+        // THE SAME WORLD `main` FITTED THE GRAPH TO, which it must be - see `fitted_to`.
+        let world = SnapshotWorld::declaring(snapshot.clone(), None);
         let layout = DataLayout::for_group(graph, &world, COUNTER_CAP);
         // WHAT THE LAYOUT ALONE COST, so that "the cost is in building the layout" is a number
         // rather than the only unmeasured thing left in setup. See de-mau4.

@@ -58,8 +58,8 @@ impl MenuProfile {
     /// would be refused.
     ///
     /// The unseen entries are the deepest by LINK DISTANCE, asserted rather than walked to: no
-    /// play is known to stand where they are still unread. [`walked_profile`] is the set a walk
-    /// vouches for.
+    /// play is known to stand where they are still unread. [`walk_deepest_unseen`] is the set a
+    /// walk vouches for.
     ///
     /// `None` rather than an empty profile, because a run of refusals measures nothing and
     /// a caller has to be able to tell that apart from a group that was simply fast.
@@ -69,40 +69,24 @@ impl MenuProfile {
         unseen_wanted: usize,
         starts_wanted: usize,
     ) -> Option<Self> {
-        let ranked = deepest_first(graph, root);
-        let unseen: HashSet<DialogueNodeId> = ranked.iter().take(unseen_wanted).copied().collect();
+        let unseen = link_deepest_unseen(graph, root, unseen_wanted);
         if unseen.is_empty() {
             return None;
         }
-
-        let reaching = can_reach(graph, &unseen);
-        let starts: Vec<DialogueNodeId> = ranked
-            .iter()
-            .rev()
-            .filter(|id| reaching.contains(*id) && !unseen.contains(*id))
-            .copied()
-            .take(starts_wanted)
-            .collect();
-
+        let starts = synthetic_menu(graph, root, &unseen, starts_wanted);
         (!starts.is_empty()).then_some(Self { unseen, starts })
     }
 
-    /// The starts one rule picked, asked with the globally-unseen set of ANOTHER.
+    /// The starts a menu offers, with the targets they were chosen to reach.
     ///
-    /// ## Why a profile is ever built crossed like this
-    ///
-    /// TO VARY ONE THING. [`Self::of`] derives its starts FROM its unseen set - they are the
-    /// entries that can reach it - so two profiles with different unseen sets ask about
-    /// different menus, and a pair of rows taken on them differs in both at once. Holding the
-    /// menu fixed and moving only the global set is what makes the pair a comparison: whatever
-    /// the two rows differ by is what the player's history across playthroughs is worth.
-    ///
-    /// The starts must still be able to reach something unseen, or the menu is refused before a
-    /// diagram is touched and the row measures nothing - which is this module's whole warning.
-    /// That is the caller's to establish, and it is why this returns `None` on an empty set
-    /// rather than pretending either half can stand alone.
-    pub fn crossing(starts: Vec<DialogueNodeId>, unseen: HashSet<DialogueNodeId>) -> Option<Self> {
-        (!starts.is_empty() && !unseen.is_empty()).then_some(Self { unseen, starts })
+    /// `None` where either half is empty, because a menu with nothing to hunt and a hunt with
+    /// nowhere to start from both measure nothing, and a caller has to be able to tell that
+    /// apart from a group that was simply fast.
+    pub fn aimed_at(targets: HashSet<DialogueNodeId>, starts: Vec<DialogueNodeId>) -> Option<Self> {
+        (!targets.is_empty() && !starts.is_empty()).then_some(Self {
+            unseen: targets,
+            starts,
+        })
     }
 
     /// What the global conversation state holds: every entry some playthrough has shown.
@@ -222,14 +206,18 @@ pub fn first_menu_profile(
     world: &dyn lookahead_engine::world::ILookAheadWorld,
     conversation: i32,
     ceiling: usize,
-    unseen_wanted: usize,
+    unseen: HashSet<DialogueNodeId>,
 ) -> Option<Walked> {
     use lookahead_engine::walkthrough::{Until, greedy_playthrough, on_to_a_menu};
 
     let none = HashSet::new();
-    let shown = whole_walk(graph, world, conversation, ceiling, unseen_wanted)?;
-    let reachable = shown.len();
-    let unseen = deepest_of(&shown, reachable - unseen_wanted);
+    if unseen.is_empty() {
+        return None;
+    }
+    // HOW MUCH OF THE GROUP ANY PLAY REACHES, for the row's own reporting. The targets are the
+    // caller's, so this is no longer what decides them.
+    let reachable =
+        whole_walk(graph, world, conversation, ceiling, 0).map_or(0, |shown| shown.len());
 
     // JUST OPENED, AND NOTHING MORE. One entry shown is the conversation's start, which opening
     // it displays - so this is the player arriving, before any choice.
@@ -267,110 +255,6 @@ pub fn first_menu_profile(
         shown: 1,
         reachable,
         walk,
-    })
-}
-
-/// The profile a greedy playthrough leaves when it is stopped with `unseen_wanted` entries
-/// still to come. THIS IS WALK-DEEPEST-X, where X is `unseen_wanted`: the unseen entries are the
-/// deepest ones a walk reaches.
-///
-/// ## Why this exists beside [`MenuProfile::of`], which is LINK-DEEPEST-X
-///
-/// `of` RANKS BY STRUCTURE and asserts the result: the deepest entries by link depth are
-/// called unseen and everything else seen, and nothing checks that any play could stand
-/// there. An asserted state can contradict itself - a `seen:` slot shuts an entry that shuts
-/// once seen, so declaring most of a conversation seen can close the routes to the rest, and
-/// on 761 that left its unread content link-reachable and symbolically unreachable.
-///
-/// This walks instead. The playthrough is taken twice: once to exhaustion, to learn how many
-/// entries any play reaches at all, and once stopped that many less `unseen_wanted`. What
-/// comes back is the seen set and the DATA STATE at the moment of stopping, so the unseen
-/// entries are the last ones a nearest-first play would reach and the world around them is the
-/// one it walked into.
-///
-/// ## What it does not do, and why
-///
-/// THE STARTS ARE CHOSEN AS `of` CHOOSES THEM - entries that can reach something unseen,
-/// shallowest first - rather than being the menu the walk was standing at. A walk stops at the
-/// entry it went for, which is not generally a menu, so standing it at one would mean walking
-/// further on a different rule. Keeping the same start rule also keeps a row the same width as
-/// the rows already measured, so only the world differs. See de-aqxa.2.
-///
-/// ## THE STARTS ARE THE ENTRIES THAT CAN REACH SOMETHING UNSEEN, shallowest first
-///
-/// Adversarial by construction: every start has something better beyond it, so none is refused
-/// before a diagram is touched and every one pays for a real search. That is what a profile is
-/// for - one where most starts are refused reads, in a closing line, exactly like a fast
-/// engine.
-///
-/// THE OBVIOUS ALTERNATIVE IS TO ASK THE MENU THE PLAYER IS STANDING AT, which is the more
-/// honest question and a far weaker measurement: a menu in front of a player often reaches
-/// none of what is left unseen, so the group is not measured at all and the ones that survive
-/// mark almost nothing. Conversation 761 is among those that drop out. See de-q2yv.
-
-pub fn walked_profile(
-    graph: &LookAheadGraph,
-    world: &dyn lookahead_engine::world::ILookAheadWorld,
-    conversation: i32,
-    ceiling: usize,
-    unseen_wanted: usize,
-    starts_wanted: usize,
-) -> Option<Walked> {
-    use lookahead_engine::walkthrough::{Until, greedy_playthrough};
-
-    let none = HashSet::new();
-    let whole = whole_walk(graph, world, conversation, ceiling, unseen_wanted)?;
-    let reachable = whole.len();
-
-    let stop_at = reachable - unseen_wanted;
-    let stopped = greedy_playthrough(
-        graph,
-        world,
-        conversation,
-        ceiling,
-        &none,
-        Until {
-            shown: Some(stop_at),
-        },
-    );
-    let seen = stopped.shown.clone();
-    let unseen = deepest_of(&whole, seen.len());
-    if unseen.is_empty() {
-        return None;
-    }
-
-    let reaching = can_reach(graph, &unseen);
-    let ranked = deepest_first(graph, DialogueNodeId::new(conversation, 0));
-    let starts: Vec<DialogueNodeId> = ranked
-        .iter()
-        .rev()
-        .filter(|id| reaching.contains(*id) && !unseen.contains(*id))
-        .copied()
-        .take(starts_wanted)
-        .collect();
-    if starts.is_empty() {
-        return None;
-    }
-
-    // THE WAY TO THE MENU IS PART OF THE WALK, so the hub stack the cut is taken from is the
-    // one the player is standing in rather than the one they were in a few presses ago.
-    let walk = last_sitting(&stopped);
-    let state = stopped.ended.clone();
-
-    Some(Walked {
-        walk,
-        // EMPTY UNTIL THE CALLER FILLS IT, since building one needs the save this walk was
-        // taken against and that is the caller's to name.
-        world: Default::default(),
-        // WHAT THE WALK PUT ON SCREEN IS WHAT THIS SAVE HAS DISPLAYED, and it travels as `seen`
-        // below, which the caller hands the world. The profile says only what ANY game has
-        // shown, so the two cannot disagree about one question - see `world::seen_state`, and
-        // de-ij9d and de-mo4q for what it cost when they could.
-        profile: MenuProfile { unseen, starts },
-        variables: variables_of(graph, world, &state),
-        seen,
-        shown: stop_at,
-        reachable,
     })
 }
 
@@ -427,6 +311,46 @@ fn variables_of(
         found.insert(name.to_string(), wire);
     }
     found
+}
+
+/// The `wanted` entries furthest from `root` by LINK DISTANCE, asserted rather than walked to.
+///
+/// No play is known to stand where these are still unread - [`walk_deepest_unseen`] is the set a
+/// walk vouches for. What this has instead is that it depends on the links alone, so it is the
+/// same set in every world.
+pub fn link_deepest_unseen(
+    graph: &LookAheadGraph,
+    root: DialogueNodeId,
+    wanted: usize,
+) -> HashSet<DialogueNodeId> {
+    deepest_first(graph, root)
+        .into_iter()
+        .take(wanted)
+        .collect()
+}
+
+/// A menu aimed at `targets`: the shallowest entries that can reach one, `starts_wanted` of them.
+///
+/// NOT A MENU THE GAME DRAWS. These entries are real and each is reachable from the start, but
+/// nothing offers them together - so there is no position a player can stand in where this is
+/// what they are looking at.
+///
+/// ADVERSARIAL BY CONSTRUCTION, which is what it is for: every start has something better beyond
+/// it, so none is refused before a diagram is touched and each pays for a real search.
+pub fn synthetic_menu(
+    graph: &LookAheadGraph,
+    root: DialogueNodeId,
+    targets: &HashSet<DialogueNodeId>,
+    starts_wanted: usize,
+) -> Vec<DialogueNodeId> {
+    let reaching = can_reach(graph, targets);
+    deepest_first(graph, root)
+        .iter()
+        .rev()
+        .filter(|id| reaching.contains(*id) && !targets.contains(*id))
+        .copied()
+        .take(starts_wanted)
+        .collect()
 }
 
 /// Every entry reachable from `start` by links, deepest first.
