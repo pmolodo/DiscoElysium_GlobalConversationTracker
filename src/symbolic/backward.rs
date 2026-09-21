@@ -1371,8 +1371,12 @@ mod tests {
         agree(shape(), &counter().set_seen(node(1), true), 2, false);
     }
 
-    /// A passive check is carried both ways where the group can take off something worn - the
-    /// same fixtures as the reference walk's.
+    /// The backward pass agrees with the reference walk about a check the group can move.
+    ///
+    /// BOTH ANSWER DEFINITELY NOW - see `world::passive_outcome`, which takes the world's
+    /// outcome whether or not the group can move the skill - so what this pins is the
+    /// agreement rather than the carrying. Whether the check is SETTLED is pinned in
+    /// `oracle`, where the fitting lives.
     #[test]
     fn a_passive_check_whose_skill_can_move_is_undecided() {
         let shape = || {
@@ -1398,13 +1402,12 @@ mod tests {
             shape(),
             &failing().set_equipped("HAT", "hat_mullen"),
             3,
-            true,
+            false,
         );
         agree(shape(), &failing(), 3, false);
     }
 
-    /// A failing Volition check is carried both ways only where the group's healing can make up
-    /// its shortfall - the same fixture as the reference walk's.
+    /// The same agreement where the group HEALS the skill rather than unclothing it.
     #[test]
     fn healing_unsettles_a_passive_check_only_within_its_margin() {
         let shape = || {
@@ -1426,7 +1429,7 @@ mod tests {
                 .set_check_margin(node(2), "VOLITION", -shortfall)
         };
 
-        agree(shape(), &short_by(1), 3, true);
+        agree(shape(), &short_by(1), 3, false);
         agree(shape(), &short_by(2), 3, false);
     }
 

@@ -220,18 +220,64 @@ pub trait ILookAheadWorld: Send + Sync {
     fn red_check_may_pass(&self, node: DialogueNodeId) -> bool;
 }
 
-/// Whether a passive check fires: the world's answer, or Unknown where the group can move the
-/// skill it compares - see [`crate::core::skill_movers`]. One place for the reference walk and
-/// both symbolic passes.
+/// Whether a passive check fires, ALWAYS DEFINITELY: the world's answer, taken at the state
+/// the crawl started from. One place for the reference walk and both symbolic passes.
+///
+/// ## Where the group can move the skill, this is a guess
+///
+/// A passive check compares a skill against a difficulty, and the group's own content can move
+/// that skill - by damaging or healing it, or by taking off or putting on a garment that
+/// modifies it. [`crate::core::skill_movers`] works out which checks that reaches, and
+/// [`crate::graph::LookAheadGraph::fit`] records it as `check_settled`.
+///
+/// SUCH A CHECK USED TO ANSWER UNKNOWN, which is honest and useless: Unknown is what a
+/// symbolic search cannot prune on, so both branches of the check stayed in every crawl and
+/// the entries behind it could never be marked. The answer now is the one the world states,
+/// which is right for a player who does not move the skill and wrong for one who does.
+///
+/// WHICH WAY IT ERRS is the unsafe direction, the same trade `GuardCompiler::with_constant_clock`
+/// takes for the clock: a check the group would have flipped INTO passing is reported as
+/// failing, so a branch the real game opens can be reported closed. Preferred anyway - a
+/// marker that is sometimes wrong beats one that is never right. It says so on stderr the
+/// first time each check is met, so the exposure is visible rather than assumed.
+///
+/// Making it accurate rather than definite is de-sr1u, whose first step is modelling clothing.
 pub fn passive_outcome(
     node: &crate::graph::node::LookAheadNode,
     world: &dyn ILookAheadWorld,
 ) -> Ternary {
-    if node.check_settled {
-        world.check_passes(node.id)
-    } else {
-        Ternary::Unknown
+    if !node.check_settled {
+        movable_check_warning(node.id);
     }
+    world.check_passes(node.id)
+}
+
+/// Says, once per check, that its outcome was taken from a skill the group can move.
+///
+/// ONCE, because a search asks the same check thousands of times as it fans out, and a line
+/// per ask would bury the run it was meant to explain. The same reasoning as
+/// `index::undeclared_variable_warning`, and the same channel: stderr is this process's only
+/// one that is not the wire.
+fn movable_check_warning(node: DialogueNodeId) {
+    use std::sync::Mutex;
+    static NAMED: Mutex<Option<std::collections::HashSet<DialogueNodeId>>> = Mutex::new(None);
+
+    let Ok(mut named) = NAMED.lock() else {
+        return;
+    };
+    if !named
+        .get_or_insert_with(std::collections::HashSet::new)
+        .insert(node)
+    {
+        return;
+    }
+
+    eprintln!(
+        "look-ahead: {}:{} is a passive check whose skill this group can move, so its \
+         outcome is taken from the state the crawl started in and may be wrong for a play \
+         that moves it. See de-sr1u.",
+        node.conversation_id, node.entry_id,
+    );
 }
 
 /// Whether entering `node` can take its roll's success branch.

@@ -502,6 +502,24 @@ mod tests {
         walk
     }
 
+    /// Whether entry 2's passive check comes out SETTLED once the graph is fitted.
+    ///
+    /// The subject of the two tests below. `world::passive_outcome` answers definitely
+    /// whether or not a check is settled - see its note - so this asks the fitting directly
+    /// rather than through a search that no longer tells the two apart.
+    fn settled_check(entries: Vec<Entry>, world: &GameWorld) -> bool {
+        let mut builder = GraphBuilder::new();
+        for entry in entries {
+            builder = builder.add(entry);
+        }
+        let mut graph = builder.build();
+        graph.fit(&crate::graph::Fitting::read(&graph, world));
+        graph
+            .get(node(2))
+            .expect("the fixture has entry 2")
+            .check_settled
+    }
+
     /// A passive check the world says fails is carried both ways where the group can take off
     /// something worn - and not where what it takes is not worn. What the check's own script
     /// raises is what shows it was entered.
@@ -527,8 +545,14 @@ mod tests {
         };
 
         let wearing = failing().set_equipped("HAT", "hat_mullen");
-        assert!(walked(shape(), &wearing).reached(node(3)));
-        assert!(!walked(shape(), &failing()).reached(node(3)));
+        assert!(
+            !settled_check(shape(), &wearing),
+            "the group takes off a hat this world is wearing, so the check can move"
+        );
+        assert!(
+            settled_check(shape(), &failing()),
+            "nothing it takes off is worn, so nothing can move the check"
+        );
     }
 
     /// A failing Volition check one short is carried both ways after a heal of one, and a check
@@ -554,8 +578,14 @@ mod tests {
                 .set_check_margin(node(2), "VOLITION", -shortfall)
         };
 
-        assert!(walked(shape(), &short_by(1)).reached(node(3)));
-        assert!(!walked(shape(), &short_by(2)).reached(node(3)));
+        assert!(
+            !settled_check(shape(), &short_by(1)),
+            "one point of healing crosses a check short by one"
+        );
+        assert!(
+            settled_check(shape(), &short_by(2)),
+            "one point does not reach a check short by two"
+        );
     }
 
     /// A failed Logic check pays out with Return on Investment fixed, and an Encyclopedia passive
