@@ -108,6 +108,104 @@ const STATED: [(&str, Moves); 37] = [
     ("Visual Calculus", Moves::Skills(&["VISUAL_CALCULUS"])),
 ];
 
+/// Which skills each item moves, by the engine's names for them.
+///
+/// ## Why a const rather than a file
+///
+/// `item_names.jsonl` holds this, and the engine cannot read it: that file is game data a
+/// TEST regenerates, and nothing ships it to a player. The alternative would be a third
+/// deployed file beside the index and the variable table, for fifty-five rows that change only
+/// when the game does - so it is a const, as `skill_movers::AUTOEQUIP_ITEMS` beside it already
+/// is for the same reason.
+///
+/// ## How to rebuild it, and what keeps it honest
+///
+/// It is derived from `item_names.jsonl` through [`moved_by`], so regenerating it is reading
+/// that file and mapping each stated name. `tests/corpus.rs` holds the two to each other: an
+/// item the database gives a skill bonus that is missing here, or one here the database no
+/// longer moves, fails there rather than quietly changing which checks a garment unsettles.
+///
+/// SORTED BY ITEM NAME, and the skills within a row sorted too, so a regeneration that changes
+/// nothing produces no diff.
+const MOVED_BY_ITEM: [(&str, &[&str]); 55] = [
+    ("glasses_flipup", &["AUTHORITY", "VISUAL_CALCULUS"]),
+    (
+        "glasses_megabinos",
+        &["ENCYCLOPEDIA", "PERCEPTION", "SIGHT"],
+    ),
+    (
+        "glasses_self_destruction",
+        &["ELECTROCHEMISTRY", "ENDURANCE"],
+    ),
+    (
+        "glasses_sub_insulindics",
+        &["INLAND_EMPIRE", "PERCEPTION", "SIGHT"],
+    ),
+    ("gloves_bum", &["ELECTROCHEMISTRY"]),
+    ("gloves_faln", &["INTERFACING"]),
+    ("gloves_garden", &["INTERFACING"]),
+    ("gloves_t500", &["INTERFACING"]),
+    ("hat_amphibian_sports_visor", &["PERCEPTION", "SIGHT"]),
+    ("hat_faln", &["LOGIC", "PERCEPTION", "SIGHT"]),
+    ("hat_headset", &["INLAND_EMPIRE", "REACTION"]),
+    ("hat_mullen", &["ENCYCLOPEDIA"]),
+    ("hat_rcm", &["AUTHORITY"]),
+    ("hat_samaran", &["LOGIC", "SUGGESTION"]),
+    ("hat_t500", &["HALF_LIGHT", "SUGGESTION"]),
+    (
+        "jacket_faln",
+        &["HALF_LIGHT", "PAIN_THRESHOLD", "SUGGESTION"],
+    ),
+    ("jacket_fritte_raincoat", &["ENDURANCE"]),
+    ("jacket_fucktheworld", &["SAVOIR_FAIRE"]),
+    ("jacket_interisolar", &["SUGGESTION"]),
+    ("jacket_kimono_robe", &["DRAMA", "ELECTROCHEMISTRY"]),
+    ("jacket_korovjev", &["CONCEPTUALIZATION"]),
+    ("jacket_mullen", &["DRAMA"]),
+    ("jacket_navalcoat", &["HALF_LIGHT"]),
+    ("jacket_patrol_cloak", &["ESPRIT_DE_CORPS", "SHIVERS"]),
+    ("jacket_pissflaubert", &["AUTHORITY", "DRAMA"]),
+    (
+        "jacket_rcm",
+        &["AUTHORITY", "ESPRIT_DE_CORPS", "VISUAL_CALCULUS"],
+    ),
+    ("jacket_reflective_vest", &["ENDURANCE", "REACTION"]),
+    ("jacket_suede", &["ESPRIT_DE_CORPS"]),
+    ("jacket_windbreaker_surf", &["COMPOSURE", "SHIVERS"]),
+    ("neck_bowtie", &["DRAMA"]),
+    ("neck_scented_scarf", &["PHYSICAL_INSTRUMENT", "SHIVERS"]),
+    ("neck_setting_sun_medal", &["RHETORIC"]),
+    ("neck_teratorn_tie", &["INLAND_EMPIRE"]),
+    ("neck_tie", &["INLAND_EMPIRE"]),
+    ("neck_winter_scarf", &["EMPATHY"]),
+    ("neck_winter_scarf_red", &["PAIN_THRESHOLD"]),
+    ("pants_bellbottom", &["ELECTROCHEMISTRY", "SAVOIR_FAIRE"]),
+    ("pants_carabineer", &["REACTION"]),
+    ("pants_faln", &["PHYSICAL_INSTRUMENT", "SAVOIR_FAIRE"]),
+    (
+        "pants_itchy_angry",
+        &["COMPOSURE", "HALF_LIGHT", "SAVOIR_FAIRE"],
+    ),
+    ("pants_jeans", &["ELECTROCHEMISTRY", "REACTION"]),
+    ("pants_jeans_black", &["LOGIC"]),
+    ("pants_jeans_red", &["PHYSICAL_INSTRUMENT"]),
+    ("pants_rcm", &["AUTHORITY", "SUGGESTION"]),
+    ("shirt_dress_disco", &["CONCEPTUALIZATION", "SUGGESTION"]),
+    ("shirt_faln", &["HE_COORDINATION"]),
+    (
+        "shirt_hjelmdall",
+        &["AUTHORITY", "PHYSICAL_INSTRUMENT", "SHIVERS"],
+    ),
+    ("shirt_interisolar", &["LOGIC"]),
+    ("shirt_mesh", &["DRAMA"]),
+    ("shirt_polo", &["EMPATHY", "RHETORIC"]),
+    ("shirt_t500", &["AUTHORITY", "EMPATHY", "PAIN_THRESHOLD"]),
+    ("shirt_tank_top", &["PHYSICAL_INSTRUMENT"]),
+    ("shoes_faln", &["HE_COORDINATION", "REACTION"]),
+    ("shoes_fancy_loafer_brown", &["PERCEPTION"]),
+    ("shoes_snakeskin", &["COMPOSURE", "SAVOIR_FAIRE"]),
+];
+
 /// What `stated` moves, or `None` for a name nothing here has classified.
 ///
 /// `None` is the loud answer and is what `tests/corpus.rs` holds the database to. It means the
@@ -117,6 +215,18 @@ pub fn moved_by(stated: &str) -> Option<Moves> {
         .iter()
         .find(|(name, _)| *name == stated)
         .map(|(_, moves)| *moves)
+}
+
+/// The skills wearing or removing `item` moves, or an empty slice for an item that moves none.
+///
+/// EMPTY IS AN ANSWER, not an absence: nearly every item in the game moves no skill, so a
+/// garment that is not here is one whose coming off cannot flip a check.
+pub fn skills_moved_by_item(item: &str) -> &'static [&'static str] {
+    MOVED_BY_ITEM
+        .iter()
+        .find(|(name, _)| *name == item)
+        .map(|(_, skills)| *skills)
+        .unwrap_or(&[])
 }
 
 #[cfg(test)]
@@ -168,6 +278,38 @@ mod tests {
     #[test]
     fn a_name_nobody_has_classified_is_refused_rather_than_guessed_at() {
         assert_eq!(moved_by("Sharpshooting"), None);
+    }
+
+    #[test]
+    fn an_item_that_moves_nothing_answers_an_empty_slice() {
+        assert!(skills_moved_by_item("key_trash_container").is_empty());
+    }
+
+    #[test]
+    fn an_items_skills_are_the_ones_the_engine_holds() {
+        for (item, skills) in MOVED_BY_ITEM {
+            assert!(!skills.is_empty(), "{item} is listed but moves nothing");
+            for skill in skills {
+                assert!(
+                    crate::core::thought_effects::names_a_skill(skill),
+                    "{item} moves {skill}, which is not a skill the engine holds"
+                );
+            }
+        }
+    }
+
+    /// Sorted, so a regeneration that changes nothing produces no diff.
+    #[test]
+    fn the_table_is_sorted_by_item_and_by_skill() {
+        let mut previous = "";
+        for (item, skills) in MOVED_BY_ITEM {
+            assert!(previous <= item, "{item} is out of order, after {previous}");
+            previous = item;
+
+            let mut sorted = skills.to_vec();
+            sorted.sort_unstable();
+            assert_eq!(skills.to_vec(), sorted, "{item}'s skills are out of order");
+        }
     }
 
     /// Every skill named here is one the engine holds - see `thought_effects::SKILLS`.
