@@ -685,7 +685,7 @@ fn main() {
             continue;
         };
         let built = started.elapsed() - (shipped.took() - before);
-        let graph = group.graph;
+        let mut graph = group.graph;
         let root = DialogueNodeId::new(conversation, 0);
         if graph.get(root).is_none() {
             eprintln!("conversation {conversation}: no entry 0; skipping.");
@@ -853,6 +853,14 @@ fn main() {
         let prep = Prep::of(&shipped, before, built, started);
 
         let seen_any_game = profile.seen_any_game();
+        // FITTED AS A REQUEST FITS IT, and before the fold and the layout that follow, both of
+        // which read what a fitting decides. `bridge::answer` does this to every graph it
+        // answers over - prices for the game mode, an action's condition settled, a passive
+        // check's outcome decided, and a slot whose value the world settles put into the guards
+        // that read it - so a row taken over an UNFITTED graph is a row about an engine the
+        // game does not run. See the rule in CLAUDE.md about measuring the shipped algorithm,
+        // and de-j4kg for what this was measured to move.
+        fitted_to(&mut graph, walked.as_ref());
         // FOLDED HERE, BEFORE THE LAYOUT, because the point of folding is the slots as much as
         // the entries and the layout is built from the graph below. The profile stays the one
         // the FULL graph produced - the same menu, the same entries called unseen - and is
@@ -906,6 +914,26 @@ fn main() {
 /// One menu: every option answered against one manager, warmed by the menu itself.
 ///
 /// `conversation` is the row's, whose start the `hybrid-hub` marking walks from.
+/// Fits a group's graph to the world its row will be measured in.
+///
+/// THE WORLD IS BUILT THE SAME WAY `menu` BUILDS ITS OWN - the standing world where a profile
+/// walked one, and the default otherwise - because it has to be the same world: a graph fitted
+/// to one world and measured in another describes neither.
+fn fitted_to(graph: &mut LookAheadGraph, walked: Option<&Standing>) {
+    let world = SnapshotWorld::declaring(
+        match walked {
+            Some(standing) => standing.world.clone(),
+            None => WorldSnapshot {
+                day_minutes: 720,
+                day_counter: 1,
+                ..Default::default()
+            },
+        },
+        None,
+    );
+    graph.fit(&lookahead_engine::graph::Fitting::read(graph, &world));
+}
+
 fn menu<F>(
     graph: &LookAheadGraph,
     conversation: i32,
@@ -944,6 +972,10 @@ where
         // THE WALKED WORLD WHERE THERE IS ONE, and it is taken WHOLE rather than patched: it
         // came out of a playthrough that reached the state it describes, and editing a field of
         // it would put it back among the worlds nobody walked to.
+        //
+        // THE SAME WORLD `main` FITTED THE GRAPH TO, built again here rather than handed over:
+        // it is a clone of the standing world either way, and threading it through would put a
+        // second lifetime on this signature for no answer that differs. See `fitted_to` there.
         let world = SnapshotWorld::declaring(
             match walked {
                 Some(standing) => standing.world.clone(),
