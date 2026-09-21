@@ -431,6 +431,73 @@ impl VariableTable {
     }
 }
 
+impl crate::world::IVariableTable for VariableTable {
+    /// The declared initial, and false for a name the database never heard of.
+    ///
+    /// FALSE RATHER THAN UNKNOWN for the undeclared, because that is what the game makes of
+    /// them: `FlagSet` is a call to `LuaHelper.GetVariable`, which returns `bool`, and a name
+    /// Lua has never heard of is nil, which is false in the condition the guard puts it in.
+    /// Unknown would be the engine being careful about a question the game answers plainly,
+    /// and it costs a marker no play can ever clear - the entry behind such a guard cannot be
+    /// shown, so an option leading only there leads nowhere.
+    fn unset(&self, name: &str) -> crate::core::guard_value::GuardValue {
+        match self.initial(name) {
+            Some(value) => value.clone(),
+            None => {
+                undeclared_variable_warning(name);
+                crate::core::guard_value::GuardValue::from_boolean(false)
+            }
+        }
+    }
+}
+
+/// Says, once per name, that a guard reads a variable the database never declared.
+///
+/// ONCE, because the search asks the same variable thousands of times as it fans out, and a
+/// line per ask would bury the run it was meant to explain.
+///
+/// WORTH SAYING AT ALL, even though the answer is now definite: a guard on an undeclared
+/// name is a content bug rather than a state of the world. The entry behind it can never be
+/// shown, so someone wrote a line the game cannot reach. The shipped database has exactly
+/// one - `undefined.pinball_asked_about_the_goats` on 1467:104, which differs from the flag
+/// it was plainly meant to read only in its namespace - and a second appearing is a thing to
+/// know rather than to absorb silently.
+///
+/// EXCEPT A CHECK'S FAILURE SLOT, which is ours and is undeclared on purpose.
+/// `index::parse_flags` gives every rolled check's flag a `FAILED_FLAG_SUFFIX` companion
+/// whether or not the database declares one, so an undeclared `_failed` name is a slot this
+/// engine invented rather than a line an author stranded. False is right for it on its own -
+/// the slot means "already failed", and a check nothing has failed yet is open - and calling
+/// it a content bug would report our own modelling as the game's mistake. The database
+/// declares 39 such names itself; those never reach here, because they are declared.
+///
+/// ON STDERR, which is this process's only channel that is not the wire. See the panic
+/// report in `run_look_ahead` for the same reasoning.
+fn undeclared_variable_warning(name: &str) {
+    use std::sync::Mutex;
+    static NAMED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+
+    if name.ends_with(crate::index::FAILED_FLAG_SUFFIX) {
+        return;
+    }
+
+    let Ok(mut named) = NAMED.lock() else {
+        return;
+    };
+    if !named
+        .get_or_insert_with(HashSet::new)
+        .insert(name.to_string())
+    {
+        return;
+    }
+
+    eprintln!(
+        "look-ahead: no variable named '{name}' is declared, though a guard reads it. \
+         Reading it as false, which is what the game does with it. The entry behind that \
+         guard can never be shown."
+    );
+}
+
 /// Every conversation reachable from `start` by following links, `start` included.
 ///
 /// Sorted, and that is not cosmetic: the order conversations are visited decides the
@@ -943,7 +1010,7 @@ mod tests {
         assert_eq!(reveal.unset_variable(), Some("TASK.wall_cancelled"));
 
         let reaches = |cancelled: bool| {
-            let world = TestWorld::new()
+            let world = TestWorld::declaring_nothing()
                 .set_variable("TASK.wall", GuardValue::from_boolean(false))
                 .set_variable("TASK.wall_cancelled", GuardValue::from_boolean(cancelled));
             let mut fitted = graph.clone();

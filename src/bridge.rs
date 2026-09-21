@@ -617,8 +617,8 @@ fn place(
 /// refused; see [`crate::service::Service::open`].
 pub struct SnapshotWorld {
     snapshot: WorldSnapshot,
-    /// What the database declares its variables to be.
-    declared: Arc<VariableTable>,
+    /// What a variable reads where the snapshot could not answer it.
+    declared: Arc<dyn crate::world::IVariableTable>,
 }
 
 impl SnapshotWorld {
@@ -637,7 +637,10 @@ impl SnapshotWorld {
     }
 
     /// The same, falling back to the database's declared variables.
-    pub fn declaring(snapshot: WorldSnapshot, declared: Arc<VariableTable>) -> Self {
+    pub fn declaring(
+        snapshot: WorldSnapshot,
+        declared: Arc<dyn crate::world::IVariableTable>,
+    ) -> Self {
         Self { snapshot, declared }
     }
 
@@ -696,53 +699,6 @@ fn thought_state_kinds(name: &str) -> Option<&'static [DataKind]> {
     }
 }
 
-/// Says, once per name, that a guard reads a variable the database never declared.
-///
-/// ONCE, because the search asks the same variable thousands of times as it fans out, and a
-/// line per ask would bury the run it was meant to explain.
-///
-/// WORTH SAYING AT ALL, even though the answer is now definite: a guard on an undeclared
-/// name is a content bug rather than a state of the world. The entry behind it can never be
-/// shown, so someone wrote a line the game cannot reach. The shipped database has exactly
-/// one - `undefined.pinball_asked_about_the_goats` on 1467:104, which differs from the flag
-/// it was plainly meant to read only in its namespace - and a second appearing is a thing to
-/// know rather than to absorb silently.
-///
-/// EXCEPT A CHECK'S FAILURE SLOT, which is ours and is undeclared on purpose.
-/// `index::parse_flags` gives every rolled check's flag a `FAILED_FLAG_SUFFIX` companion
-/// whether or not the database declares one, so an undeclared `_failed` name is a slot this
-/// engine invented rather than a line an author stranded. False is right for it on its own -
-/// the slot means "already failed", and a check nothing has failed yet is open - and calling
-/// it a content bug would report our own modelling as the game's mistake. The database
-/// declares 39 such names itself; those never reach here, because they are declared.
-///
-/// ON STDERR, which is this process's only channel that is not the wire. See the panic
-/// report in `run_look_ahead` for the same reasoning.
-fn undeclared_variable_warning(name: &str) {
-    use std::sync::Mutex;
-    static NAMED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
-
-    if name.ends_with(crate::index::FAILED_FLAG_SUFFIX) {
-        return;
-    }
-
-    let Ok(mut named) = NAMED.lock() else {
-        return;
-    };
-    if !named
-        .get_or_insert_with(HashSet::new)
-        .insert(name.to_string())
-    {
-        return;
-    }
-
-    eprintln!(
-        "look-ahead: no variable named '{name}' is declared, though a guard reads it. \
-         Reading it as false, which is what the game does with it. The entry behind that \
-         guard can never be shown."
-    );
-}
-
 impl ILookAheadWorld for SnapshotWorld {
     fn money(&self) -> i32 {
         self.snapshot.money
@@ -769,24 +725,11 @@ impl ILookAheadWorld for SnapshotWorld {
             return value;
         }
 
-        // The plugin could not read it. What the database says it starts as is a better
-        // answer than "no idea", and is the only one that gets a counter's KIND right.
-        //
-        // THERE IS ALWAYS A TABLE, so there is always something to be undeclared AGAINST -
-        // see `Service::open`, which refuses to open without one.
-        match self.declared.initial(name) {
-            Some(value) => value.clone(),
-            // DECLARED BY NOBODY, so the game reads it as false: `FlagSet` is a call to
-            // `LuaHelper.GetVariable`, which returns `bool`, and a name Lua never heard of
-            // is nil, which is false in the condition the guard puts it in. Unknown here
-            // would be the engine being careful about a question the game answers plainly,
-            // and it costs a marker that no play can ever clear - the entry behind such a
-            // guard cannot be shown, so an option leading only there leads nowhere.
-            None => {
-                undeclared_variable_warning(name);
-                GuardValue::from_boolean(false)
-            }
-        }
+        // The plugin could not read it, so the table answers - which it does for EVERY name,
+        // so there is no case left here to get wrong. What it says an unwritten variable
+        // starts as is a better answer than "no idea", and is the only one that gets a
+        // counter's KIND right. See `IVariableTable`.
+        self.declared.unset(name)
     }
 
     fn initially_has_item(&self, name: &str) -> bool {
@@ -1774,8 +1717,7 @@ pub fn entered_at_of(request: &LookAheadRequest) -> Vec<i32> {
     conversations
 }
 
-/// `declared` is the database's variable table where it has been deployed beside the
-/// index; see [`SnapshotWorld`] for what it is for and what its absence costs.
+/// `declared` answers any variable the request's world does not - see [`IVariableTable`].
 pub fn answer(
     index: &Index,
     declared: Arc<VariableTable>,
@@ -2599,7 +2541,7 @@ mod branch_wire_tests {
     #[test]
     fn a_refused_option_still_lets_each_outcome_ask_for_itself() {
         let graph = check_landing_on_something_read();
-        let world = TestWorld::new();
+        let world = TestWorld::declaring_nothing();
 
         // 1 is read; everything else is unseen this game. Nothing is unseen anywhere.
         let seen_state = |id: DialogueNodeId| {
@@ -2839,7 +2781,7 @@ mod branch_wire_tests {
         let index = crate::index::Index::new();
         let _ = index;
 
-        let world = TestWorld::new();
+        let world = TestWorld::declaring_nothing();
         let seen_state = |_: DialogueNodeId| SeenState::UnseenThisGame;
 
         let outcomes: Vec<LookAheadAnswer> = [StartBranch::Pass, StartBranch::Fail]
@@ -2880,7 +2822,7 @@ mod branch_wire_tests {
             .add(Entry::new(0).cost(PRICE).links(&[2]))
             .add(Entry::new(2))
             .build();
-        let world = TestWorld::new().with_money(PRICE - 1);
+        let world = TestWorld::declaring_nothing().with_money(PRICE - 1);
 
         let answer = score_one(
             &graph,
@@ -2907,7 +2849,7 @@ mod branch_wire_tests {
             .add(Entry::new(1).links(&[2]))
             .add(Entry::new(2))
             .build();
-        let world = TestWorld::new().with_money(PRICE - 1);
+        let world = TestWorld::declaring_nothing().with_money(PRICE - 1);
 
         let answers = answer_menu(&graph, &world, &[node(0), node(1)], only_two_is_unread);
         let best_of = |id: DialogueNodeId| {
@@ -2943,7 +2885,7 @@ mod branch_wire_tests {
             .add(Entry::new(2))
             .add(Entry::new(3))
             .build();
-        let world = TestWorld::new().with_money(PRICE - 1);
+        let world = TestWorld::declaring_nothing().with_money(PRICE - 1);
         let two_and_three_are_unread = |id: DialogueNodeId| {
             if id == node(2) || id == node(3) {
                 SeenState::UnseenAnyGame
@@ -3028,7 +2970,7 @@ mod branch_wire_tests {
             .add(Entry::new(2).guard(r#"Variable["roll"] == false"#))
             .add(Entry::new(3).links(&[0]))
             .build();
-        let world = TestWorld::new().with_red_checks_failing(true);
+        let world = TestWorld::declaring_nothing().with_red_checks_failing(true);
         let only_one_is_unread = |id: DialogueNodeId| {
             if id == node(1) {
                 SeenState::UnseenAnyGame

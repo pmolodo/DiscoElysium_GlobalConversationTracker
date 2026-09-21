@@ -521,7 +521,7 @@ mod tests {
             ]
         };
         let failing = || {
-            TestWorld::new()
+            TestWorld::declaring_nothing()
                 .set_variable("fired", GuardValue::from_boolean(false))
                 .set_check_result(node(2), Ternary::False)
         };
@@ -547,7 +547,7 @@ mod tests {
             ]
         };
         let short_by = |shortfall: i32| {
-            TestWorld::new()
+            TestWorld::declaring_nothing()
                 .set_variable("fired", GuardValue::from_boolean(false))
                 .set_damage("VOLITION", -3.0)
                 .set_check_result(node(2), Ternary::False)
@@ -563,7 +563,7 @@ mod tests {
     #[test]
     fn a_fixed_thought_pays_out_on_a_check_result() {
         let fixed = |world: TestWorld| world.set_query_bool("IsTHCFixed", true);
-        let purse = || TestWorld::new().with_money(100);
+        let purse = || TestWorld::declaring_nothing().with_money(100);
 
         let failed_logic = || {
             vec![
@@ -610,19 +610,20 @@ mod tests {
         let fixed = |world: TestWorld| world.set_query_bool("IsTHCFixed", true);
 
         let priced = || Entry::new(2).cost(150);
-        let purse = || TestWorld::new().with_money(100);
+        let purse = || TestWorld::declaring_nothing().with_money(100);
         assert!(!walked(shape("ultraliberal", priced()), &purse()).reached(node(2)));
         assert!(walked(shape("ultraliberal", priced()), &fixed(purse())).reached(node(2)));
 
         let hurt = || Entry::new(2).guard("HasVolitionDamage()");
-        let whole = || TestWorld::new().set_damage("VOLITION", 0.0);
+        let whole = || TestWorld::declaring_nothing().set_damage("VOLITION", 0.0);
         assert!(!walked(shape("revacholian_nationhood", hurt()), &whole()).reached(node(2)));
         assert!(walked(shape("revacholian_nationhood", hurt()), &fixed(whole())).reached(node(2)));
     }
 
     #[test]
     fn a_false_guard_closes_an_entry() {
-        let world = TestWorld::new().set_variable("shut", GuardValue::from_boolean(false));
+        let world =
+            TestWorld::declaring_nothing().set_variable("shut", GuardValue::from_boolean(false));
         let walk = walked(
             vec![
                 Entry::new(0).links(&[1]),
@@ -643,7 +644,7 @@ mod tests {
                 Entry::new(1).guard("IsKimHere()").links(&[2]),
                 Entry::new(2),
             ],
-            &TestWorld::new(),
+            &TestWorld::declaring_nothing(),
         );
         assert!(walk.reached(node(2)));
     }
@@ -658,14 +659,14 @@ mod tests {
                     .links(&[2]),
                 Entry::new(2).guard(r#"Variable["opened"]"#),
             ],
-            &TestWorld::new(),
+            &TestWorld::declaring_nothing(),
         );
         assert!(walk.reached(node(2)));
     }
 
     #[test]
     fn a_price_the_purse_cannot_meet_closes_an_option() {
-        let world = TestWorld::new().with_money(5);
+        let world = TestWorld::declaring_nothing().with_money(5);
         let walk = walked(
             vec![
                 Entry::new(0).links(&[1, 2]),
@@ -685,7 +686,7 @@ mod tests {
 
     #[test]
     fn paying_once_leaves_less_for_the_next_price() {
-        let world = TestWorld::new().with_money(10);
+        let world = TestWorld::declaring_nothing().with_money(10);
         let walk = walked(
             vec![
                 Entry::new(0).links(&[1]),
@@ -707,7 +708,8 @@ mod tests {
         // Declared numeric, so the comparison in the guard can be decided at all: a slot
         // the world has never heard of reads back as a boolean and the guard is then
         // undecidable, which would open entry 2 for the wrong reason.
-        let world = TestWorld::new().set_variable("count", GuardValue::from_number(0.0));
+        let world =
+            TestWorld::declaring_nothing().set_variable("count", GuardValue::from_number(0.0));
         let walk = walked(
             vec![
                 Entry::new(0).links(&[1]),
@@ -727,7 +729,8 @@ mod tests {
 
     #[test]
     fn a_counter_in_a_cycle_does_climb() {
-        let world = TestWorld::new().set_variable("count", GuardValue::from_number(0.0));
+        let world =
+            TestWorld::declaring_nothing().set_variable("count", GuardValue::from_number(0.0));
         let walk = walked(
             vec![
                 Entry::new(0).links(&[1]),
@@ -753,7 +756,7 @@ mod tests {
                 Entry::new(1).links(&[2]),
                 Entry::new(2).links(&[1]),
             ],
-            &TestWorld::new(),
+            &TestWorld::declaring_nothing(),
         );
         assert!(walk.reached(node(2)));
     }
@@ -766,7 +769,7 @@ mod tests {
                 Entry::new(1).group().links(&[2]),
                 Entry::new(2),
             ],
-            &TestWorld::new(),
+            &TestWorld::declaring_nothing(),
         );
         assert!(walk.reached(node(1)), "a group is walked through");
         let unseen = |id: DialogueNodeId| {
@@ -795,13 +798,13 @@ mod tests {
 
         let onward = walked(
             vec![Entry::new(0).links(&[1]), Entry::new(1)],
-            &TestWorld::new(),
+            &TestWorld::declaring_nothing(),
         );
         assert_eq!(onward.best_novelty(unseen), SeenState::SeenThisGame);
 
         let loops_back = walked(
             vec![Entry::new(0).links(&[1]), Entry::new(1).links(&[0])],
-            &TestWorld::new(),
+            &TestWorld::declaring_nothing(),
         );
         assert_eq!(loops_back.best_novelty(unseen), SeenState::UnseenAnyGame);
     }
@@ -813,7 +816,7 @@ mod tests {
             .add(Entry::new(1).guard(r#"Variable["roll"]"#))
             .add(Entry::new(2).guard(r#"Variable["roll_failed"]"#))
             .build();
-        let world = TestWorld::new();
+        let world = TestWorld::declaring_nothing();
 
         let passing = walk_branch(
             &graph,
@@ -866,7 +869,8 @@ mod tests {
 
         // A NUMBER, as the database declares a counter: an unread variable reads as a flag,
         // and a flag compared against a number is undecided, which would open 2 either way.
-        let counter = || TestWorld::new().set_variable("raised", GuardValue::from_number(0.0));
+        let counter =
+            || TestWorld::declaring_nothing().set_variable("raised", GuardValue::from_number(0.0));
 
         let unseen = walk(&graph, node(0), &counter(), COUNTER_CAP);
         assert!(
@@ -893,7 +897,7 @@ mod tests {
                 .add(Entry::new(2).guard("HasVolitionDamage()"))
                 .build()
         };
-        let whole = TestWorld::new().set_damage("VOLITION", 0.0);
+        let whole = TestWorld::declaring_nothing().set_damage("VOLITION", 0.0);
 
         let hurt = walk(&shape("DamageVolition(1)"), node(0), &whole, COUNTER_CAP);
         assert!(hurt.reached(node(2)), "a blow damages");
@@ -909,7 +913,7 @@ mod tests {
             "a heal as large as the blow undoes it"
         );
 
-        let already = TestWorld::new().set_damage("VOLITION", -3.0);
+        let already = TestWorld::declaring_nothing().set_damage("VOLITION", -3.0);
         let partly = walk(&shape("HealVolition(2)"), node(0), &already, COUNTER_CAP);
         assert!(
             partly.reached(node(2)),
@@ -928,7 +932,7 @@ mod tests {
                 .add(Entry::new(2).guard(guard))
                 .build()
         };
-        let with_kim = TestWorld::new()
+        let with_kim = TestWorld::declaring_nothing()
             .set_query_bool("IsKimHere", true)
             .set_query_bool("IsKimInParty", true);
         let left = "RemoveKitsuragiWaitAtChurch()";
@@ -962,7 +966,7 @@ mod tests {
                 .add(Entry::new(2).guard(guard))
                 .build()
         };
-        let dressed = TestWorld::new()
+        let dressed = TestWorld::declaring_nothing()
             .set_equipped("SHIRT", "shirt_x")
             .set_query_bool("HasShirt", true)
             .set_query_bool("CheckEquipped", true);
@@ -994,7 +998,7 @@ mod tests {
             )
             .add(Entry::new(2).guard(r#"TotalHourCount() >= Variable["deadline"]"#))
             .build();
-        let world = TestWorld::new()
+        let world = TestWorld::declaring_nothing()
             .with_day_counter(2)
             .with_day_minutes(10 * 60)
             .set_variable("deadline", GuardValue::from_number(0.0));
@@ -1019,12 +1023,14 @@ mod tests {
         let unseen = walk(
             &graph,
             node(0),
-            &TestWorld::new().with_money(5),
+            &TestWorld::declaring_nothing().with_money(5),
             COUNTER_CAP,
         );
         assert!(!unseen.reached(node(3)), "paying both prices needs ten");
 
-        let shown = TestWorld::new().with_money(5).set_seen(node(1), true);
+        let shown = TestWorld::declaring_nothing()
+            .with_money(5)
+            .set_seen(node(1), true);
         let seen = walk(&graph, node(0), &shown, COUNTER_CAP);
         assert!(
             seen.reached(node(3)),
@@ -1040,7 +1046,8 @@ mod tests {
             .add(Entry::new(2))
             .build();
         // The roll has already been made and lost, so the check cannot be entered at all.
-        let world = TestWorld::new().set_variable("roll_failed", GuardValue::from_boolean(true));
+        let world = TestWorld::declaring_nothing()
+            .set_variable("roll_failed", GuardValue::from_boolean(true));
         let walk = walk(&graph, node(0), &world, COUNTER_CAP);
         assert!(!walk.reached(node(2)));
     }
@@ -1059,7 +1066,7 @@ mod tests {
                 .add(Entry::new(3).guard(r#"Variable["roll_failed"]"#))
                 .build()
         };
-        let world = TestWorld::new().with_red_checks_failing(true);
+        let world = TestWorld::declaring_nothing().with_red_checks_failing(true);
 
         let red = walk(
             &check_of(DialogueCheckKind::Red),
@@ -1094,7 +1101,8 @@ mod tests {
                     .links(&[1]),
             )
             .build();
-        let world = TestWorld::new().set_variable("count", GuardValue::from_number(0.0));
+        let world =
+            TestWorld::declaring_nothing().set_variable("count", GuardValue::from_number(0.0));
         let walk = walk_branch(&graph, node(0), StartBranch::Either, &world, 1 << 20, 64);
         assert!(walk.exhausted(), "a walk that ran out of room must say so");
     }

@@ -189,7 +189,8 @@ mod tests {
 
     /// The group trimmed from entry 0, in a world where the door variable is shut.
     fn trim(graph: &LookAheadGraph) -> Trimmed {
-        let world = TestWorld::new().set_variable("door", GuardValue::from_boolean(false));
+        let world =
+            TestWorld::declaring_nothing().set_variable("door", GuardValue::from_boolean(false));
         let layout = DataLayout::for_graph(graph, 16, None, false);
         let vars = DataVars::new(&layout, graph.symbols(), DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);

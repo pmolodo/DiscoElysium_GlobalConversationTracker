@@ -303,7 +303,7 @@ fn what_each_entry_reaches(wanted: &[i32]) {
             println!("{conversation:>5}  does not build");
             continue;
         };
-        let world = lookahead_engine::world::test_world::TestWorld::new();
+        let world = lookahead_engine::world::test_world::TestWorld::declaring_nothing();
         let layout = DataLayout::for_group(&graph, &world, COUNTER_CAP);
         let symbols = graph.symbols();
         let mut spans = Vec::new();
@@ -487,7 +487,7 @@ fn what_each_stretch_holds(wanted: &[i32]) {
         // WHAT FOLDING ACTUALLY TAKES OUT, asked of the fold rather than of a rule restated
         // here: entries gone, and the variables the layout is left carrying.
         let folded = graph.collapsing_runs();
-        let world = lookahead_engine::world::test_world::TestWorld::new();
+        let world = lookahead_engine::world::test_world::TestWorld::declaring_nothing();
         let before = DataLayout::for_group(&graph, &world, COUNTER_CAP).total_vars();
         let after = DataLayout::for_group(&folded.graph, &world, COUNTER_CAP).total_vars();
         let gone = folded.into_head.len();

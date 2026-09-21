@@ -37,17 +37,21 @@ fn test(guard: &str, world: &TestWorld) -> Ternary {
 }
 
 fn with_bool(name: &str, value: bool) -> TestWorld {
-    TestWorld::new().set_variable(name, GuardValue::from_boolean(value))
+    TestWorld::declaring_nothing().set_variable(name, GuardValue::from_boolean(value))
 }
 
 fn with_number(name: &str, value: f64) -> TestWorld {
-    TestWorld::new().set_variable(name, GuardValue::from_number(value))
+    TestWorld::declaring_nothing().set_variable(name, GuardValue::from_number(value))
 }
 
 #[test]
 fn no_condition_is_true() {
     for guard in ["", "   "] {
-        assert_eq!(test(guard, &TestWorld::new()), Ternary::True, "{guard:?}");
+        assert_eq!(
+            test(guard, &TestWorld::declaring_nothing()),
+            Ternary::True,
+            "{guard:?}"
+        );
     }
 }
 
@@ -75,7 +79,7 @@ fn parenthesised_equals_false_is_negation() {
 fn block_comments_are_stripped() {
     // The comment holds an unbalanced bracket, so a parser that did not strip it first
     // would try to read it.
-    let world = TestWorld::new().set_query_bool("IsTaskActive", true);
+    let world = TestWorld::declaring_nothing().set_query_bool("IsTaskActive", true);
     assert_eq!(
         test(r#"IsTaskActive("TASK.x")--[[ Variable[ ]]"#, &world),
         Ternary::True
@@ -84,7 +88,10 @@ fn block_comments_are_stripped() {
 
 #[test]
 fn an_unknown_query_is_unknown_not_false() {
-    assert_eq!(test("IsKimHere()", &TestWorld::new()), Ternary::Unknown);
+    assert_eq!(
+        test("IsKimHere()", &TestWorld::declaring_nothing()),
+        Ternary::Unknown
+    );
 }
 
 /// False beats Unknown: one definitely-false conjunct settles it.
@@ -157,7 +164,7 @@ fn the_siileng_speakers_guard_parses_and_evaluates() {
         r#"  and  CheckItem("samaran_speakers") == false"#
     );
 
-    let ready = TestWorld::new()
+    let ready = TestWorld::declaring_nothing()
         .set_variable(
             "jam.siileng_bought_faln_sneakers",
             GuardValue::from_boolean(true),
@@ -169,7 +176,7 @@ fn the_siileng_speakers_guard_parses_and_evaluates() {
         .set_query_bool("CheckItem", false);
     assert_eq!(test(GUARD, &ready), Ternary::True);
 
-    let no_sneakers = TestWorld::new()
+    let no_sneakers = TestWorld::declaring_nothing()
         .set_variable(
             "jam.siileng_bought_faln_sneakers",
             GuardValue::from_boolean(false),
@@ -185,7 +192,7 @@ fn the_siileng_speakers_guard_parses_and_evaluates() {
 #[test]
 fn operator_precedence_and_binds_tighter_than_or() {
     // false and false or true  ==  (false and false) or true  ==  true
-    let world = TestWorld::new()
+    let world = TestWorld::declaring_nothing()
         .set_variable("a", GuardValue::from_boolean(false))
         .set_variable("b", GuardValue::from_boolean(false))
         .set_variable("c", GuardValue::from_boolean(true));
@@ -214,7 +221,7 @@ fn a_failed_parse_falls_back_to_always_true() {
     let fallback = parse_guard(r#"Variable["a"] $$ 3"#)
         .unwrap_or_else(|_| crate::core::guard::Guard::always_true());
     assert_eq!(
-        fallback.test(&WorldContext(&TestWorld::new())),
+        fallback.test(&WorldContext(&TestWorld::declaring_nothing())),
         Ternary::True
     );
 }
@@ -273,7 +280,10 @@ const FAR_PAST_ANYTHING_REAL: usize = 4_000;
 fn assert_parses_deep(text: &str, depth: usize, expected: Ternary) {
     let guard = parse_guard(text).unwrap_or_else(|e| panic!("{depth} levels should parse: {e:?}"));
     assert_eq!(guard.depth(), depth);
-    assert_eq!(guard.test(&WorldContext(&TestWorld::new())), expected);
+    assert_eq!(
+        guard.test(&WorldContext(&TestWorld::declaring_nothing())),
+        expected
+    );
 }
 
 /// A run of open brackets, each waiting on the parser's frame stack.

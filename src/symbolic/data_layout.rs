@@ -1758,7 +1758,7 @@ mod tests {
     fn dropping_a_redundant_counter_takes_its_bits_out() {
         let graph = gated_counter("charges", 3, 1, true);
         let slot = slot_named(&graph, "charges");
-        let world = crate::world::test_world::TestWorld::new();
+        let world = crate::world::test_world::TestWorld::declaring_nothing();
 
         let kept = DataLayout::for_graph(&graph, 16, None, false);
         let (_, width) = kept.slot(slot).expect("carried before");
@@ -1789,7 +1789,7 @@ mod tests {
         let slot = slot_named(&graph, "charges");
 
         // One site shown, three raises in the value: two of them came from somewhere else.
-        let world = crate::world::test_world::TestWorld::new()
+        let world = crate::world::test_world::TestWorld::declaring_nothing()
             .set_variable("charges", GuardValue::from_number(HELD as f64))
             .set_seen(DialogueNodeId::new(1, 0), true);
 
@@ -1805,7 +1805,7 @@ mod tests {
     fn a_counter_the_world_holds_at_its_shown_sites_rebases_by_nothing() {
         let graph = gated_counter("charges", 3, 1, true);
         let slot = slot_named(&graph, "charges");
-        let world = crate::world::test_world::TestWorld::new();
+        let world = crate::world::test_world::TestWorld::declaring_nothing();
 
         let dropped = DataLayout::for_group(&graph, &world, 16);
         assert_eq!(

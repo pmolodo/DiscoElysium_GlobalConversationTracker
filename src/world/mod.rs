@@ -97,6 +97,35 @@ pub fn flag_query(name: &str) -> Option<bool> {
     }
 }
 
+/// What a dialogue variable reads where the world holds no answer for it.
+///
+/// ## Why the table answers every name, rather than saying whether it knows one
+///
+/// A world is told the variables the plugin could read, which is nearly all of them - a save
+/// holds 10,653 against the database's 10,645. What is left is the handful it could not, and
+/// those still have values: an unwritten dialogue variable is at whatever the database
+/// declares it starts as, and a name the database never heard of is nil in Lua, which is
+/// false in the condition a guard puts it in.
+///
+/// SO THERE IS NO "NOT FOUND" FOR A WORLD TO HANDLE. Asking the table whether it declares a
+/// name would put the undeclared rule in every caller, and a caller that answered Unknown
+/// instead would be making a claim no play can ever clear: Unknown is what a symbolic search
+/// cannot prune on, so both branches of every guard over that name stay in the crawl and the
+/// entry behind it can never be marked. One implementation owns the answer.
+///
+/// ## The one implementation that answers Unknown
+///
+/// `performance/permissive_census.rs` measures what is unreachable in EVERY possible save, and
+/// that rests on a world which constrains nothing: loosening a world can only add paths, so an
+/// entry still proved unreachable against it is unreachable from every save there is. It hands
+/// the world a table of its own that answers Unknown for everything. That is the only way such
+/// an answer can be had, and it is a table somebody chose rather than a state a world can fall
+/// into.
+pub trait IVariableTable: Send + Sync + std::fmt::Debug {
+    /// What `name` reads where the world was not told its value.
+    fn unset(&self, name: &str) -> GuardValue;
+}
+
 /// Everything outside the dialogue graph that the look-ahead needs to know.
 pub trait ILookAheadWorld: Send + Sync {
     fn money(&self) -> i32;

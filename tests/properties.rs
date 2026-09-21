@@ -434,7 +434,7 @@ proptest! {
         shapes in (3usize..8).prop_flat_map(|n| prop::collection::vec(shape(n), n..=n)),
     ) {
         let graph = graph_from(&shapes);
-        let world = TestWorld::new()
+        let world = TestWorld::declaring_nothing()
             .with_money(10)
             .set_variable("open", GuardValue::from_boolean(false))
             .set_variable("count", GuardValue::from_number(0.0));

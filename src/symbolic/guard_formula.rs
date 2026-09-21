@@ -2254,7 +2254,7 @@ mod tests {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
-        let world = crate::world::test_world::TestWorld::new().with_day_counter(1);
+        let world = crate::world::test_world::TestWorld::declaring_nothing().with_day_counter(1);
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
 
         // Day one, so the branch is shut.
@@ -2318,7 +2318,7 @@ mod tests {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
-        let world = crate::world::test_world::TestWorld::new().with_day_counter(1);
+        let world = crate::world::test_world::TestWorld::declaring_nothing().with_day_counter(1);
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
 
         // `2 <= DayCount()` is `DayCount() >= 2`, which is false on day one. Read without
@@ -2343,7 +2343,7 @@ mod tests {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
-        let world = crate::world::test_world::TestWorld::new();
+        let world = crate::world::test_world::TestWorld::declaring_nothing();
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
 
         let compiled = compiler.compile(&Guard::comparison(
@@ -2369,7 +2369,7 @@ mod tests {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, Some(1000), false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
-        let world = crate::world::test_world::TestWorld::new();
+        let world = crate::world::test_world::TestWorld::declaring_nothing();
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
 
         let compiled = compiler.compile(&Guard::comparison(
@@ -2606,7 +2606,7 @@ mod tests {
         // Declared as a guard of the group would declare it; the fixture's entry has none.
         symbols.declare_variables(["a".to_string(), "untracked".to_string()]);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let world = crate::world::test_world::TestWorld::new()
+        let world = crate::world::test_world::TestWorld::declaring_nothing()
             .set_variable("untracked", GuardValue::from_number(5.0));
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
@@ -2727,7 +2727,8 @@ mod tests {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         // Deliberately answers no query, to show that is not what settles it.
-        let world = crate::world::test_world::TestWorld::new().set_item("ledger", true);
+        let world =
+            crate::world::test_world::TestWorld::declaring_nothing().set_item("ledger", true);
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
@@ -2771,7 +2772,8 @@ mod tests {
 
         // The world says the player does NOT have them. The slot must still decide, so
         // that a path which buys them is seen.
-        let world = crate::world::test_world::TestWorld::new().set_item("shoes_faln", false);
+        let world =
+            crate::world::test_world::TestWorld::declaring_nothing().set_item("shoes_faln", false);
         let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
         let compiled = compiler.compile(&Guard::call(
@@ -2814,7 +2816,8 @@ mod tests {
 
         // The save says the thought is NOT in the cabinet, which is the case that used to
         // decide the guard. The slot must win.
-        let world = crate::world::test_world::TestWorld::new().set_thought("jamais_vu", false);
+        let world = crate::world::test_world::TestWorld::declaring_nothing()
+            .set_thought("jamais_vu", false);
         let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
         let compiled = compiler.compile(&Guard::call(
@@ -2838,7 +2841,7 @@ mod tests {
     fn an_ungained_thought_is_answered_from_the_save() {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let world = crate::world::test_world::TestWorld::new()
+        let world = crate::world::test_world::TestWorld::declaring_nothing()
             .set_thought("guillaume_le_million", true)
             .set_query_bool("IsTHCFixed", false);
 
@@ -2869,7 +2872,8 @@ mod tests {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         // Two in the morning.
-        let night = crate::world::test_world::TestWorld::new().with_day_minutes(2 * 60);
+        let night =
+            crate::world::test_world::TestWorld::declaring_nothing().with_day_minutes(2 * 60);
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars)
@@ -2889,7 +2893,7 @@ mod tests {
     fn a_clock_number_is_compared_at_the_worlds_time() {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let morning = crate::world::test_world::TestWorld::new()
+        let morning = crate::world::test_world::TestWorld::declaring_nothing()
             .with_day_counter(2)
             .with_day_minutes(10 * 60);
 
@@ -2918,7 +2922,8 @@ mod tests {
     fn a_clock_question_is_undecided_without_the_approximation() {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let night = crate::world::test_world::TestWorld::new().with_day_minutes(2 * 60);
+        let night =
+            crate::world::test_world::TestWorld::declaring_nothing().with_day_minutes(2 * 60);
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&night);
@@ -2933,7 +2938,7 @@ mod tests {
     fn holding_the_clock_is_exact_unless_the_group_passes_time() {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let world = crate::world::test_world::TestWorld::new();
+        let world = crate::world::test_world::TestWorld::declaring_nothing();
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let exact = GuardCompiler::new(&vars)

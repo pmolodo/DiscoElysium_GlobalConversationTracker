@@ -182,7 +182,7 @@ fn cyclic_menus_agree_for_every_assignment_of_novelty() {
         compare(
             &graph,
             &[node(1), node(2), node(3)],
-            &TestWorld::new(),
+            &TestWorld::declaring_nothing(),
             &seen_state,
         );
     }

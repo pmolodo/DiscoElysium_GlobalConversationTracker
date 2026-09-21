@@ -199,7 +199,7 @@ fn main() -> anyhow::Result<()> {
     );
 
     // Create world
-    let world = TestWorld::new()
+    let world = TestWorld::declaring_nothing()
         .with_money(args.money)
         .with_day_minutes(args.day_minutes)
         .with_day_counter(args.day_counter)

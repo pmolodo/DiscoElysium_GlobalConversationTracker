@@ -826,7 +826,7 @@ mod tests {
         options: &[i32],
         run: impl FnOnce(&mut GuardCompiler<'_>, &TestWorld, &[Contestant]) -> R,
     ) -> R {
-        let world = TestWorld::new();
+        let world = TestWorld::declaring_nothing();
         let layout = DataLayout::for_graph(graph, 16, None, false);
         let vars = DataVars::new(&layout, graph.symbols(), DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);

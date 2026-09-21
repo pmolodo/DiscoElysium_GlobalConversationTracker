@@ -320,32 +320,12 @@ pub fn nothing_declared() -> std::sync::Arc<lookahead_engine::index::VariableTab
 /// None of it can be changed by a search, which is what makes one answer good for the
 /// whole walk.
 pub struct SaveWorld {
-    /// Counter variables, which must answer as NUMBERS rather than as false.
+    /// What every variable this world was not told about reads.
     ///
-    /// The one place the blanket "unset reads false" rule gives a wrong-shaped answer.
-    /// A guard like `Variable["jam.jammystery_lorrymans_questioned"] >= 3` compares a
-    /// counter, and in the game these exist as numbers initialised to zero; answering
-    /// boolean false makes the comparison undecidable, because `try_as_number` gives
-    /// nothing for a boolean and `Guard::evaluate` gives up in exactly the same
-    /// way. The engine and the compiler agree - they are both just being told the wrong
-    /// thing.
-    ///
-    /// Answering NUMBER ZERO for everything instead is not the fix, and would be a far
-    /// worse bug. `GuardValue::equals` is kind-sensitive, so a number never equals a
-    /// boolean, and 5,994 of the 13,059 distinct guards in the database end in
-    /// `== false`. Every one of them would start answering false.
-    ///
-    /// The real answer is the declared type, which the dialogue database has and the
-    /// extracted index does not yet carry - see de-sze.5.4. Until then a measurement
-    /// names the counters it needs, which is honest as long as it is understood as a
-    /// fixture rather than as a model.
-    numeric: HashSet<String>,
-    /// What the database declares its variables to be, where it has been extracted.
-    ///
-    /// Supersedes [`SaveWorld::numeric`], which was the same idea done by hand: a
-    /// measurement had to name each counter it needed and be wrong about the rest. The
-    /// table names all 10,645, of which 142 are numbers.
-    declared: Option<std::sync::Arc<lookahead_engine::index::VariableTable>>,
+    /// The database's table names all 10,645, of which 142 are numbers - and a counter has to
+    /// answer as a NUMBER rather than as false, or every ordering comparison over it is
+    /// undecidable. See de-sze.5.4.
+    declared: std::sync::Arc<dyn lookahead_engine::world::IVariableTable>,
     /// What the character is wearing, by `CheckEquipped` name.
     equipped: HashSet<String>,
     /// Thoughts in the cabinet, by `IsTHCPresent` name.
@@ -365,18 +345,16 @@ pub struct SaveWorld {
     day_counter: i32,
 }
 
-impl Default for SaveWorld {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl SaveWorld {
     /// Midday on the first day, nothing worn, nothing internalised, no money.
-    pub fn new() -> Self {
+    ///
+    /// NO `Default`, because there is no table to default to: what an unanswered variable
+    /// reads is the caller's to supply. See [`lookahead_engine::world::IVariableTable`].
+    pub fn declaring(
+        declared: std::sync::Arc<dyn lookahead_engine::world::IVariableTable>,
+    ) -> Self {
         Self {
-            numeric: HashSet::new(),
-            declared: variable_table(),
+            declared,
             equipped: HashSet::new(),
             gained: HashSet::new(),
             cooking: HashSet::new(),
@@ -385,12 +363,6 @@ impl SaveWorld {
             day_minutes: 12 * 60,
             day_counter: 1,
         }
-    }
-
-    /// Names a variable the save holds as a NUMBER, so an ordering comparison can read it.
-    pub fn with_counter(mut self, name: &str) -> Self {
-        self.numeric.insert(name.to_string());
-        self
     }
 
     pub fn wearing(mut self, name: &str) -> Self {
@@ -458,23 +430,11 @@ impl ILookAheadWorld for SaveWorld {
     }
 
     fn get_variable(&self, variable: lookahead_engine::core::state::VariableRef<'_>) -> GuardValue {
-        let name = variable.name();
-        // The declared type first, where the database has one. That is the whole of
-        // de-sze.5.4: a counter answered as a boolean makes every ordering comparison over
-        // it undecidable, and there is no way to tell a counter from a flag by looking at
-        // its name.
-        if let Some(declared) = self.declared.as_ref().and_then(|table| table.initial(name)) {
-            return declared.clone();
-        }
-
-        if self.numeric.contains(name) {
-            GuardValue::from_number(0.0)
-        } else {
-            // Unset reads false, which is what the game does - an unset Lua variable is
-            // nil and nil is falsy. Reached now only for a name the database does not
-            // declare at all.
-            GuardValue::from_boolean(false)
-        }
+        // THIS WORLD IS TOLD NO VARIABLES AT ALL, so every one of them is the table's to
+        // answer. The declared type is the whole of de-sze.5.4: a counter answered as a
+        // boolean makes every ordering comparison over it undecidable, and there is no way
+        // to tell a counter from a flag by looking at its name.
+        self.declared.unset(variable.name())
     }
 
     fn initially_has_item(&self, _name: &str) -> bool {
@@ -545,15 +505,10 @@ impl ILookAheadWorld for SaveWorld {
 /// questions, and a world that refuses them makes guards look undecidable when the only
 /// undecided thing is the fixture.
 pub fn measurement_save() -> SaveWorld {
-    SaveWorld::new()
+    SaveWorld::declaring(declared())
         // Worn from the first morning, and the guards ask about it more than anything
         // else worn - six of the eight CheckEquipped calls in conversation 631's group.
         .wearing("neck_tie")
-        // Counters the guards compare with an ordering operator. Named one at a time
-        // because nothing yet carries the declared type that would make this automatic -
-        // see de-sze.5.4, which is the real fix.
-        .with_counter("jam.jammystery_lorrymans_questioned")
-        .with_counter("pier.joyce_lorry_reporting_counter")
 }
 
 /// The entry the MOST OTHER ENTRIES can reach, ties broken by id.

@@ -232,7 +232,7 @@ mod tests {
 
     /// A world that says which way the check went.
     fn world_where_the_check(outcome: Option<Ternary>) -> TestWorld {
-        let mut world = TestWorld::new();
+        let mut world = TestWorld::declaring_nothing();
         if let Some(outcome) = outcome {
             world.check_results.insert(node(1), outcome);
         }

@@ -6,8 +6,14 @@ use crate::world::ILookAheadWorld;
 use std::collections::HashMap;
 
 /// Test implementation of ILookAheadWorld for unit tests.
-#[derive(Debug, Clone, Default)]
+///
+/// NO `Default`, because a world cannot be had without a table to answer the variables it
+/// was not told about - see [`crate::world::IVariableTable`]. `declaring_nothing` is how a
+/// test says it declares none, which is a choice it makes rather than one it falls into.
+#[derive(Debug, Clone)]
 pub struct TestWorld {
+    /// What a variable reads where this world was not told its value.
+    pub declared: std::sync::Arc<dyn crate::world::IVariableTable>,
     pub money: i32,
     pub day_minutes: i32,
     pub day_counter: i32,
@@ -42,8 +48,34 @@ pub struct TestWorld {
 }
 
 impl TestWorld {
-    pub fn new() -> Self {
-        Self::default()
+    /// A world whose unanswered variables come from `declared`.
+    pub fn declaring(declared: std::sync::Arc<dyn crate::world::IVariableTable>) -> Self {
+        Self {
+            declared,
+            money: 0,
+            day_minutes: 0,
+            day_counter: 0,
+            clock_locked: false,
+            red_checks_fail: false,
+            variables: HashMap::new(),
+            items: HashMap::new(),
+            thoughts: HashMap::new(),
+            damage: HashMap::new(),
+            equipment: HashMap::new(),
+            check_results: HashMap::new(),
+            check_margins: HashMap::new(),
+            seen: HashMap::new(),
+            queries: HashMap::new(),
+        }
+    }
+
+    /// A world declaring nothing, so every variable it was not told reads false.
+    ///
+    /// SAID OUT LOUD, for a test that is about something other than what the database
+    /// declares. False is what the game makes of a name nothing declares, so this is a world
+    /// a play could be in - not an absence of information.
+    pub fn declaring_nothing() -> Self {
+        Self::declaring(std::sync::Arc::new(crate::index::VariableTable::empty()))
     }
 
     pub fn with_money(mut self, money: i32) -> Self {
@@ -81,7 +113,7 @@ impl TestWorld {
         self.variables
             .get(name)
             .cloned()
-            .unwrap_or(GuardValue::unknown())
+            .unwrap_or_else(|| self.declared.unset(name))
     }
 
     pub fn set_item(mut self, name: &str, has: bool) -> Self {
