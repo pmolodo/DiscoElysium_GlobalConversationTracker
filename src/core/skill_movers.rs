@@ -21,8 +21,10 @@
 //!
 //! - EQUIPMENT. A worn item's bonuses are modifiers. `LoseItem` unequips what it deletes
 //!   (`Inventory.DeleteItem`), and `GainItem` equips an `autoequip` item
-//!   (`Inventory.HandlePickedUpItem`). Which skills an item moves is item data the dialogue
-//!   database does not carry.
+//!   (`Inventory.HandlePickedUpItem`). Which skills an item moves IS in the dialogue database,
+//!   as the prose a player reads - `MediumTextValue`, "+1 Rhetoric: The heroic deeds (of
+//!   others)". Seventy items carry one and sixty-four state a signed bonus. Nothing here reads
+//!   it yet; de-sr1u.2 extracts it and de-sr1u.3 narrows the unsettling below by it.
 //! - DAMAGE. `DamageVolition`, `HealVolition` and the endurance forms move the `DAMAGE` modifier
 //!   of Volition or Endurance.
 //!
@@ -32,8 +34,8 @@
 //! it. Where a group can change what is worn, the graph is fitted to answer every passive check
 //! Unknown instead (`LookAheadNode::check_settled`), which carries both outcomes - more markers
 //! than earned, never fewer. A lost item counts only if the world has it on: an item not worn has
-//! no bonus to take away. Such groups are rare, and the bonus sizes are not known, so nothing
-//! narrower is possible.
+//! no bonus to take away. Such groups are rare, and nothing here knows which skill a garment
+//! moves, so nothing narrower is possible YET - see the note above, which says where that is.
 //!
 //! DAMAGE unsettles a check only where it can cross the check's MARGIN, which the plugin sends for
 //! Volition and Endurance passives ([`crate::world::ILookAheadWorld::check_margin`]): the skill
