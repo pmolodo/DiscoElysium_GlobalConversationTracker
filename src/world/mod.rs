@@ -532,6 +532,7 @@ impl IGuardContext for BoundContext<'_> {
                     .filter(|v| v.kind() == GuardValueKind::Text)
                     .map(|v| v.text())
                 else {
+                    crate::core::malformed::call_warning(name, "a reputation's name as text");
                     return GuardValue::unknown();
                 };
 

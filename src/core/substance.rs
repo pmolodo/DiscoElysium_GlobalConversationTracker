@@ -86,9 +86,11 @@ pub fn answer(
 ) -> Option<GuardValue> {
     let threshold = threshold_of(name)?;
     let [substance] = arguments else {
+        crate::core::malformed::call_warning(name, "exactly one argument");
         return Some(GuardValue::unknown());
     };
     if substance.kind() != GuardValueKind::Text {
+        crate::core::malformed::call_warning(name, "the substance's name as text");
         return Some(GuardValue::unknown());
     }
 

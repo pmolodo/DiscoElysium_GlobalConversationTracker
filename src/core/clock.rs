@@ -178,6 +178,7 @@ impl ClockTime {
         }
 
         let Some(day) = arguments.first().and_then(|v| v.try_as_number()) else {
+            crate::core::malformed::call_warning(name, "a number");
             return GuardValue::unknown();
         };
 
@@ -230,6 +231,7 @@ impl ClockTime {
                 {
                     GuardValue::from_boolean(hours == h as i32)
                 } else {
+                    crate::core::malformed::call_warning(name, "a number");
                     GuardValue::unknown()
                 }
             }
@@ -243,6 +245,7 @@ impl ClockTime {
                         ));
                     }
                 }
+                crate::core::malformed::call_warning(name, "two numbers");
                 GuardValue::unknown()
             }
             "HourCount" => GuardValue::from_number(hours as f64),
