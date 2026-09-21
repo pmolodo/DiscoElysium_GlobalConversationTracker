@@ -110,9 +110,6 @@ path = "performance/menu_residue.rs"
 name = "layout_shape"
 path = "performance/layout_shape.rs"
 
-[[example]]
-name = "live_ranges"
-path = "performance/live_ranges.rs"
 
 [[example]]
 name = "repeat_question"
@@ -184,9 +181,6 @@ path = "performance/nodes_repeat.rs"
 name = "start_relative_layout"
 path = "performance/start_relative_layout.rs"
 
-[[example]]
-name = "bound_slack"
-path = "performance/bound_slack.rs"
 
 [[example]]
 name = "bidirectional_headroom"
@@ -213,11 +207,6 @@ path = "performance/onward_or_back.rs"
 name = "target_cost"
 path = "performance/target_cost.rs"
 
-# Whether a fresh-save scenario's globally-unseen set is a state any play could leave, which
-# decides whether the row taken on it measures a world or a fiction. See de-5sdm.
-[[example]]
-name = "profile_closure"
-path = "performance/profile_closure.rs"
 
 # A group drawn as graphviz, for the questions whose answer is a shape rather than a number.
 # `tools/render-dot.py` turns what it writes into a picture.
