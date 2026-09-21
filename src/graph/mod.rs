@@ -609,6 +609,10 @@ impl LookAheadGraph {
     /// wearing has no bonus to take away. PUT ON COUNTS ALWAYS: the group gains the garment, so
     /// what the world is wearing now does not decide whether it can.
     ///
+    /// A CHECK IS ONLY UNSETTLED WHERE THE GARMENT CAN REACH ITS MARGIN, which is the same
+    /// test damage gets: most garments move a skill by one, so a check passing by three keeps
+    /// the world's answer however many hats come off. See [`crate::core::garment::Reach`].
+    ///
     /// A CHECK WITH NO STATED SKILL IS UNSETTLED. The world states one for every passive check
     /// it can - see [`crate::world::ILookAheadWorld::check_margin`] - and where it states none,
     /// nothing here can tell whether the garment reaches it. More markers than earned, never
@@ -617,32 +621,48 @@ impl LookAheadGraph {
         &self,
         world: &dyn crate::world::ILookAheadWorld,
     ) -> HashSet<DialogueNodeId> {
-        let lost = self.items_lost_near_passive_checks();
-        let mut moved: BTreeSet<&'static str> = BTreeSet::new();
+        use crate::core::garment::Reach;
 
+        // WHICH GARMENTS THE GROUP CAN MOVE, and in which direction. Taken off counts only
+        // where the world has it on - an item the group deletes that is not worn has no bonus
+        // to take away - and put on counts always, since the group gains it.
+        let lost = self.items_lost_near_passive_checks();
+        let mut worn_and_lost: Vec<String> = Vec::new();
         if !lost.is_empty() {
             for slot in crate::core::equipment::SLOTS {
                 let worn = world.item_in_slot(slot).unwrap_or_default();
                 if lost.contains(worn.as_str()) {
-                    moved.extend(crate::core::garment::skills_moved_by_item(&worn));
+                    worn_and_lost.push(worn);
                 }
             }
         }
+        let gained: Vec<&String> = self
+            .nodes()
+            .flat_map(|node| node.skill_moves.puts_on.iter())
+            .collect();
 
-        for node in self.nodes() {
-            for item in &node.skill_moves.puts_on {
-                moved.extend(crate::core::garment::skills_moved_by_item(item));
-            }
-        }
-
-        if moved.is_empty() {
+        if worn_and_lost.is_empty() && gained.is_empty() {
             return HashSet::new();
         }
+
+        // HOW FAR EACH SKILL CAN MOVE, worked out once per skill a check asks about rather
+        // than per garment: `Reach` sums both directions, and `can_flip` is the same question
+        // `DamageReach` answers for a blow.
+        let reach_of = |skill: &str| {
+            let mut reach = Reach::default();
+            for item in &worn_and_lost {
+                reach.taking_off(item, skill);
+            }
+            for item in &gained {
+                reach.putting_on(item, skill);
+            }
+            reach
+        };
 
         self.nodes()
             .filter(|node| node.kind == DialogueCheckKind::Passive)
             .filter(|node| match world.check_margin(node.id) {
-                Some((skill, _)) => moved.contains(skill.as_str()),
+                Some((skill, margin)) => reach_of(&skill).can_flip(margin),
                 None => true,
             })
             .map(|node| node.id)

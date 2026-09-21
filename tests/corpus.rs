@@ -521,7 +521,9 @@ fn the_item_skill_table_matches_the_database() {
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("{} does not read: {error}", path.display()));
 
-    let mut from_database: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    // SUMMED PER SKILL, as the table is: one item can state the same skill twice, and what it
+    // moves the skill by is the total. A sum of zero moves nothing and is left out.
+    let mut from_database: BTreeMap<String, BTreeMap<String, i32>> = BTreeMap::new();
     for line in text.lines().filter(|line| !line.trim().is_empty()) {
         let row: serde_json::Value = serde_json::from_str(line)
             .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
@@ -529,7 +531,8 @@ fn the_item_skill_table_matches_the_database() {
             continue;
         };
         for bonus in bonuses {
-            let Some(stated) = bonus["moves"].as_str() else {
+            let (Some(stated), Some(amount)) = (bonus["moves"].as_str(), bonus["amount"].as_i64())
+            else {
                 continue;
             };
             let Some(garment::Moves::Skills(skills)) = garment::moved_by(stated) else {
@@ -539,20 +542,24 @@ fn the_item_skill_table_matches_the_database() {
             };
             let held = from_database.entry(item.to_string()).or_default();
             for skill in skills {
-                held.insert((*skill).to_string());
+                *held.entry((*skill).to_string()).or_insert(0) += amount as i32;
             }
         }
     }
+    for moved in from_database.values_mut() {
+        moved.retain(|_, amount| *amount != 0);
+    }
+    from_database.retain(|_, moved| !moved.is_empty());
 
     let mut wrong: Vec<String> = Vec::new();
-    for (item, skills) in &from_database {
-        let held: BTreeSet<String> = garment::skills_moved_by_item(item)
+    for (item, moved) in &from_database {
+        let held: BTreeMap<String, i32> = garment::skills_moved_by_item(item)
             .iter()
-            .map(|skill| (*skill).to_string())
+            .map(|(skill, amount)| ((*skill).to_string(), *amount))
             .collect();
-        if &held != skills {
+        if &held != moved {
             wrong.push(format!(
-                "{item}: the database says {skills:?}, the table holds {held:?}"
+                "{item}: the database says {moved:?}, the table holds {held:?}"
             ));
         }
     }

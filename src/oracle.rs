@@ -542,20 +542,27 @@ mod tests {
                 Entry::new(3),
             ]
         };
-        let wearing_it = |skill: &str| {
+        let wearing_it = |skill: &str, margin: i32| {
             GameWorld::blank()
                 .set_equipped("HAT", "hat_mullen")
                 .set_check_result(node(2), Ternary::False)
-                .set_check_margin(node(2), skill, -1)
+                .set_check_margin(node(2), skill, margin)
         };
 
+        // PASSING BY NOTHING, which one point of Encyclopedia is enough to take away. A failing
+        // check is the other question: losing a garment that HELPED cannot rescue it.
         assert!(
-            !settled_check(shape(), &wearing_it("ENCYCLOPEDIA")),
-            "the hat moves Encyclopedia, so an Encyclopedia check can flip when it comes off"
+            !settled_check(shape(), &wearing_it("ENCYCLOPEDIA", 0)),
+            "the hat is worth one Encyclopedia, so a check passing by nothing flips without it"
         );
         assert!(
-            settled_check(shape(), &wearing_it("LOGIC")),
+            settled_check(shape(), &wearing_it("LOGIC", 0)),
             "the hat does not move Logic, so a Logic check keeps the world's answer"
+        );
+        // AND ITS REACH IS ONE. A check passing by two survives the hat coming off.
+        assert!(
+            settled_check(shape(), &wearing_it("ENCYCLOPEDIA", 2)),
+            "one point of Encyclopedia cannot carry a check passing by two past its threshold"
         );
     }
 

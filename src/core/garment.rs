@@ -127,83 +127,127 @@ const STATED: [(&str, Moves); 37] = [
 ///
 /// SORTED BY ITEM NAME, and the skills within a row sorted too, so a regeneration that changes
 /// nothing produces no diff.
-const MOVED_BY_ITEM: [(&str, &[&str]); 55] = [
-    ("glasses_flipup", &["AUTHORITY", "VISUAL_CALCULUS"]),
+const MOVED_BY_ITEM: [(&str, &[(&str, i32)]); 55] = [
+    (
+        "glasses_flipup",
+        &[("AUTHORITY", -1), ("VISUAL_CALCULUS", 1)],
+    ),
     (
         "glasses_megabinos",
-        &["ENCYCLOPEDIA", "PERCEPTION", "SIGHT"],
+        &[("ENCYCLOPEDIA", 2), ("PERCEPTION", -4), ("SIGHT", -4)],
     ),
     (
         "glasses_self_destruction",
-        &["ELECTROCHEMISTRY", "ENDURANCE"],
+        &[("ELECTROCHEMISTRY", 1), ("ENDURANCE", -1)],
     ),
     (
         "glasses_sub_insulindics",
-        &["INLAND_EMPIRE", "PERCEPTION", "SIGHT"],
+        &[("INLAND_EMPIRE", 1), ("PERCEPTION", 1), ("SIGHT", 1)],
     ),
-    ("gloves_bum", &["ELECTROCHEMISTRY"]),
-    ("gloves_faln", &["INTERFACING"]),
-    ("gloves_garden", &["INTERFACING"]),
-    ("gloves_t500", &["INTERFACING"]),
-    ("hat_amphibian_sports_visor", &["PERCEPTION", "SIGHT"]),
-    ("hat_faln", &["LOGIC", "PERCEPTION", "SIGHT"]),
-    ("hat_headset", &["INLAND_EMPIRE", "REACTION"]),
-    ("hat_mullen", &["ENCYCLOPEDIA"]),
-    ("hat_rcm", &["AUTHORITY"]),
-    ("hat_samaran", &["LOGIC", "SUGGESTION"]),
-    ("hat_t500", &["HALF_LIGHT", "SUGGESTION"]),
+    ("gloves_bum", &[("ELECTROCHEMISTRY", 1)]),
+    ("gloves_faln", &[("INTERFACING", 1)]),
+    ("gloves_garden", &[("INTERFACING", 1)]),
+    ("gloves_t500", &[("INTERFACING", 2)]),
+    (
+        "hat_amphibian_sports_visor",
+        &[("PERCEPTION", 1), ("SIGHT", 1)],
+    ),
+    (
+        "hat_faln",
+        &[("LOGIC", 1), ("PERCEPTION", -1), ("SIGHT", -1)],
+    ),
+    ("hat_headset", &[("INLAND_EMPIRE", 2), ("REACTION", -1)]),
+    ("hat_mullen", &[("ENCYCLOPEDIA", 1)]),
+    ("hat_rcm", &[("AUTHORITY", 1)]),
+    ("hat_samaran", &[("LOGIC", 1), ("SUGGESTION", -1)]),
+    ("hat_t500", &[("HALF_LIGHT", 1), ("SUGGESTION", -1)]),
     (
         "jacket_faln",
-        &["HALF_LIGHT", "PAIN_THRESHOLD", "SUGGESTION"],
+        &[("HALF_LIGHT", 1), ("PAIN_THRESHOLD", 1), ("SUGGESTION", -2)],
     ),
-    ("jacket_fritte_raincoat", &["ENDURANCE"]),
-    ("jacket_fucktheworld", &["SAVOIR_FAIRE"]),
-    ("jacket_interisolar", &["SUGGESTION"]),
-    ("jacket_kimono_robe", &["DRAMA", "ELECTROCHEMISTRY"]),
-    ("jacket_korovjev", &["CONCEPTUALIZATION"]),
-    ("jacket_mullen", &["DRAMA"]),
-    ("jacket_navalcoat", &["HALF_LIGHT"]),
-    ("jacket_patrol_cloak", &["ESPRIT_DE_CORPS", "SHIVERS"]),
-    ("jacket_pissflaubert", &["AUTHORITY", "DRAMA"]),
+    ("jacket_fritte_raincoat", &[("ENDURANCE", 1)]),
+    ("jacket_fucktheworld", &[("SAVOIR_FAIRE", 1)]),
+    ("jacket_interisolar", &[("SUGGESTION", 1)]),
+    (
+        "jacket_kimono_robe",
+        &[("DRAMA", 1), ("ELECTROCHEMISTRY", 1)],
+    ),
+    ("jacket_korovjev", &[("CONCEPTUALIZATION", 1)]),
+    ("jacket_mullen", &[("DRAMA", 1)]),
+    ("jacket_navalcoat", &[("HALF_LIGHT", -1)]),
+    (
+        "jacket_patrol_cloak",
+        &[("ESPRIT_DE_CORPS", 1), ("SHIVERS", 1)],
+    ),
+    ("jacket_pissflaubert", &[("AUTHORITY", -1), ("DRAMA", 1)]),
     (
         "jacket_rcm",
-        &["AUTHORITY", "ESPRIT_DE_CORPS", "VISUAL_CALCULUS"],
+        &[
+            ("AUTHORITY", 1),
+            ("ESPRIT_DE_CORPS", 1),
+            ("VISUAL_CALCULUS", 1),
+        ],
     ),
-    ("jacket_reflective_vest", &["ENDURANCE", "REACTION"]),
-    ("jacket_suede", &["ESPRIT_DE_CORPS"]),
-    ("jacket_windbreaker_surf", &["COMPOSURE", "SHIVERS"]),
-    ("neck_bowtie", &["DRAMA"]),
-    ("neck_scented_scarf", &["PHYSICAL_INSTRUMENT", "SHIVERS"]),
-    ("neck_setting_sun_medal", &["RHETORIC"]),
-    ("neck_teratorn_tie", &["INLAND_EMPIRE"]),
-    ("neck_tie", &["INLAND_EMPIRE"]),
-    ("neck_winter_scarf", &["EMPATHY"]),
-    ("neck_winter_scarf_red", &["PAIN_THRESHOLD"]),
-    ("pants_bellbottom", &["ELECTROCHEMISTRY", "SAVOIR_FAIRE"]),
-    ("pants_carabineer", &["REACTION"]),
-    ("pants_faln", &["PHYSICAL_INSTRUMENT", "SAVOIR_FAIRE"]),
+    (
+        "jacket_reflective_vest",
+        &[("ENDURANCE", 2), ("REACTION", -1)],
+    ),
+    ("jacket_suede", &[("ESPRIT_DE_CORPS", 1)]),
+    (
+        "jacket_windbreaker_surf",
+        &[("COMPOSURE", 1), ("SHIVERS", -1)],
+    ),
+    ("neck_bowtie", &[("DRAMA", 2)]),
+    (
+        "neck_scented_scarf",
+        &[("PHYSICAL_INSTRUMENT", -2), ("SHIVERS", 1)],
+    ),
+    ("neck_setting_sun_medal", &[("RHETORIC", 1)]),
+    ("neck_teratorn_tie", &[("INLAND_EMPIRE", 1)]),
+    ("neck_tie", &[("INLAND_EMPIRE", 1)]),
+    ("neck_winter_scarf", &[("EMPATHY", 1)]),
+    ("neck_winter_scarf_red", &[("PAIN_THRESHOLD", 1)]),
+    (
+        "pants_bellbottom",
+        &[("ELECTROCHEMISTRY", 1), ("SAVOIR_FAIRE", -1)],
+    ),
+    ("pants_carabineer", &[("REACTION", 1)]),
+    (
+        "pants_faln",
+        &[("PHYSICAL_INSTRUMENT", 3), ("SAVOIR_FAIRE", 2)],
+    ),
     (
         "pants_itchy_angry",
-        &["COMPOSURE", "HALF_LIGHT", "SAVOIR_FAIRE"],
+        &[("COMPOSURE", -1), ("HALF_LIGHT", 2), ("SAVOIR_FAIRE", -1)],
     ),
-    ("pants_jeans", &["ELECTROCHEMISTRY", "REACTION"]),
-    ("pants_jeans_black", &["LOGIC"]),
-    ("pants_jeans_red", &["PHYSICAL_INSTRUMENT"]),
-    ("pants_rcm", &["AUTHORITY", "SUGGESTION"]),
-    ("shirt_dress_disco", &["CONCEPTUALIZATION", "SUGGESTION"]),
-    ("shirt_faln", &["HE_COORDINATION"]),
+    ("pants_jeans", &[("ELECTROCHEMISTRY", 1), ("REACTION", -1)]),
+    ("pants_jeans_black", &[("LOGIC", 1)]),
+    ("pants_jeans_red", &[("PHYSICAL_INSTRUMENT", 1)]),
+    ("pants_rcm", &[("AUTHORITY", 1), ("SUGGESTION", 1)]),
+    (
+        "shirt_dress_disco",
+        &[("CONCEPTUALIZATION", 1), ("SUGGESTION", -1)],
+    ),
+    ("shirt_faln", &[("HE_COORDINATION", 1)]),
     (
         "shirt_hjelmdall",
-        &["AUTHORITY", "PHYSICAL_INSTRUMENT", "SHIVERS"],
+        &[
+            ("AUTHORITY", -2),
+            ("PHYSICAL_INSTRUMENT", 1),
+            ("SHIVERS", 1),
+        ],
     ),
-    ("shirt_interisolar", &["LOGIC"]),
-    ("shirt_mesh", &["DRAMA"]),
-    ("shirt_polo", &["EMPATHY", "RHETORIC"]),
-    ("shirt_t500", &["AUTHORITY", "EMPATHY", "PAIN_THRESHOLD"]),
-    ("shirt_tank_top", &["PHYSICAL_INSTRUMENT"]),
-    ("shoes_faln", &["HE_COORDINATION", "REACTION"]),
-    ("shoes_fancy_loafer_brown", &["PERCEPTION"]),
-    ("shoes_snakeskin", &["COMPOSURE", "SAVOIR_FAIRE"]),
+    ("shirt_interisolar", &[("LOGIC", 1)]),
+    ("shirt_mesh", &[("DRAMA", 1)]),
+    ("shirt_polo", &[("EMPATHY", -1), ("RHETORIC", 1)]),
+    (
+        "shirt_t500",
+        &[("AUTHORITY", 1), ("EMPATHY", -1), ("PAIN_THRESHOLD", 1)],
+    ),
+    ("shirt_tank_top", &[("PHYSICAL_INSTRUMENT", 1)]),
+    ("shoes_faln", &[("HE_COORDINATION", 1), ("REACTION", 1)]),
+    ("shoes_fancy_loafer_brown", &[("PERCEPTION", 1)]),
+    ("shoes_snakeskin", &[("COMPOSURE", 1), ("SAVOIR_FAIRE", -1)]),
 ];
 
 /// What `stated` moves, or `None` for a name nothing here has classified.
@@ -217,16 +261,79 @@ pub fn moved_by(stated: &str) -> Option<Moves> {
         .map(|(_, moves)| *moves)
 }
 
-/// The skills wearing or removing `item` moves, or an empty slice for an item that moves none.
+/// What wearing `item` does to each skill it moves, signed, or an empty slice for an item that
+/// moves none.
 ///
-/// EMPTY IS AN ANSWER, not an absence: nearly every item in the game moves no skill, so a
-/// garment that is not here is one whose coming off cannot flip a check.
-pub fn skills_moved_by_item(item: &str) -> &'static [&'static str] {
+/// POSITIVE IS WHAT WEARING IT ADDS, so taking it off subtracts the same. EMPTY IS AN ANSWER,
+/// not an absence: nearly every item in the game moves no skill, so a garment that is not here
+/// is one whose coming off cannot flip a check.
+pub fn skills_moved_by_item(item: &str) -> &'static [(&'static str, i32)] {
     MOVED_BY_ITEM
         .iter()
         .find(|(name, _)| *name == item)
-        .map(|(_, skills)| *skills)
+        .map(|(_, moved)| *moved)
         .unwrap_or(&[])
+}
+
+/// How far a group can move one skill, each way, by what it takes off and puts on.
+///
+/// ## Why both ways, and why a sum
+///
+/// A check flips when its margin crosses zero, so which direction matters: a check that passes
+/// is flipped by the skill FALLING and one that fails by it RISING. A group can do both - take
+/// off a garment that helped and put on one that helps more - so each direction is accumulated
+/// separately.
+///
+/// THE SUMS ARE UPPER BOUNDS, deliberately. A group that can remove two hats worth one apiece
+/// is treated as able to lower the skill by two, whether or not any route through it does both.
+/// That can unsettle a check nothing would really flip; the other way would settle one that
+/// flips, which is the answer a player sees as a marker that should not be there.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Reach {
+    /// The most the skill can fall.
+    pub down: i32,
+    /// The most it can rise.
+    pub up: i32,
+}
+
+impl Reach {
+    /// Adds what taking `item` off would do.
+    pub fn taking_off(&mut self, item: &str, skill: &str) {
+        self.moves(item, skill, -1);
+    }
+
+    /// Adds what putting `item` on would do.
+    pub fn putting_on(&mut self, item: &str, skill: &str) {
+        self.moves(item, skill, 1);
+    }
+
+    /// `sign` is +1 where the garment's bonus is applied and -1 where it is taken away.
+    fn moves(&mut self, item: &str, skill: &str, sign: i32) {
+        for (moved, amount) in skills_moved_by_item(item) {
+            if *moved != skill {
+                continue;
+            }
+            let change = amount * sign;
+            if change < 0 {
+                self.down += -change;
+            } else {
+                self.up += change;
+            }
+        }
+    }
+
+    /// Whether a check at `margin` can be flipped by this reach.
+    ///
+    /// The margin is the skill value plus the check's bonus, minus its threshold: zero or more
+    /// clears it. So a passing check flips where the skill can fall past zero, and a failing
+    /// one where it can rise to meet it.
+    pub fn can_flip(&self, margin: i32) -> bool {
+        if margin >= 0 {
+            self.down > margin
+        } else {
+            self.up >= -margin
+        }
+    }
 }
 
 #[cfg(test)]
@@ -281,19 +388,66 @@ mod tests {
     }
 
     #[test]
+    fn taking_off_what_helped_can_flip_a_check_that_was_passing() {
+        let mut reach = Reach::default();
+        reach.taking_off("hat_mullen", "ENCYCLOPEDIA");
+
+        assert_eq!(reach, Reach { down: 1, up: 0 });
+        // The hat is worth one, so a check passing by nothing flips and one passing by one does
+        // not - it would sit exactly on the threshold, which still clears.
+        assert!(reach.can_flip(0));
+        assert!(!reach.can_flip(1));
+    }
+
+    #[test]
+    fn putting_on_what_helps_can_flip_a_check_that_was_failing() {
+        let mut reach = Reach::default();
+        reach.putting_on("hat_mullen", "ENCYCLOPEDIA");
+
+        assert_eq!(reach, Reach { down: 0, up: 1 });
+        assert!(reach.can_flip(-1));
+        assert!(!reach.can_flip(-2));
+    }
+
+    /// A garment that HURT a skill raises it by coming off.
+    #[test]
+    fn taking_off_a_penalty_raises_the_skill() {
+        let mut reach = Reach::default();
+        reach.taking_off("glasses_flipup", "AUTHORITY");
+
+        assert_eq!(
+            reach,
+            Reach { down: 0, up: 1 },
+            "the glasses cost one Authority"
+        );
+        assert!(reach.can_flip(-1));
+    }
+
+    #[test]
+    fn a_skill_the_garment_does_not_move_reaches_nothing() {
+        let mut reach = Reach::default();
+        reach.taking_off("hat_mullen", "LOGIC");
+
+        assert_eq!(reach, Reach::default());
+        assert!(!reach.can_flip(0));
+        assert!(!reach.can_flip(-1));
+    }
+
+    #[test]
     fn an_item_that_moves_nothing_answers_an_empty_slice() {
         assert!(skills_moved_by_item("key_trash_container").is_empty());
     }
 
     #[test]
     fn an_items_skills_are_the_ones_the_engine_holds() {
-        for (item, skills) in MOVED_BY_ITEM {
-            assert!(!skills.is_empty(), "{item} is listed but moves nothing");
-            for skill in skills {
+        for (item, moved) in MOVED_BY_ITEM {
+            assert!(!moved.is_empty(), "{item} is listed but moves nothing");
+            for (skill, amount) in moved {
                 assert!(
                     crate::core::thought_effects::names_a_skill(skill),
                     "{item} moves {skill}, which is not a skill the engine holds"
                 );
+                assert_ne!(*amount, 0, "{item} moves {skill} by nothing");
             }
         }
     }
@@ -302,13 +456,14 @@ mod tests {
     #[test]
     fn the_table_is_sorted_by_item_and_by_skill() {
         let mut previous = "";
-        for (item, skills) in MOVED_BY_ITEM {
+        for (item, moved) in MOVED_BY_ITEM {
             assert!(previous <= item, "{item} is out of order, after {previous}");
             previous = item;
 
-            let mut sorted = skills.to_vec();
+            let named: Vec<&str> = moved.iter().map(|(skill, _)| *skill).collect();
+            let mut sorted = named.clone();
             sorted.sort_unstable();
-            assert_eq!(skills.to_vec(), sorted, "{item}'s skills are out of order");
+            assert_eq!(named, sorted, "{item}'s skills are out of order");
         }
     }
 
