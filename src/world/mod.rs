@@ -203,8 +203,14 @@ pub trait ILookAheadWorld: Send + Sync {
     fn check_passes(&self, node: DialogueNodeId) -> Ternary;
 
     /// A passive check's skill and margin - its skill value plus the check's bonus, minus its
-    /// threshold after thoughts - where damage can move it, or `None`. See
-    /// [`crate::core::skill_movers`].
+    /// threshold after thoughts - or `None` where the world could not state one.
+    ///
+    /// FOR EVERY PASSIVE CHECK, not only the ones damage can move. [`crate::core::skill_movers`]
+    /// reads it to ask whether the group's own damage can cross the margin, and answers no for a
+    /// skill the group does not damage; what the rest are for is clothing, which moves a NAMED
+    /// skill and could say nothing about which checks it reaches while they had no skill. A
+    /// check a thought forces through has no margin, because its outcome is then not a
+    /// comparison.
     fn check_margin(&self, _node: DialogueNodeId) -> Option<(String, i32)> {
         None
     }

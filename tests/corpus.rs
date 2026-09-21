@@ -417,3 +417,80 @@ fn every_bonus_the_database_states_is_one_the_engine_knows() {
     println!("{stated} bonus(es) stated by the database");
     assert_eq!(sample(&unknown), Vec::<String>::new());
 }
+
+/// The engine's skills are the game's `SkillType`, minus the three that are not skills.
+///
+/// ## Why this is worth reading off the game rather than trusting
+///
+/// The plugin names the skill a passive check tests by its `SkillType`, and the engine matches
+/// that name against `core::thought_effects::SKILLS`. Two lists in two languages, and nothing
+/// but this compares them. A name that disagreed would not fail to compile or to run - the
+/// engine would simply never match that skill, so a garment would stop unsettling the checks it
+/// moves and a damaged skill would stop flipping them, with no symptom but a marker that is
+/// wrong on some entries.
+///
+/// That is the shape of the `FOUR PLACES HAVE TO AGREE` note on `world::flag_query`, and the
+/// same answer: make the agreement a thing that is checked.
+///
+/// ## The three that are not skills
+///
+/// `NONE` and `ALT` name no skill. `CONVALESCENCE` is a skill of the game's but not of the
+/// engine's: `CharacterSheet.GetSkill` answers it with Endurance, so the plugin folds it there
+/// and the engine holds one name for both.
+///
+/// See de-sr1u.4.
+#[test]
+fn the_engines_skills_are_the_games_own_enum() {
+    use lookahead_engine::core::thought_effects;
+
+    const ENUM: &str = "AssetRipperExport/ExportedProject/Assets/Scripts/\
+Assembly-CSharp/Sunshine/Metric/SkillType.cs";
+
+    /// Named by the game but not a skill the engine holds, and why.
+    const NOT_THE_ENGINES: [&str; 3] = ["NONE", "ALT", "CONVALESCENCE"];
+
+    let path = common::repo_root()
+        .join(".game_reference_copies")
+        .join(ENUM);
+    if !path.exists() {
+        println!("\n!! SKIPPING: {} is not present.\n", path.display());
+        return;
+    }
+
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{} does not read: {error}", path.display()));
+
+    // `    LOGIC = 1,` - the name up to its `=`.
+    let named: Vec<String> = text
+        .lines()
+        .filter_map(|line| line.split_once('='))
+        .map(|(name, _)| name.trim().to_string())
+        .filter(|name| !name.is_empty() && name.chars().all(|c| c.is_ascii_uppercase() || c == '_'))
+        .collect();
+
+    assert!(
+        named.len() > 20,
+        "only {} member(s) read from {}, so the parse is wrong rather than the enum",
+        named.len(),
+        path.display()
+    );
+
+    let mut missing: Vec<String> = Vec::new();
+    for name in &named {
+        if NOT_THE_ENGINES.contains(&name.as_str()) {
+            assert!(
+                !thought_effects::names_a_skill(name),
+                "{name} is listed as not the engine's, but the engine holds it"
+            );
+            continue;
+        }
+        if !thought_effects::names_a_skill(name) {
+            missing.push(format!(
+                "the game names {name}, which the engine does not hold"
+            ));
+        }
+    }
+
+    println!("{} member(s) in the game's enum", named.len());
+    assert_eq!(sample(&missing), Vec::<String>::new());
+}

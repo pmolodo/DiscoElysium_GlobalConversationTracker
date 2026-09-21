@@ -65,9 +65,21 @@ namespace GlobalConversationTracker
         }
 
         /// <summary>
-        /// This entry's margin, where it is a check on a skill damage moves and no thought
-        /// forces it through; otherwise null. See <see cref="CheckMargin"/>.
+        /// This entry's skill and margin, where it is a passive check no thought forces
+        /// through; otherwise null. See <see cref="CheckMargin"/>.
         /// </summary>
+        /// <remarks>
+        /// <para>EVERY PASSIVE CHECK, not only the two that damage can move. The engine used to
+        /// hear a skill for Volition and Endurance alone, because that was all
+        /// <c>checks_damage_can_flip</c> needed - and it needs no more now, since it looks the
+        /// skill up among the ones the group's own damage moves and a margin for any other
+        /// simply does not match. What the rest are for is clothing: a garment moves a named
+        /// skill, and nothing could say which checks that reaches while the engine heard no
+        /// skill for them. See de-sr1u.4.</para>
+        ///
+        /// <para>A THOUGHT THAT FORCES THE CHECK THROUGH still yields null. Its outcome is then
+        /// not a comparison at all, so there is no margin to state.</para>
+        /// </remarks>
         /// <param name="entry">The entry carrying the check.</param>
         /// <param name="node">The entry's id, as the margin names it.</param>
         internal static CheckMargin? MarginOf(DialogueEntry? entry, NodeRef node)
@@ -79,10 +91,10 @@ namespace GlobalConversationTracker
                 return null;
             }
 
-            string? damaged = DamagedSkillName(skill);
-            return damaged == null
+            string? named = SkillName(skill);
+            return named == null
                 ? null
-                : new CheckMargin(node, damaged, PassiveCheck.Margin(skillValue, threshold));
+                : new CheckMargin(node, named, PassiveCheck.Margin(skillValue, threshold));
         }
 
         /// <summary>
@@ -127,20 +139,30 @@ namespace GlobalConversationTracker
         }
 
         /// <summary>
-        /// The name the engine's damage slots use for a skill damage moves, or null for any
-        /// other skill. <c>CharacterSheet.GetSkill</c> answers Convalescence with Endurance.
+        /// What the engine calls <paramref name="skill"/>, or null where it names no skill.
         /// </summary>
-        private static string? DamagedSkillName(SkillType skill)
+        /// <remarks>
+        /// <para>THE ENUM'S OWN SPELLING, which is the engine's: every member of
+        /// <c>SkillType</c> from <c>LOGIC</c> to <c>COMPOSURE</c> is a name
+        /// <c>core::thought_effects::SKILLS</c> holds, and `tests/corpus.rs` reads the game's
+        /// enum and holds the two lists to each other rather than trusting that.</para>
+        ///
+        /// <para>THREE ARE NOT SKILLS THE ENGINE HOLDS. <c>NONE</c> and <c>ALT</c> name none at
+        /// all. <c>CONVALESCENCE</c> is the game's and not the engine's -
+        /// <c>CharacterSheet.GetSkill</c> answers it with Endurance - so it is folded there and
+        /// one name serves both.</para>
+        /// </remarks>
+        private static string? SkillName(SkillType skill)
         {
             switch (skill)
             {
-                case SkillType.VOLITION:
-                    return "VOLITION";
-                case SkillType.ENDURANCE:
+                case SkillType.NONE:
+                case SkillType.ALT:
+                    return null;
                 case SkillType.CONVALESCENCE:
                     return "ENDURANCE";
                 default:
-                    return null;
+                    return skill.ToString();
             }
         }
 

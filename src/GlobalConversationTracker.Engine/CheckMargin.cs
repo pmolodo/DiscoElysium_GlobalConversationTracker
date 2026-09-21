@@ -2,7 +2,7 @@
 namespace GlobalConversationTracker.Engine
 {
     /// <summary>
-    /// How far a passive check on a skill damage moves is from flipping.
+    /// How far a passive check is from flipping, and which skill decides it.
     /// </summary>
     /// <remarks>
     /// The skill value plus the check's bonus, minus its threshold after thoughts - see
