@@ -231,3 +231,93 @@ fn no_action_drives_money_negative() {
         );
     }
 }
+
+/// Every call a guard makes must take LITERAL arguments only.
+///
+/// ## What a computed argument costs
+///
+/// `bridge::collect` walks a group's guards and places every call somewhere: answered from
+/// what the engine already holds, turned into a `DataRequest` the plugin services, or asked
+/// of the plugin by key. A call whose arguments are not all literals cannot be placed - the
+/// key it would be asked under depends on a value that is only known per state, and a
+/// snapshot is answered once - so it is left out, reads Unknown, and the guard turns
+/// permissive.
+///
+/// ## Why it is worth a test rather than a comment
+///
+/// Nothing else would say. A guard that went permissive would keep marking, just more of the
+/// menu than it should, and the only symptom is a marker no play can clear. The shipped
+/// database has NONE, so this is a line the dialogue currently stays on the right side of
+/// rather than a limit anybody is working around - and a game patch that introduced one would
+/// reach a player as that marker unless something failed first.
+///
+/// See de-m11s.4, and `docs/modelling-gaps.md` for what else the engine does not model.
+#[test]
+fn no_guard_calls_anything_with_a_computed_argument() {
+    use lookahead_engine::core::guard::{Guard, GuardExpression, GuardRef};
+
+    /// Every call in the subtree at `node` whose arguments are not all literals.
+    fn computed(guard: &Guard, node: GuardRef<'_>, found: &mut Vec<String>) {
+        match node.expression() {
+            GuardExpression::Call(name, arguments) => {
+                for index in 0..arguments.len() {
+                    let Some(argument) = arguments.get(index) else {
+                        continue;
+                    };
+                    if !matches!(argument.expression(), GuardExpression::Literal(_)) {
+                        found.push(name.to_string());
+                    }
+                    computed(guard, argument, found);
+                }
+            }
+            GuardExpression::Not(inner) => computed(guard, inner, found),
+            GuardExpression::And(left, right) | GuardExpression::Or(left, right) => {
+                computed(guard, left, found);
+                computed(guard, right, found);
+            }
+            GuardExpression::Comparison(_, left, right) => {
+                computed(guard, left, found);
+                computed(guard, right, found);
+            }
+            GuardExpression::Literal(_) | GuardExpression::Variable(_) => {}
+        }
+    }
+
+    // THE DETECTOR HAS TO BE ABLE TO FIRE. This test has never failed and the corpus holds
+    // nothing it would catch, so without this it could go vacuous - a walk that missed call
+    // arguments entirely would pass just as loudly.
+    let crafted = parse_guard(r#"IsHour(HourCount())"#).expect("the probe parses");
+    let mut caught = Vec::new();
+    computed(&crafted, crafted.as_ref(), &mut caught);
+    assert_eq!(
+        caught,
+        vec!["IsHour".to_string()],
+        "the detector does not detect"
+    );
+
+    let Some(corpus) = load(GUARD_CORPUS) else {
+        return;
+    };
+
+    let mut failures: Vec<String> = Vec::new();
+    let mut calls = 0;
+    for line in &corpus {
+        let text = unescape(line);
+        let Ok(guard) = parse_guard(&text) else {
+            // Whether every guard parses is `every_guard_in_the_database_parses`.
+            continue;
+        };
+        let mut found = Vec::new();
+        computed(&guard, guard.as_ref(), &mut found);
+        calls += found.len();
+        for name in found {
+            failures.push(format!("{name} in: {text}"));
+        }
+    }
+
+    println!(
+        "{} guard(s) checked, {calls} computed argument(s)",
+        corpus.len()
+    );
+    assert_eq!(sample(&failures), Vec::<String>::new());
+}
