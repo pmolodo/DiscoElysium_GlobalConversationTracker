@@ -18,9 +18,9 @@
 //! #[derive(Parser)]
 //! struct Options {
 //!     #[command(flatten)]
-//!     groups: options::Groups,
+//!     groups: crate::options::Groups,
 //!     #[command(flatten)]
-//!     starts: options::Starts<8>,
+//!     starts: crate::options::Starts<8>,
 //! }
 //! ```
 //!

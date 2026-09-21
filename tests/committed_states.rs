@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 use lookahead_engine::formats::global_state::{self, Status};
 use lookahead_engine::formats::{header, resolve};
 
-mod common;
+use gct_measure::common;
 
 /// How many state fixtures the repository is known to carry.
 ///

@@ -37,7 +37,7 @@ use lookahead_engine::formats::lua_simx::{self, Derivation, Orders};
 use lookahead_engine::formats::lua_sparse;
 use lookahead_engine::formats::sparse::{self, SparseValue};
 
-mod common;
+use gct_measure::common;
 
 /// The packed saves an in-game run leaves behind, newest first.
 fn packed_saves() -> Vec<PathBuf> {

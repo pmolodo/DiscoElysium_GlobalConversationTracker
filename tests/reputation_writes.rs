@@ -17,7 +17,7 @@
 //! thought where a test fixes it, the one ledger entry that opens the hub's way on, and every
 //! other variable at what the database starts it as.
 
-mod common;
+use gct_measure::common;
 
 use lookahead_engine::bridge::{
     DataAnswer, DataKind, DataRequest, LookAheadRequest, NodeRef, WireValue, WorldRawData, answer,

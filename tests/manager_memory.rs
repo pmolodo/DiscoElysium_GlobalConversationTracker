@@ -18,8 +18,7 @@
 
 use lookahead_engine::symbolic::budget::DiagramBudget;
 
-#[path = "common/counting_allocator.rs"]
-mod counting_allocator;
+use gct_measure::counting_allocator;
 
 use counting_allocator::{Counting, live};
 

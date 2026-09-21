@@ -34,7 +34,7 @@ use lookahead_engine::formats::lua_sparse::{self, CONVERSATION_TABLE, LuaSparseF
 use lookahead_engine::formats::sparse::{SparseMap, SparseValue};
 use lookahead_engine::formats::{expanded_save, header, lua_parts};
 
-mod common;
+use gct_measure::common;
 
 /// How many saves the repository is known to carry.
 ///

@@ -34,7 +34,7 @@ use lookahead_engine::bridge::{LookAheadAnswer, LookAheadRequest, NodeRef, World
 use lookahead_engine::index::{build_group_graph, read_index};
 use serde::Deserialize;
 
-mod common;
+use gct_measure::common;
 
 use common::fixtures;
 

@@ -29,7 +29,7 @@ use std::path::PathBuf;
 
 use lookahead_engine::formats::json_diff;
 
-mod common;
+use gct_measure::common;
 
 use common::repo_root;
 

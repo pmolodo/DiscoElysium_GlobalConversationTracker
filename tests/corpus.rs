@@ -21,7 +21,7 @@ use lookahead_engine::core::types::{DialogueNodeId, Ternary};
 use lookahead_engine::parser::action_parser::parse_actions;
 use lookahead_engine::parser::guard_parser::parse_guard;
 
-mod common;
+use gct_measure::common;
 
 const GUARD_CORPUS: &str = "distinct_guards.txt";
 const ACTION_CORPUS: &str = "distinct_scripts.txt";

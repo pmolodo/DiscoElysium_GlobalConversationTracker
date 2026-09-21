@@ -26,7 +26,7 @@ use lookahead_engine::formats::sparse;
 use lookahead_engine::formats::sparse_diff;
 use lookahead_engine::formats::text_diff;
 
-mod common;
+use gct_measure::common;
 
 /// How many sparse diffs the repository is known to carry.
 ///

@@ -22,8 +22,7 @@ use std::collections::BTreeMap;
 use lookahead_engine::index::read_index;
 use lookahead_engine::parser::guard_parser::parse_guard;
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
 fn main() {
     let Some(path) = common::conversation_index() else {

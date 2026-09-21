@@ -25,8 +25,7 @@ use std::fs;
 use lookahead_engine::index::read_index;
 use lookahead_engine::parser::guard_parser::parse_guard;
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
 /// What this driver takes: where to write the snapshot.
 #[derive(clap::Parser)]

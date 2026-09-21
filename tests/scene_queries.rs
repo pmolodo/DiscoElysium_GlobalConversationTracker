@@ -44,7 +44,7 @@ use lookahead_engine::core::guard_value::GuardValueKind;
 use lookahead_engine::service::Service;
 use lookahead_engine::world::ILookAheadWorld;
 
-mod common;
+use gct_measure::common;
 
 /// The weather variables the two weather queries read - see `core::scene`.
 const WEATHER_VARIABLES: [&str; 2] = ["auto.is_raining", "auto.is_snowing"];

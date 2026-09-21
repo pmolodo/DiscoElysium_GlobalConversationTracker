@@ -16,7 +16,7 @@ use lookahead_engine::index::{Index, build_group_graph, discover_group, read_ind
 use lookahead_engine::symbolic::hub::{Hubs, follow};
 use lookahead_engine::symbolic::order::IterationOrder;
 
-mod common;
+use gct_measure::common;
 
 /// The field an entry's title is in.
 const TITLE_FIELD: &str = "Title";

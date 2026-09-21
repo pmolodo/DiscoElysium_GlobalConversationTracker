@@ -26,7 +26,7 @@ use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::vars::DataVars;
 
-mod common;
+use gct_measure::common;
 
 const BIGGEST: [i32; 5] = [368, 631, 14, 28, 1030];
 const COUNTER_CAP: i32 = 16;

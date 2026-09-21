@@ -114,11 +114,9 @@ use lookahead_engine::symbolic::isolated;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
-#[path = "options.rs"]
-mod options;
+use gct_measure::options;
 
 /// The counter cap every symbolic measurement in this repository uses.
 const COUNTER_CAP: i32 = 16;

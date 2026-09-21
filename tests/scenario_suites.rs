@@ -52,7 +52,7 @@ use lookahead_engine::core::types::{DialogueNodeId, SeenState};
 use lookahead_engine::index::{Index, build_group_graph, read_index};
 use lookahead_engine::walkthrough::{Walkthrough, walk_inputs};
 
-mod common;
+use gct_measure::common;
 
 use common::fixtures;
 use common::suites::{self, Scenario, Suite, TABLE};

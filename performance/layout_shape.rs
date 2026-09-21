@@ -50,11 +50,9 @@ use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
-#[path = "options.rs"]
-mod options;
+use gct_measure::options;
 
 /// Whose slots the listing shows when no group is named: a group small enough to read whole.
 const DEFAULT_SLOT_GROUP: i32 = 14;

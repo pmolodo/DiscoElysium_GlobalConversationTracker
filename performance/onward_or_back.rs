@@ -200,14 +200,11 @@ use lookahead_engine::symbolic::search::Search;
 use lookahead_engine::symbolic::seen_state_search::Where;
 use lookahead_engine::symbolic::vars::DataVars;
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
-#[path = "options.rs"]
-mod options;
+use gct_measure::options;
 
-#[path = "menu_profile.rs"]
-mod menu_profile;
+use gct_measure::menu_profile;
 use menu_profile::MenuProfile;
 
 const CONVERSATIONS: [i32; 7] = [761, 631, 640, 368, 14, 1030, 16];

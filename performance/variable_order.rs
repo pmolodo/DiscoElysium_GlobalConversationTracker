@@ -32,11 +32,9 @@ use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::var_order::{Ordering, span};
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
-#[path = "options.rs"]
-mod options;
+use gct_measure::options;
 
 /// What this driver takes. With no group named it sweeps every one, which is how to tell whether
 /// an ordering helps generally or only where somebody went looking.

@@ -49,14 +49,11 @@ use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::service::Service;
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
-#[path = "options.rs"]
-mod options;
+use gct_measure::options;
 
-#[path = "menu_profile.rs"]
-mod menu_profile;
+use gct_measure::menu_profile;
 use menu_profile::MenuProfile;
 
 /// The heaviest groups in the game, which is where a slow menu would live if one does.

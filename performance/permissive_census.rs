@@ -119,14 +119,11 @@ use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::ILookAheadWorld;
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
-#[path = "options.rs"]
-mod options;
+use gct_measure::options;
 
-#[path = "seen_profile.rs"]
-mod seen_profile;
+use gct_measure::seen_profile;
 
 const COUNTER_CAP: i32 = 16;
 

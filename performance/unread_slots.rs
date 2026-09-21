@@ -21,8 +21,7 @@ use lookahead_engine::core::state::{ONCE_PREFIX, SEEN_PREFIX};
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
 const HEAVIEST: [i32; 6] = [362, 368, 631, 14, 28, 1030];
 

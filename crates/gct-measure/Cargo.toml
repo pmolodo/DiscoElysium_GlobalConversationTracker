@@ -1,0 +1,32 @@
+[package]
+name = "gct_measure"
+version = "0.1.0"
+edition = "2024"
+
+# WHAT A MEASUREMENT OR A TEST NEEDS BESIDES THE ENGINE, compiled once instead of sixty-eight
+# times.
+#
+# These modules used to be pulled in by path - `#[path = "../tests/common/mod.rs"] mod
+# common;` and the same for its neighbours - which makes them modules of the INCLUDING crate.
+# That was deliberate and load-bearing: `save_world` asks `prepared` for a `Shipped`, and two
+# copies of `prepared` would be two distinct types, so every includer had to declare the whole
+# set together.
+#
+# The cost was that `tests/common` and `fixtures` - 2,566 lines - were compiled again in each
+# of the 31 examples and 37 integration tests that wanted them. Measured 2026-09-21: the
+# library takes 34 s to build and the examples on top of it took 2m29s, and touching
+# `tests/common/mod.rs` alone rebuilt `group_census` in 3.2 s and `menu_matrix` in 21 s.
+#
+# A CRATE ANSWERS THE SAME NEED BETTER. One `prepared`, one `Shipped`, one compilation - and
+# the reason the includers had to agree is gone rather than worked around. See de-07kd.
+
+[dependencies]
+lookahead_engine = { path = "../.." }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = "1.3"
+clap = { version = "4.5", features = ["derive"] }
+gct_save_files = { path = "../gct-save-files" }
+
+[lib]
+path = "src/lib.rs"

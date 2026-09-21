@@ -23,7 +23,7 @@ use std::collections::HashSet;
 use lookahead_engine::bridge::{LookAheadAnswer, LookAheadRequest, NodeRef, WorldRawData, answer};
 use lookahead_engine::index::{build_group_graph, read_index};
 
-mod common;
+use gct_measure::common;
 
 use common::fixtures;
 use common::repo_root;

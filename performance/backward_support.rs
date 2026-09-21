@@ -38,11 +38,9 @@ use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::vars::DataVars;
 use oxidd::{BooleanFunctionQuant, Function};
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
-#[path = "options.rs"]
-mod options;
+use gct_measure::options;
 
 const COUNTER_CAP: i32 = 16;
 

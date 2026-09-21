@@ -21,7 +21,7 @@
 //! arithmetic the plugin uses. Nothing is declared: a check written down beside the
 //! expectation would agree with the game only until one of them changed.
 
-mod common;
+use gct_measure::common;
 
 use std::collections::HashSet;
 

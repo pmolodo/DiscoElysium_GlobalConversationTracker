@@ -22,7 +22,7 @@ use lookahead_engine::host::{Kind, Request, Response, read_frame, write_frame};
 use lookahead_engine::service::{Service, Status};
 use lookahead_engine::{wire, wire_convert};
 
-mod common;
+use gct_measure::common;
 
 /// The groups asked about. Small, because none of this depends on the search.
 const CHECKABLE: [i32; 3] = [1123, 484, 1066];

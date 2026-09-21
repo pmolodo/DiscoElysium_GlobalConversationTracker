@@ -79,8 +79,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use lookahead_engine::index::{discover_group, read_index};
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
 /// How many of the largest groups to name, for a sense of the tail.
 const SHOW_LARGEST: usize = 10;

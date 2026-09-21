@@ -44,7 +44,7 @@ use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::vars::DataVars;
 
-mod common;
+use gct_measure::common;
 
 /// The conversation the epic turns on.
 const SUBJECT: i32 = 631;

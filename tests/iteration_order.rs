@@ -37,7 +37,7 @@ use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{Index, build_group_graph, read_index};
 use lookahead_engine::symbolic::order::IterationOrder;
 
-mod common;
+use gct_measure::common;
 
 /// The largest group the mutual-reachability cross-check is run on.
 ///

@@ -38,7 +38,7 @@ use lookahead_engine::formats::lua_simx::{self, Orders};
 use lookahead_engine::formats::packed_save::{LUA_SUFFIX, Stamp, ZIP_SUFFIX};
 use lookahead_engine::formats::{cycle_refs, lua_blob, lua_parts, packed_save};
 
-mod common;
+use gct_measure::common;
 
 /// The save every scenario is a change to, which is the one committed whole.
 const WHOLE: &str = "save_template.ntwtf";

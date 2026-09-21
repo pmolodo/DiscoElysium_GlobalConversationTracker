@@ -27,13 +27,11 @@
 //! answers Unknown, which is the case the rule allows. This says only that a world built from the
 //! shipped table and a committed save, asked what a group's guards ask, always answers.
 
-mod common;
+use gct_measure::common;
 
-#[path = "../performance/prepared.rs"]
-mod prepared;
+use gct_measure::prepared;
 
-#[path = "../performance/save_world.rs"]
-mod save_world;
+use gct_measure::save_world;
 
 use lookahead_engine::core::guard_value::GuardValueKind;
 use lookahead_engine::core::types::Ternary;

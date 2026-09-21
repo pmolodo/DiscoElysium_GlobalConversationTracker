@@ -65,7 +65,7 @@ use serde::de::DeserializeOwned;
 /// for it but `std::env::set_var`, which is a global, process-wide, unsafe mutation, and the
 /// comment justifying it had to argue that no other thread had started yet.
 ///
-/// IT RIDES ON `Shipped` instead - see `prepared::Shipped::caching` - because every one of
+/// IT RIDES ON `Shipped` instead - see `crate::prepared::Shipped::caching` - because every one of
 /// those places already has one in hand, so nothing gained a parameter and a driver decides it
 /// once on its command line.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::Args)]
@@ -134,7 +134,7 @@ pub fn at(kind: &str, about: &str) -> Option<PathBuf> {
 ///
 /// THE COST OF SUCH A KEY is that a change to how the fact is DERIVED goes unnoticed by it,
 /// since the dialogue did not change. The caller carries a version of its own meaning in
-/// `about` for that - see `prepared::DERIVATION`, and the thirteen groups that occasioned it.
+/// `about` for that - see `crate::prepared::DERIVATION`, and the thirteen groups that occasioned it.
 pub fn at_data(kind: &str, about: &str) -> Option<PathBuf> {
     Some(folder(kind)?.join(format!("{}.{kind}", fingerprint(about))))
 }
@@ -156,19 +156,36 @@ pub fn at_data(kind: &str, about: &str) -> Option<PathBuf> {
 /// AND EVERY MEASUREMENT SOURCE, by length and modification time. The decisions kept here are
 /// not all the library's - whether a group has a menu is `menu_profile`'s and `menu_matrix`'s -
 /// and a list of the few files that happen to decide today is a list that rots silently the
-/// first time one moves. The whole directory cannot.
+/// first time one moves. Whole directories cannot.
+///
+/// TWO OF THEM, since a measurement's sources sit in two places: the drivers under
+/// `performance/`, and the modules they share, which are this crate's own `src/`. Watching one
+/// and not the other is the rot this is written to avoid - it happened, and the symptom was a
+/// kept value derived by code that had moved out from under it.
 ///
 /// IT OVER-INVALIDATES ON PURPOSE. Touching any measurement source throws away everything kept,
 /// which costs one pass at full price - the same price the rebuild it implies costs anyway - and
 /// the alternative is a kept value from code that no longer exists.
 fn code() -> Option<String> {
     let mut key = std::fs::read_to_string(engine_stamp()?).ok()?;
-    let mut sources: Vec<PathBuf> =
-        std::fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("performance"))
-            .ok()?
-            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-            .filter(|path| path.extension().is_some_and(|kind| kind == "rs"))
-            .collect();
+    // NOT `CARGO_MANIFEST_DIR`, which is this crate rather than the repository: the drivers
+    // are the root package's and this crate is a directory below it.
+    let root = crate::common::repo_root();
+    let mut sources: Vec<PathBuf> = Vec::new();
+    for directory in [
+        root.join("performance"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+    ] {
+        sources.extend(
+            std::fs::read_dir(&directory)
+                .ok()?
+                .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+                .filter(|path| path.extension().is_some_and(|kind| kind == "rs")),
+        );
+    }
+
+    // BY NAME, so the key does not depend on which directory a file was found in - one moving
+    // between them is a change to the file, which its stamp already carries.
     sources.sort();
     for source in sources {
         key.push('\u{1}');

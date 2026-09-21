@@ -34,12 +34,6 @@ use lookahead_engine::bridge::{NodeRef, WorldRawData};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::discover_group;
 
-#[path = "../tests/common/mod.rs"]
-mod common;
-
-#[path = "kept.rs"]
-mod kept;
-
 // THE INCLUDER'S `prepared`, not a copy of it. A module brought in by path is a module of the
 // example that included it, so two copies of this one would be two distinct `Shipped` types and
 // the world a measurement asks for could not be asked with the one it holds. Every example that
@@ -139,7 +133,7 @@ pub fn of_save(
 ///
 /// THE INDEX IT WAS BUILT FROM IS PART OF THE KEY, not just the group: there are two indexes in
 /// this repository - the shipped one and the full one - and a world built from one answers
-/// differently from a world built from the other. `kept::at` adds the executable, which is the
+/// differently from a world built from the other. `crate::kept::at` adds the executable, which is the
 /// other thing every kept value depends on.
 ///
 /// THE SAVE IS KEYED BY NAME, since a save the game wrote is never edited - that is a rule of
@@ -151,7 +145,7 @@ fn kept_at(
     shipped: &Shipped,
     save: &str,
 ) -> Option<std::path::PathBuf> {
-    kept::at(
+    crate::kept::at(
         "worlds",
         &format!(
             "{save}\u{1}{conversation}\u{1}{}\u{1}{}",
@@ -162,7 +156,7 @@ fn kept_at(
 }
 
 /// `held`, having checked it against a freshly built world - but only where
-/// `--cache-verify` asked for that check. See `kept::Caching`.
+/// `--cache-verify` asked for that check. See `crate::kept::Caching`.
 ///
 /// ON THE ANSWERS, which is what a measurement reads a world for: the variables it holds, what
 /// it calls seen, and which checks pass. A world stale for either reason the key guards against
@@ -226,7 +220,7 @@ struct Kept {
 /// A kept world, or `None` for anything at all going wrong - see `kept`, which says why a file
 /// that does not read back is ignored rather than failed on.
 fn read_kept(path: &std::path::Path) -> Option<WorldRawData> {
-    let held: Kept = kept::read_json(path)?;
+    let held: Kept = crate::kept::read_json(path)?;
     let mut world = held.world;
     world.data = held.data.into_iter().collect();
     Some(world)
@@ -236,7 +230,7 @@ fn read_kept(path: &std::path::Path) -> Option<WorldRawData> {
 fn write_kept(path: &std::path::Path, world: &WorldRawData) {
     let mut without = world.clone();
     let data = std::mem::take(&mut without.data).into_iter().collect();
-    kept::write_json(
+    crate::kept::write_json(
         path,
         &Kept {
             world: without,
@@ -255,8 +249,8 @@ fn build_of_save(
         .into_iter()
         .collect();
     let asked = lookahead_engine::bridge::questions_of(graph, group.clone());
-    let holdings = common::fixtures::holdings_in_save(save);
-    let checks = common::fixtures::checks_in_save(save, &group)
+    let holdings = crate::common::fixtures::holdings_in_save(save);
+    let checks = crate::common::fixtures::checks_in_save(save, &group)
         .expect("the actor table and the full index are both present");
 
     let mut snapshot = WorldRawData {
@@ -270,11 +264,11 @@ fn build_of_save(
         data_values: holdings.data_for(&asked.data),
         items: holdings.items.clone(),
         thoughts: holdings.thoughts.clone(),
-        variables: common::fixtures::variables_sent(save, &asked),
+        variables: crate::common::fixtures::variables_sent(save, &asked),
         // WHAT THIS SAVE HAS ALREADY SHOWN, which the engine seeds its `once` and `seen` slots
         // from: without it every one-time effect starts unfired and a route the save has
         // already spent is open to the walk.
-        seen: common::fixtures::read_in_save_group(save, &group)
+        seen: crate::common::fixtures::read_in_save_group(save, &group)
             .into_iter()
             .map(|(conversation, entry)| NodeRef {
                 conversation,
@@ -284,7 +278,7 @@ fn build_of_save(
         checks_pass: checks.pass,
         checks_fail: checks.fail,
         check_margins: checks.margins,
-        red_checks_fail: common::fixtures::passive_thoughts_in_save(save).red_checks_fail,
+        red_checks_fail: crate::common::fixtures::passive_thoughts_in_save(save).red_checks_fail,
         ..Default::default()
     };
     // THROUGH A WORLD, because that is the only thing that places positional answers - see
@@ -307,5 +301,5 @@ fn build_of_save(
 /// variable looks alike, and `GameWorld::get_variable` will not call one undeclared on
 /// that evidence.
 pub fn declared() -> std::sync::Arc<lookahead_engine::index::VariableTable> {
-    common::declared()
+    crate::common::declared()
 }

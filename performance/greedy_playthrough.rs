@@ -70,18 +70,14 @@ use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{Index, discover_group, read_index};
 use lookahead_engine::walkthrough::{Playthrough, Stage, Stop, roll_escalation};
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
-#[path = "options.rs"]
-mod options;
+use gct_measure::options;
 
-#[path = "prepared.rs"]
-mod prepared;
+use gct_measure::prepared;
 use prepared::Shipped;
 
-#[path = "save_world.rs"]
-mod save_world;
+use gct_measure::save_world;
 
 /// What one leg's search may hold in walk positions before it gives up.
 ///

@@ -42,7 +42,7 @@ use lookahead_engine::bridge::{
 };
 use lookahead_engine::index::read_index;
 
-mod common;
+use gct_measure::common;
 
 /// The group every measurement in this repo is taken on: six conversations, 4,514 entries.
 const MEASURED: i32 = 631;

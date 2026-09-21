@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 //! Compare greedy menu marking with exhaustive concrete-state distances.
+use gct_measure::common;
 use lookahead_engine::core::types::{DialogueNodeId, SeenState, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::oracle;
@@ -17,7 +18,6 @@ use lookahead_engine::world::GameWorld;
 use lookahead_engine::world::ILookAheadWorld;
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
-mod common;
 
 /// WHICH OPTION WON A ROUND IS READ OFF THE MARKING rather than asserted, because where several
 /// options are equally near, which one a round takes is the search's to decide and two arms may

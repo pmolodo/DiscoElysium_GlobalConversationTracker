@@ -68,19 +68,16 @@ use lookahead_engine::symbolic::isolated;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
-#[path = "options.rs"]
-mod options;
+use gct_measure::options;
 
 /// The shared counting allocator, asked a different question.
 ///
 /// `tests/manager_memory.rs` uses it to ask what a manager takes when it is BUILT. This
 /// asks what is still held after one is dropped, which is the leak question - same counter,
 /// read at a different moment.
-#[path = "../tests/common/counting_allocator.rs"]
-mod counting_allocator;
+use gct_measure::counting_allocator;
 
 use counting_allocator::{Counting, live};
 

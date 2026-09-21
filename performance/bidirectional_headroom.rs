@@ -148,14 +148,11 @@ use lookahead_engine::symbolic::vars::DataVars;
 use oxidd::BooleanFunction;
 use oxidd::bdd::BDDFunction;
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
-#[path = "options.rs"]
-mod options;
+use gct_measure::options;
 
-#[path = "menu_profile.rs"]
-mod menu_profile;
+use gct_measure::menu_profile;
 use menu_profile::MenuProfile;
 
 const CONVERSATION: i32 = 761;

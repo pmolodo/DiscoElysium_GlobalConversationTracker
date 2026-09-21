@@ -38,11 +38,9 @@ use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::{DataLayout, counters_from_onces};
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
-#[path = "options.rs"]
-mod options;
+use gct_measure::options;
 
 /// The layout `DataLayout::for_group` builds, minus the step that drops these counters.
 ///

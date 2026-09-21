@@ -20,6 +20,7 @@
 
 use std::collections::HashMap;
 
+use gct_measure::common;
 use lookahead_engine::core::types::{DialogueNodeId, SeenState, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::symbolic::budget::DiagramBudget;
@@ -32,7 +33,6 @@ use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::symbolic::{menu, seen_state_search};
 use lookahead_engine::world::ILookAheadWorld;
 use std::time::Duration;
-mod common;
 
 /// What a menu answered: per option, the class it reaches and how far away it is.
 fn answers(

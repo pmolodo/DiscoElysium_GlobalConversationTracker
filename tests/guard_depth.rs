@@ -8,7 +8,7 @@
 use lookahead_engine::index::read_index;
 use lookahead_engine::parser::guard_parser::parse_guard;
 
-mod common;
+use gct_measure::common;
 
 /// EVERY guard in the database parses.
 ///

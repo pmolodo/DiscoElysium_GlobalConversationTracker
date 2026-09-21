@@ -351,6 +351,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "gct_measure"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "clap",
+ "gct_save_files",
+ "lookahead_engine",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "gct_save_files"
 version = "0.1.0"
 dependencies = [
@@ -547,6 +559,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "clap",
+ "gct_measure",
  "gct_save_files",
  "oxidd",
  "petgraph",

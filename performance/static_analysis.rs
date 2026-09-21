@@ -37,8 +37,7 @@ use std::path::PathBuf;
 
 use lookahead_engine::index::{Index, links_of, read_index};
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
 /// THREE PASSES OVER THE SAME DATABASE, run in order by default and singly by name.
 ///

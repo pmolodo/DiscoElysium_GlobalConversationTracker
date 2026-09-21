@@ -74,8 +74,7 @@ use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
 /// The groups the matrix measures, so the rows sit beside its numbers.
 const GROUPS: [i32; 6] = [362, 28, 368, 14, 631, 1030];

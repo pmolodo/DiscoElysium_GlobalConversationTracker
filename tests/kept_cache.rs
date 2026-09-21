@@ -29,13 +29,11 @@ use std::path::PathBuf;
 
 use lookahead_engine::bridge::GameWorld;
 
-mod common;
+use gct_measure::common;
 
-#[path = "../performance/prepared.rs"]
-mod prepared;
+use gct_measure::prepared;
 
-#[path = "../performance/save_world.rs"]
-mod save_world;
+use gct_measure::save_world;
 
 use prepared::Shipped;
 

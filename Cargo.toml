@@ -64,6 +64,11 @@ protox = "0.7"
 [dev-dependencies]
 proptest = "1.0"
 
+# The shared measurement and test modules, which used to be text every example and test
+# included - see crates/gct-measure and de-07kd. A dev-dependency that depends back on this
+# package, which Cargo allows and which is what keeps one `Shipped` for everyone.
+gct_measure = { path = "crates/gct-measure" }
+
 # For the tests that open a packed save and look inside it. The packer itself lives with the
 # formats and brings its own copy; this is the reader a test uses to check what it wrote.
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }

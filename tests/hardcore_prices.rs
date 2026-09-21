@@ -16,7 +16,7 @@ use lookahead_engine::bridge::{
 use lookahead_engine::index::{Index, build_group_graph, read_index};
 use lookahead_engine::service::Service;
 
-mod common;
+use gct_measure::common;
 
 use common::fixtures;
 

@@ -71,11 +71,9 @@ use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::known::{GroupShape, Known};
 use lookahead_engine::symbolic::order::IterationOrder;
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
-#[path = "options.rs"]
-mod options;
+use gct_measure::options;
 
 /// The groups a player actually stands in for a while, which is the matrix's heavy list.
 const CONVERSATIONS: [i32; 5] = [28, 368, 14, 631, 362];

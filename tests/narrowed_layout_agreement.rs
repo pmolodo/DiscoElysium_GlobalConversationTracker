@@ -36,7 +36,7 @@ use lookahead_engine::symbolic::isolated;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 
-mod common;
+use gct_measure::common;
 
 /// The groups where the narrowing actually removes something.
 ///

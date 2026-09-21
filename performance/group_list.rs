@@ -54,15 +54,12 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{Index, build_group_graph, discover_group};
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
-#[path = "prepared.rs"]
-mod prepared;
+use gct_measure::prepared;
 use prepared::{Group, Shipped};
 
-#[path = "seen_profile.rs"]
-mod seen_profile;
+use gct_measure::seen_profile;
 use seen_profile::candidates;
 
 /// Every group worth measuring, most reachable first.

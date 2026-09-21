@@ -35,7 +35,7 @@ use lookahead_engine::bridge::{
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::service::Service;
 
-mod common;
+use gct_measure::common;
 
 /// Small enough to answer exhaustively, so a difference is a difference rather than two
 /// budgets running out at different moments.

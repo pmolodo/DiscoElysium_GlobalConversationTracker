@@ -45,7 +45,7 @@ use lookahead_engine::formats::lua_simx::{self, Orders};
 use lookahead_engine::formats::packed_save::{Entry, LUA_SUFFIX, Unpacked};
 use lookahead_engine::formats::{lua_blob, lua_parts};
 
-mod common;
+use gct_measure::common;
 
 /// How many saves written as a change to another one the repository is known to carry.
 ///

@@ -20,15 +20,14 @@ use lookahead_engine::bridge::{
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{build_group_graph, read_index};
 
-mod common;
+use gct_measure::common;
 
 // THE MEASUREMENTS' ADVERSARIAL PROFILE, borrowed rather than restated. A menu whose starts
 // have nothing better beyond them is refused by `bridge::class_worth_hunting` before a
 // diagram is touched, so it answers in no time at all and a wall put around it binds
 // nothing - which reads exactly like a wall that works. That module's own header records
 // the same trap catching `menu_residue`, and it is the only thing here that avoids it.
-#[path = "../performance/menu_profile.rs"]
-mod menu_profile;
+use gct_measure::menu_profile;
 
 /// Small enough to search exhaustively, so the comparison is about the crossing rather
 /// than about a budget running out at different moments.

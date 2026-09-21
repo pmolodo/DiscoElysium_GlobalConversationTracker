@@ -86,7 +86,7 @@ is the shape of it.
 
 The rows below are generated and pasted; the list above is the one to read.
 
-| `DEGCT_ALL_COMMITTED_SAVES` | `tests/common/mod.rs` |
+| `DEGCT_ALL_COMMITTED_SAVES` | `crates/gct-measure/src/common/mod.rs` |
 | `DEGCT_MARKING` | `tools/measurement_common.py` |
 | `DEGCT_RUN_KIND` | `AGENTS.md`, `CLAUDE.md`, `tools/measure-menus.py`, `tools/measurement_common.py`, `tools/run-logged.sh` |
 | `DEGCT_RUN_LOG` | `tools/measurement_common.py`, `tools/run-logged.sh` |

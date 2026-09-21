@@ -47,14 +47,11 @@ use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
-#[path = "options.rs"]
-mod options;
+use gct_measure::options;
 
-#[path = "seen_profile.rs"]
-mod seen_profile;
+use gct_measure::seen_profile;
 use seen_profile::candidates;
 
 /// The group the control run moved most on.

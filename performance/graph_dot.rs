@@ -47,11 +47,9 @@ use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::graph::node::LookAheadNode;
 use lookahead_engine::index::{Index, build_group_graph, read_index};
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
-#[path = "options.rs"]
-mod options;
+use gct_measure::options;
 
 /// Everything this driver takes.
 #[derive(clap::Parser, Debug)]

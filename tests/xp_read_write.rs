@@ -17,7 +17,7 @@ use lookahead_engine::core::action::DialogueActionKind;
 use lookahead_engine::core::guard::{Guard, GuardExpression};
 use lookahead_engine::index::{build_group_graph, discover_group, read_index};
 
-mod common;
+use gct_measure::common;
 
 /// The XP flags' shared prefix, as the scripts name them.
 const XP_PREFIX: &str = "XP.";

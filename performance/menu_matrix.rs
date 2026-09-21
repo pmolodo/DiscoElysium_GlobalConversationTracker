@@ -221,22 +221,17 @@ use lookahead_engine::symbolic::var_order::Ordering;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::symbolic::{menu, seen_state_search};
 
-#[path = "../tests/common/mod.rs"]
-mod common;
+use gct_measure::common;
 
-#[path = "options.rs"]
-mod options;
+use gct_measure::options;
 
-#[path = "menu_profile.rs"]
-mod menu_profile;
+use gct_measure::menu_profile;
 use menu_profile::MenuProfile;
 
-#[path = "prepared.rs"]
-mod prepared;
+use gct_measure::prepared;
 use prepared::Shipped;
 
-#[path = "save_world.rs"]
-mod save_world;
+use gct_measure::save_world;
 
 /// The columns, written down here and nowhere else.
 ///

@@ -50,7 +50,7 @@ use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::ILookAheadWorld;
 
-mod common;
+use gct_measure::common;
 
 const COUNTER_CAP: i32 = 16;
 

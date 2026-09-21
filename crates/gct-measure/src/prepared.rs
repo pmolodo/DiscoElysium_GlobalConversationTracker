@@ -25,9 +25,9 @@
 //! ```
 //!
 //! THE FIRST TWO ARE THE CODE'S and are keyed on it, so a rebuild throws them away - see
-//! `kept::at`. THE OTHER TWO ARE THE DIALOGUE'S: the engine reads the conversations, it does not
+//! `crate::kept::at`. THE OTHER TWO ARE THE DIALOGUE'S: the engine reads the conversations, it does not
 //! decide what is in them, so those survive any number of rebuilds and are keyed on the content
-//! of the conversations alone - see `kept::at_data`. The dialogue database is stable for months
+//! of the conversations alone - see `crate::kept::at_data`. The dialogue database is stable for months
 //! at a time and the engine is rebuilt many times a day, which is what makes that distinction
 //! worth drawing.
 //!
@@ -50,15 +50,12 @@ use std::time::{Duration, Instant};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{Index, build_group_graph, read_index};
 
-#[path = "kept.rs"]
-mod kept;
-
-pub use kept::Caching;
+pub use crate::kept::Caching;
 
 /// An index that is read when something actually needs it, and not before.
 ///
 /// READ LAZILY BECAUSE THE WHOLE POINT IS NOT TO READ IT. Everything a measurement derives from
-/// the index can be kept - see [`group_graph`] and `save_world::of_save` - so a process whose
+/// the index can be kept - see [`group_graph`] and `crate::save_world::of_save` - so a process whose
 /// group is already prepared has no use for it, and reading it eagerly would spend the saving
 /// before the cache could deliver it.
 ///
@@ -70,13 +67,13 @@ pub struct Shipped {
     read: OnceLock<(Index, Duration)>,
     /// WHAT THIS RUN WAS TOLD ABOUT THE CACHE, carried rather than read where it is wanted.
     /// Everything under this module that consults the cache already has a `Shipped`, so this
-    /// is what lets the driver decide it once. See `kept::Caching`.
-    caching: kept::Caching,
+    /// is what lets the driver decide it once. See `crate::kept::Caching`.
+    caching: crate::kept::Caching,
 }
 
 impl Shipped {
     /// An index at `path`, not yet read.
-    pub fn at(path: PathBuf, caching: kept::Caching) -> Self {
+    pub fn at(path: PathBuf, caching: crate::kept::Caching) -> Self {
         Self {
             path,
             read: OnceLock::new(),
@@ -87,7 +84,12 @@ impl Shipped {
     /// An index already in hand, for a caller that read one for its own reasons.
     ///
     /// `took` is what that read cost, so a caller which timed it does not lose the number.
-    pub fn read(path: PathBuf, index: Index, took: Duration, caching: kept::Caching) -> Self {
+    pub fn read(
+        path: PathBuf,
+        index: Index,
+        took: Duration,
+        caching: crate::kept::Caching,
+    ) -> Self {
         let read = OnceLock::new();
         let _ = read.set((index, took));
         Self {
@@ -109,7 +111,7 @@ impl Shipped {
     }
 
     /// What this run was told about the cache, for everything that has a `Shipped` in hand.
-    pub fn caching(&self) -> kept::Caching {
+    pub fn caching(&self) -> crate::kept::Caching {
         self.caching
     }
 
@@ -118,9 +120,9 @@ impl Shipped {
         self.read.get().map_or(Duration::ZERO, |(_, took)| *took)
     }
 
-    /// What says this is the same index file as another run's. See `kept::stamp`.
+    /// What says this is the same index file as another run's. See `crate::kept::stamp`.
     pub fn stamp(&self) -> Option<String> {
-        kept::stamp(&self.path)
+        crate::kept::stamp(&self.path)
     }
 
     /// Where the index is, which is where what a group implies is kept beside it.
@@ -140,13 +142,13 @@ impl Shipped {
 /// matters as much as the file: what is packed is this build's idea of what an index record
 /// holds, and reading it back into another build's idea is exactly the silent staleness the
 /// keys exist to prevent.
-fn read_index_kept(path: &std::path::Path, caching: kept::Caching) -> Index {
+fn read_index_kept(path: &std::path::Path, caching: crate::kept::Caching) -> Index {
     let at = (!caching.no_cache())
-        .then(|| kept::at("index", &kept::stamp(path)?))
+        .then(|| crate::kept::at("index", &crate::kept::stamp(path)?))
         .flatten();
 
     if let Some(at) = at.as_ref()
-        && let Some(held) = kept::read_packed::<Index>(at)
+        && let Some(held) = crate::kept::read_packed::<Index>(at)
     {
         if caching.verifying_reads() {
             let fresh = read_index(path).expect("the index reads");
@@ -161,7 +163,7 @@ fn read_index_kept(path: &std::path::Path, caching: kept::Caching) -> Index {
 
     let index = read_index(path).expect("the index reads");
     if let Some(at) = at.as_ref() {
-        kept::write_packed(at, &index);
+        crate::kept::write_packed(at, &index);
     }
     index
 }
@@ -210,12 +212,12 @@ pub fn group_graph(shipped: &Shipped, conversation: i32) -> Result<Prepared, Str
     let at = (!shipped.caching().no_cache())
         .then(|| {
             let stamp = shipped.stamp()?;
-            kept::at("graphs", &format!("{conversation}\u{1}{stamp}"))
+            crate::kept::at("graphs", &format!("{conversation}\u{1}{stamp}"))
         })
         .flatten();
 
     if let Some(path) = at.as_ref()
-        && let Some(held) = kept::read_packed::<Prepared>(path)
+        && let Some(held) = crate::kept::read_packed::<Prepared>(path)
     {
         return Ok(with_facts(
             shipped,
@@ -225,7 +227,7 @@ pub fn group_graph(shipped: &Shipped, conversation: i32) -> Result<Prepared, Str
 
     let built = build(shipped, conversation)?;
     if let Some(path) = at.as_ref() {
-        kept::write_packed(path, &built);
+        crate::kept::write_packed(path, &built);
     }
     Ok(with_facts(shipped, built))
 }
@@ -282,7 +284,7 @@ fn build(shipped: &Shipped, conversation: i32) -> Result<Prepared, String> {
 fn verified(
     held: Prepared,
     fresh: impl FnOnce() -> Result<Prepared, String>,
-    caching: kept::Caching,
+    caching: crate::kept::Caching,
 ) -> Prepared {
     if !caching.verifying_reads() {
         return held;
@@ -335,11 +337,11 @@ pub struct Group {
 /// engine reads them, it does not decide them, and no setting can change them. So the answer
 /// outlives any number of rebuilds and any way of asking. It is every conversation's content
 /// hash rather than the index FILE, so a regenerated index that says the same thing keeps it.
-fn list_at(content: &str, caching: kept::Caching) -> Option<std::path::PathBuf> {
+fn list_at(content: &str, caching: crate::kept::Caching) -> Option<std::path::PathBuf> {
     if caching.no_cache() || content.is_empty() {
         return None;
     }
-    kept::at_data("groups", &format!("{DERIVATION}\u{1}{content}"))
+    crate::kept::at_data("groups", &format!("{DERIVATION}\u{1}{content}"))
 }
 
 /// Bump this when what the list MEANS changes, which is the one thing its key cannot notice.
@@ -366,7 +368,7 @@ pub fn group_list(shipped: &Shipped, build: impl FnOnce() -> Vec<Group>) -> Vec<
     let at = list_at(&content, shipped.caching());
 
     if let Some(at) = at.as_ref()
-        && let Some(held) = kept::read_packed::<Vec<Group>>(at)
+        && let Some(held) = crate::kept::read_packed::<Vec<Group>>(at)
         && !shipped.caching().verifying_reads()
     {
         return held;
@@ -374,7 +376,7 @@ pub fn group_list(shipped: &Shipped, build: impl FnOnce() -> Vec<Group>) -> Vec<
 
     let built = build();
     if let Some(at) = at.as_ref() {
-        kept::write_packed(at, &built);
+        crate::kept::write_packed(at, &built);
     }
     built
 }

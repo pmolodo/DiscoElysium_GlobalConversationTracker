@@ -26,8 +26,7 @@ use oxidd::{BooleanFunction, Manager, ManagerRef};
 
 use lookahead_engine::symbolic::budget::DiagramBudget;
 
-#[path = "../tests/common/counting_allocator.rs"]
-mod counting_allocator;
+use gct_measure::counting_allocator;
 
 use counting_allocator::{Counting, live};
 

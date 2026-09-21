@@ -26,7 +26,7 @@ use lookahead_engine::index::{
     ENTRY_FIELDS_READ, build_group_graph, conversation_fields_read, discover_group, read_index,
 };
 
-mod common;
+use gct_measure::common;
 
 /// The groups every other measurement uses, so a difference here is comparable with the
 /// numbers elsewhere.

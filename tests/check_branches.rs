@@ -11,7 +11,7 @@ use lookahead_engine::bridge::{LookAheadRequest, NodeRef, WorldRawData, answer};
 use lookahead_engine::core::types::DialogueCheckKind;
 use lookahead_engine::index::{build_group_graph, read_index};
 
-mod common;
+use gct_measure::common;
 
 /// A world that decides nothing, so every check is open and both its branches are live.
 fn undecided() -> WorldRawData {

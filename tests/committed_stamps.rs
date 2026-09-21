@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 use lookahead_engine::formats::header;
 use lookahead_engine::formats::registry;
 
-mod common;
+use gct_measure::common;
 
 /// How many stamped documents the repository is known to carry.
 ///
