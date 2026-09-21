@@ -424,7 +424,7 @@ impl WorldRawData {
     /// answering a stale questions list would otherwise have every answer after the first
     /// difference land on the wrong variable, and the marker would be wrong with nothing
     /// to report it.
-    pub fn resolve(&mut self, questions: &Questions) -> Result<(), String> {
+    pub(crate) fn resolve(&mut self, questions: &Questions) -> Result<(), String> {
         place(
             "variable",
             &questions.variables,
@@ -1506,12 +1506,11 @@ pub fn answer(
     // The questions this group asks, so positional answers can be put back onto their
     // names. Derived from the graph just built rather than by building it again.
     let questions = questions_of(&graph, group);
-    let mut snapshot = request.world.clone();
-    if let Err(reason) = snapshot.resolve(&questions) {
+    let mut world = GameWorld::declaring(request.world.clone(), declared);
+    if let Err(reason) = world.resolve(&questions) {
         return LookAheadResponse::failed(reason);
     }
 
-    let world = GameWorld::declaring(snapshot, declared);
     graph.fit(&crate::graph::Fitting::read(&graph, &world));
     // THE ONE RULE, asked of the world and of what the global tracking holds - see
     // `world::seen_state`.

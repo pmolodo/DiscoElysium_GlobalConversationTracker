@@ -287,10 +287,14 @@ fn build_of_save(
         red_checks_fail: common::fixtures::passive_thoughts_in_save(save).red_checks_fail,
         ..Default::default()
     };
-    snapshot
+    // THROUGH A WORLD, because that is the only thing that places positional answers - see
+    // `GameWorld::resolve`. What is kept is the prepared data, since the cache holds data and
+    // the table is read once at startup rather than stored per group.
+    let mut world = lookahead_engine::world::GameWorld::declaring_nothing(snapshot);
+    world
         .resolve(&asked)
         .expect("the answers were built from these very questions");
-    snapshot
+    world.into_raw()
 }
 
 /// What the database declares its variables to be, for the world to fall back on.

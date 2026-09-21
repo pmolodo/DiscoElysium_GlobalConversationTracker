@@ -76,6 +76,30 @@ impl GameWorld {
         Self { snapshot, declared }
     }
 
+    /// Puts the plugin's positional answers onto the names the engine asked under.
+    ///
+    /// ON THE WORLD RATHER THAN ON THE DATA, so that everything asking anything asks a world.
+    /// The raw data is a bag of facts and answers nothing on its own; letting it be prepared
+    /// separately meant a caller could hold a half-resolved bag and forget which it had.
+    ///
+    /// MUST RUN BEFORE THE WORLD IS ASKED. A positional list that is present and the wrong
+    /// length is REFUSED rather than zipped as far as it goes: a caller answering a stale
+    /// questions list would otherwise have every answer after the first difference land on the
+    /// wrong variable, and the marker would be wrong with nothing to report it.
+    pub fn resolve(&mut self, questions: &crate::bridge::Questions) -> Result<(), String> {
+        self.snapshot.resolve(questions)
+    }
+
+    /// The data this world answers from, for a caller that KEEPS it rather than asks it.
+    ///
+    /// A disk cache and a fixture file hold raw data, not worlds - a world is that data plus a
+    /// table, and the table is read once at startup rather than stored per group. So the way to
+    /// get prepared data is to prepare a world and take it back out, which keeps
+    /// [`Self::resolve`] the only thing that ever does the preparing.
+    pub fn into_raw(self) -> WorldRawData {
+        self.snapshot
+    }
+
     /// A world told nothing and declaring nothing, to be stated with the builders below.
     ///
     /// WHAT A UNIT TEST WANTS: every variable reads false, every set is empty, and nothing is

@@ -134,18 +134,13 @@ impl Staged {
         conversation: i32,
         inputs: Option<&[lookahead_engine::walkthrough::Input]>,
     ) -> Result<Walkthrough, String> {
-        let mut snapshot = self.request.world.clone();
-        snapshot.resolve(&self.questions)?;
+        let mut world = GameWorld::declaring(self.request.world.clone(), common::declared());
+        world.resolve(&self.questions)?;
         // WITH THE DECLARED TABLE, as the game has it: a variable the save does not hold
         // answers with the initial the database declares, or false for a name nothing
         // declares. A walk taken against a table declaring nothing gets the second of those
         // for every variable, and goes where the game will not.
-        walk_inputs(
-            &self.graph,
-            &GameWorld::declaring(snapshot, common::declared()),
-            conversation,
-            inputs,
-        )
+        walk_inputs(&self.graph, &world, conversation, inputs)
     }
 
     /// The request for the menu a walk ended at, with what the walk showed on the way.

@@ -712,11 +712,10 @@ pub fn compiled_guards(
     let (mut graph, group) =
         lookahead_engine::index::build_group_graph(index, request.conversation)
             .expect("the request's group builds");
-    let mut snapshot = request.world.clone();
-    snapshot
+    let mut world = GameWorld::declaring_nothing(request.world.clone());
+    world
         .resolve(&questions_of(&graph, group))
         .expect("the world answers the group's questions");
-    let world = GameWorld::declaring_nothing(snapshot);
     graph.fit(&lookahead_engine::graph::Fitting::read(&graph, &world));
 
     let symbols = graph.symbols().clone();

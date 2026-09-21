@@ -71,10 +71,11 @@ fn scene_answers(save: &str, asked: &Questions) -> [WireValue; 3] {
         data_values: holdings.data_for(&asked.data),
         ..Default::default()
     };
-    snapshot
+    let mut world = GameWorld::declaring_nothing(snapshot);
+    world
         .resolve(asked)
         .expect("the fixture answers the list it was asked");
-    let exterior = GameWorld::declaring_nothing(snapshot).query("IsExterior", &[]);
+    let exterior = world.query("IsExterior", &[]);
     let outdoors = if exterior.kind() == GuardValueKind::Boolean {
         WireValue::Bool {
             value: exterior.boolean(),
