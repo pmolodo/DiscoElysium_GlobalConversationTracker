@@ -131,7 +131,7 @@ impl LookAheadNode {
     /// raise, no cost to charge, no choice to charge for, and no check whose outcome the world
     /// decides - so every route through it reaches the same states at the same distance as a
     /// route that skipped it. A quarter to a third of a group's entries are like this; see the
-    /// stretches report in `performance/layout_shape.rs`.
+    /// stretches report in `crates/gct-measure/examples/layout_shape.rs`.
     ///
     /// ## SKIPPING THEM IN THE SEARCH WAS MEASURED, AND IT COSTS
     ///

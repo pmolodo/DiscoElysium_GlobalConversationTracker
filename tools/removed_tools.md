@@ -16,7 +16,7 @@ git show 596a427:tools/<name> > tools/<name>
 
 | tool | what it did | where the answer lives now |
 |---|---|---|
-| `conversation-starts.py` | Where every conversation in the game can be started, and what nothing explains. | `performance/group_list.rs` enumerates what is worth measuring, which is the question this fed. |
+| `conversation-starts.py` | Where every conversation in the game can be started, and what nothing explains. | `crates/gct-measure/examples/group_list.rs` enumerates what is worth measuring, which is the question this fed. |
 | `reachable-entries.py` | Which entries no conversation start reaches, walking links and ignoring guards. | The count it produced is quoted in `tools/measure-menus.py`'s help: of 1,422 conversations, 901 reach nothing from their start. |
 | `suspect-test-content.py` | A heuristic listing of what looks like test content, evidence kept apart and weighed. | Nothing consumed it. It said on its own face that it was a heuristic. |
 | `make-weather-saves.py` | Wrote the weather saves as the smallest change to a save already in the clear, rather than waiting for weather in game. | The saves it wrote are committed. This was the recipe. |

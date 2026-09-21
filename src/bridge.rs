@@ -1529,7 +1529,7 @@ pub fn answer(
     // SECOND MANAGER built on a thread that has already built one - not a second search -
     // so a request that builds exactly one manager inside its thread and runs every start
     // against it never reaches the fault, however many starts there are. See the table in
-    // `symbolic::isolated`; `performance/menu_residue.rs` puts this call itself to it,
+    // `symbolic::isolated`; `crates/gct-measure/examples/menu_residue.rs` puts this call itself to it,
     // forty-five runs at budgets to six gigabytes, and once at three hundred and
     // eighty-four starts. A thread per start would have cost about twelve milliseconds an
     // option at the player's default budget, rebuilding the diagram side each time, to buy
@@ -1591,7 +1591,7 @@ pub fn answer(
 /// How high a counter is modelled before it saturates.
 ///
 /// SIXTEEN, AND EVERY MEASUREMENT IN THE REPOSITORY WAS MADE AT IT -
-/// `performance/menu_matrix.rs` and the symbolic tests all use this number. Changing it
+/// `crates/gct-measure/examples/menu_matrix.rs` and the symbolic tests all use this number. Changing it
 /// changes which states a search can tell apart, so a run measured under one cap says
 /// nothing about a search under another.
 pub const COUNTER_CAP: i32 = 16;
@@ -1642,7 +1642,7 @@ where
 /// THE SHAPE IS BUILT HERE, ONCE FOR THE MENU. The parent map and the SCC decomposition are
 /// facts about the links, which trimming is what changes; every option below wants the same
 /// ones. Each option used to build its own: twenty-four Tarjan passes over conversation 631's
-/// 4,514 entries for one answer, which `performance/per_start_setup.rs` priced at 246 ms a
+/// 4,514 entries for one answer, which `crates/gct-measure/examples/per_start_setup.rs` priced at 246 ms a
 /// menu. See `GroupShape`.
 pub fn walkable_menu(
     graph: &LookAheadGraph,

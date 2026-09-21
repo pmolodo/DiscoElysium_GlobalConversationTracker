@@ -4,7 +4,7 @@
 //! ## What it answers
 //!
 //! "What is this search actually carrying?" - as a list rather than as a count.
-//! `performance/layout_shape.rs` classifies the slots and totals each class, which is what
+//! `crates/gct-measure/examples/layout_shape.rs` classifies the slots and totals each class, which is what
 //! ranks a task; this prints them one per line, in variable order, so a particular name can be
 //! found and its neighbours read off.
 //!

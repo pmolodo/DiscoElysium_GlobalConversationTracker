@@ -253,7 +253,7 @@ fn build_of_save(
     let checks = crate::common::fixtures::checks_in_save(save, &group)
         .expect("the actor table and the full index are both present");
 
-    let mut snapshot = WorldRawData {
+    let snapshot = WorldRawData {
         money: holdings.money,
         day_minutes: holdings.day_minutes,
         day_counter: holdings.day_counter,

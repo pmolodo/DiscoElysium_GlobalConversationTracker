@@ -5,7 +5,7 @@
 //!
 //! From the template save, conversation 761's menu costs seconds and settles nothing, while a
 //! greedy walk over the same group finishes in EIGHTEEN MILLISECONDS:
-//! `performance/greedy_playthrough.rs` plays 37 legs, shows 44 entries of 2,263, and stops
+//! `crates/gct-measure/examples/greedy_playthrough.rs` plays 37 legs, shows 44 entries of 2,263, and stops
 //! EXHAUSTED. See de-y04p.
 //!
 //! WHAT "EXHAUSTED" DOES AND DOES NOT SAY, because the difference is the whole question. It says

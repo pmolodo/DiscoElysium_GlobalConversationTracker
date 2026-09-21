@@ -53,6 +53,15 @@ LOGS = "logs"
 
 OUT = ROOT / PERFORMANCE_KIND
 
+# The package whose examples the measurement drivers are. It is not the root package, so cargo
+# has to be told which one - without `--package` it looks for the example beside the workspace
+# root's own sources and reports it missing.
+MEASUREMENT_PACKAGE = "gct_measure"
+
+# What builds one, up to the example's own name. Named once so the build log can print the
+# command that was actually run rather than an approximation of it.
+BUILD_ARGV = ["cargo", "build", "--release", "--package", MEASUREMENT_PACKAGE, "--example"]
+
 TAB = "\t"
 
 
@@ -952,15 +961,7 @@ def build_measurement(example, folder=None, quiet=False):
         print(f"building {example}...")
     began = time.monotonic()
     built = subprocess.run(
-        [
-            "cargo",
-            "build",
-            "--release",
-            "--example",
-            example,
-            "--manifest-path",
-            str(ROOT / "Cargo.toml"),
-        ],
+        BUILD_ARGV + [example, "--manifest-path", str(ROOT / "Cargo.toml")],
         capture_output=True,
         text=True,
         check=False,
@@ -972,7 +973,7 @@ def build_measurement(example, folder=None, quiet=False):
         path.mkdir(parents=True, exist_ok=True)
         write_lf(
             path / BUILD_LOG,
-            f"# cargo build --release --example {example}\n"
+            f"# {' '.join(BUILD_ARGV)} {example}\n"
             f"# exit {built.returncode} in {seconds:.2f}s\n\n"
             f"{built.stdout}{built.stderr}",
         )

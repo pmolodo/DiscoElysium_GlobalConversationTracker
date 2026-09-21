@@ -117,7 +117,7 @@ pub fn flag_query(name: &str) -> Option<bool> {
 ///
 /// ## The one implementation that answers Unknown
 ///
-/// `performance/permissive_census.rs` measures what is unreachable in EVERY possible save, and
+/// `crates/gct-measure/examples/permissive_census.rs` measures what is unreachable in EVERY possible save, and
 /// that rests on a world which constrains nothing: loosening a world can only add paths, so an
 /// entry still proved unreachable against it is unreachable from every save there is. It hands
 /// the world a table of its own that answers Unknown for everything. That is the only way such

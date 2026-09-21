@@ -87,7 +87,7 @@ pub struct Known {
 /// each start built its own parent map and its own Tarjan decomposition, which depend on
 /// the links and on nothing else, and so were twenty-four copies of one answer.
 ///
-/// Measured before it existed, `performance/per_start_setup.rs`, per menu of 24 starts:
+/// Measured before it existed, `crates/gct-measure/examples/per_start_setup.rs`, per menu of 24 starts:
 ///
 /// ```text
 ///   conv  entries  order ms  of_from ms  known ms  per menu ms

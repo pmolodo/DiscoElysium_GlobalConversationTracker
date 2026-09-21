@@ -14,7 +14,7 @@ between two readings, so it is read as a number rather than as a whole one.
 The nodes columns are printed beside the milliseconds as context, not as a verdict. Nodes is a
 reading of the diagram manager rather than a count of the search, and it moves a little between
 runs of the same code all by itself - measured over three whole-game runs at 7 groups of 299,
-the widest by 0.7%, while every group's marks stood still (de-jitt, and `performance/menu_matrix.rs`
+the widest by 0.7%, while every group's marks stood still (de-jitt, and `crates/gct-measure/examples/menu_matrix.rs`
 for why). A nodes difference under about one per cent is therefore not a difference, whichever
 side of the comparison it is on.
 

@@ -5,7 +5,7 @@
 the rest several at a time.
 
 A request is a whole response menu answered against one manager, so the menu is what a player
-waits for and it is not the sum of its options. See performance/menu_matrix.rs for what the
+waits for and it is not the sum of its options. See crates/gct-measure/examples/menu_matrix.rs for what the
 columns mean.
 
 Usage:
@@ -21,7 +21,7 @@ down - conversation 28's deepest entries overflow the stack inside a recursive d
 operation - and with every group in one process the first crash destroys every group after
 it. A crash here is a RESULT for that group, recorded as CRASHED, and costs nothing else.
 
-`all` ASKS `performance/group_list.rs` WHICH GROUPS ARE WORTH MEASURING rather than keeping a
+`all` ASKS `crates/gct-measure/examples/group_list.rs` WHICH GROUPS ARE WORTH MEASURING rather than keeping a
 list here, so what is in a run is decided by the index and nothing else. The enumeration
 arrives heaviest-first, which is what the serial phase below rests on.
 
@@ -128,7 +128,7 @@ from measurement_common import (  # noqa: E402
 
 # The example this drives, and the one it asks which groups are worth measuring. Two commands
 # because they are two jobs: `menu_matrix` only ever measures a menu, and `group_list` only ever
-# enumerates. See `performance/group_list.rs`.
+# enumerates. See `crates/gct-measure/examples/group_list.rs`.
 MENUS = "menu_matrix"
 GROUPS = "group_list"
 
@@ -236,7 +236,7 @@ class Run:
         group that reaches nothing from its start is not in it, and neither is one already known
         to have no menu under these settings. Neither is a measurement waiting to be taken, and a
         driver that spawned a process for them would be asking a question whose answer is already
-        written down. See `performance/group_list.rs`, which also says why it is a command of its
+        written down. See `crates/gct-measure/examples/group_list.rs`, which also says why it is a command of its
         own rather than a mode of the measurement.
         """
         answer = common.ask(groups, {})
@@ -455,7 +455,7 @@ RUN_FOLDER = "run-{}"
 #
 # AND IT IS WHAT FILLS THE MEASUREMENT'S OWN CACHE, which is a second reason to take it and a
 # reason the discard has to stay where it is. A group's graph and its world are derived once and
-# kept - see `performance/kept.rs` - so the first pass over the game after a build derives them
+# kept - see `crates/gct-measure/src/kept.rs` - so the first pass over the game after a build derives them
 # and the rest read them, and a pass whose counted runs were half derived and half read would
 # be comparing two different amounts of work. The discarded pass takes the deriving, and every
 # counted run is warm BY CONSTRUCTION.

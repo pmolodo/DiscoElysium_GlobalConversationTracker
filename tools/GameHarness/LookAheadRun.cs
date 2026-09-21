@@ -778,7 +778,7 @@ namespace GlobalConversationTracker.Harness
         /// <summary>How long to wait for an engine to come up before giving up on it.</summary>
         /// <remarks>
         /// An engine costs a process launch plus a 173-244 ms index read
-        /// (performance/repeat_question.rs), so this is roughly twenty times what it
+        /// (crates/gct-measure/examples/repeat_question.rs), so this is roughly twenty times what it
         /// should need. It is a FAILURE bound, not a guess at the duration - the poll below
         /// returns the moment an id appears.
         /// </remarks>

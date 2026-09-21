@@ -370,7 +370,7 @@ impl DataLayout {
     /// holding, because it is an argument about what the GUARDS can distinguish rather than
     /// about what the slot can reach. Measured against the site-count version it is also
     /// strictly better: 7.6% against 4.2% on 362, 6.6% against 5.4% on 368, and 1.3%
-    /// against nothing on 14 (`performance/layout_shape.rs`).
+    /// against nothing on 14 (`crates/gct-measure/examples/layout_shape.rs`).
     ///
     /// ## The two things it must not do
     ///
@@ -623,7 +623,7 @@ impl DataLayout {
     /// structurally reach is carried for nothing.
     ///
     /// Narrowing per START would save slightly more, and cannot be had.
-    /// `performance/start_relative_layout.rs` measured all three granularities:
+    /// `crates/gct-measure/examples/start_relative_layout.rs` measured all three granularities:
     ///
     /// ```text
     ///  conv   whole   per start   per menu   per conversation
@@ -634,7 +634,7 @@ impl DataLayout {
     ///
     /// Per conversation keeps almost all of the saving on the largest group AND IS THE ONLY
     /// ONE COMPATIBLE WITH THE KEPT MANAGER. `workspace::Workspace` holds a diagram manager
-    /// across requests and `performance/manager_reuse.rs` prices that at 45 ms a request; a
+    /// across requests and `crates/gct-measure/examples/manager_reuse.rs` prices that at 45 ms a request; a
     /// layout that moved per menu would rebuild it on every menu and hand back more than
     /// this saves. A layout that is a property of the CONVERSATION does not move between the
     /// menus inside it, so the manager survives exactly where it earns its keep - and the

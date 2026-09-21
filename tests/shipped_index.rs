@@ -321,7 +321,7 @@ fn a_group_built_from_the_trimmed_index_is_the_same_group() {
 ///
 /// ## Why the two tests above are not enough for a caller that measures every group
 ///
-/// They compare five groups, and `performance/menu_matrix.rs` enumerates all 1,422 of them
+/// They compare five groups, and `crates/gct-measure/examples/menu_matrix.rs` enumerates all 1,422 of them
 /// before a whole-game run measures any - `group_list`, which is `discover_group` over every
 /// conversation in the index, canonicalised by the set of conversations it reaches. That
 /// list decides which rows a whole-game run HAS. A trim that dropped a cross-conversation

@@ -158,24 +158,19 @@ pub fn at_data(kind: &str, about: &str) -> Option<PathBuf> {
 /// and a list of the few files that happen to decide today is a list that rots silently the
 /// first time one moves. Whole directories cannot.
 ///
-/// TWO OF THEM, since a measurement's sources sit in two places: the drivers under
-/// `performance/`, and the modules they share, which are this crate's own `src/`. Watching one
-/// and not the other is the rot this is written to avoid - it happened, and the symptom was a
-/// kept value derived by code that had moved out from under it.
+/// TWO OF THEM, since a measurement's sources sit in two places: the drivers, this crate's
+/// `examples/`, and the modules they share, its `src/`. Watching one and not the other is the
+/// rot this is written to avoid - it happened, and the symptom was a kept value derived by code
+/// that had moved out from under it.
 ///
 /// IT OVER-INVALIDATES ON PURPOSE. Touching any measurement source throws away everything kept,
 /// which costs one pass at full price - the same price the rebuild it implies costs anyway - and
 /// the alternative is a kept value from code that no longer exists.
 fn code() -> Option<String> {
     let mut key = std::fs::read_to_string(engine_stamp()?).ok()?;
-    // NOT `CARGO_MANIFEST_DIR`, which is this crate rather than the repository: the drivers
-    // are the root package's and this crate is a directory below it.
-    let root = crate::common::repo_root();
+    let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut sources: Vec<PathBuf> = Vec::new();
-    for directory in [
-        root.join("performance"),
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
-    ] {
+    for directory in [here.join("examples"), here.join("src")] {
         sources.extend(
             std::fs::read_dir(&directory)
                 .ok()?

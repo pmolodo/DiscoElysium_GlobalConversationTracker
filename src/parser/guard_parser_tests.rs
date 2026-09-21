@@ -276,9 +276,9 @@ fn input_that_stops_mid_expression_is_refused_rather_than_crashing() {
 ///
 /// Nothing that handles a guard costs stack in proportion to its depth: the parser holds its
 /// own stacks, a parsed guard is a flat table evaluated, rendered and freed by sweeps in
-/// index order, and the compiler walks on a stack of its own (performance/guard_stack.rs).
+/// index order, and the compiler walks on a stack of its own (crates/gct-measure/examples/guard_stack.rs).
 /// So the parser accepts every depth, and these pin that. The deepest guard in the shipped
-/// database is eleven levels (performance/guard_depth.rs); this is hundreds of times that.
+/// database is eleven levels (crates/gct-measure/examples/guard_depth.rs); this is hundreds of times that.
 const FAR_PAST_ANYTHING_REAL: usize = 4_000;
 
 /// Parses `text` and checks it is as deep as it was written and still answers `expected`.

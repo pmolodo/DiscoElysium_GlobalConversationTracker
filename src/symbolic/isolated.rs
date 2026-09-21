@@ -18,7 +18,7 @@
 //!
 //! ## What actually accumulates: a SECOND MANAGER on a thread, not a second search
 //!
-//! Measured 2026-09-06 with `performance/search_residue.rs`, conversation 28, five searches
+//! Measured 2026-09-06 with `crates/gct-measure/examples/search_residue.rs`, conversation 28, five searches
 //! at the matrix's six-gigabyte budget, twenty-five runs of each arrangement. The searches
 //! are identical in all of them; only how many threads and how many MANAGERS differ.
 //!
@@ -43,7 +43,7 @@
 //!
 //! It also says `bridge::answer` is right as it stands, which was an open question: it takes
 //! one of these threads PER REQUEST and runs a whole menu's starts on it, against one manager
-//! built inside. `performance/menu_residue.rs` puts that arrangement to
+//! built inside. `crates/gct-measure/examples/menu_residue.rs` puts that arrangement to
 //! `bridge::answer` directly - forty-five runs, budgets to six gigabytes, up to
 //! twenty-four starts, and once at three hundred and eighty-four - and none of them died.
 //!

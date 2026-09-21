@@ -84,7 +84,7 @@ echo "logs in ${DEGCT_LOG_DIR}"
 echo
 
 # Build once, so a compile does not get charged to the first conversation's timing.
-cargo build --release --example "${DEGCT_MEASUREMENT}" --quiet || exit 1
+cargo build --release -p gct_measure --example "${DEGCT_MEASUREMENT}" --quiet || exit 1
 
 for conversation in "${CONVERSATIONS[@]}"; do
     log="${DEGCT_LOG_DIR}/${DEGCT_RUN_NAME}-${conversation}.log"
@@ -98,7 +98,7 @@ for conversation in "${CONVERSATIONS[@]}"; do
     # write several identical logs. It used to do exactly that, silently, because the variable
     # such a driver never read cost nothing to set.
     cargo run --release --quiet \
-        --example "${DEGCT_MEASUREMENT}" -- ${STAGE:+"$STAGE"} \
+        -p gct_measure --example "${DEGCT_MEASUREMENT}" -- ${STAGE:+"$STAGE"} \
         --conversation "${conversation}" >"${log}" 2>&1
     status=$?
 

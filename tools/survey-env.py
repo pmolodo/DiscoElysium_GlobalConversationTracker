@@ -132,7 +132,7 @@ SUFFIXES = (".rs", ".py", ".sh", ".psm1", ".ps1", ".cs", ".md")
 #   `${DEGCT_RUN_NAME}` directly rather than through `degct_env`, which is the helper the
 #   project mandates being bypassed.
 #
-#   A PHANTOM. `DEGCT_PROFILE` appears only in a doc comment in `performance/seen_profile.rs`.
+#   A PHANTOM. `DEGCT_PROFILE` appears only in a doc comment in `crates/gct-measure/src/seen_profile.rs`.
 #   Nothing sets it and nothing reads it, and it had a row in `docs/environment.md` anyway,
 #   because a prose mention is what puts a row there.
 NO_READ = "no recognised read"

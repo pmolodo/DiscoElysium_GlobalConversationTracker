@@ -13,7 +13,7 @@ Genuinely instant things - `ls`, `git status`, reading a file - do not need it.
 ```sh
 tools/run-logged.sh --kind testing cargo full-suite -- cargo test --release
 tools/run-logged.sh --kind performance cargo menu-761 -- \
-  cargo run --release --example menu_matrix -- --conversation 761
+  cargo run --release -p gct_measure --example menu_matrix -- --conversation 761
 ```
 
 **`--kind` says which tree the log belongs in**, and the three are named the same way:

@@ -358,6 +358,7 @@ dependencies = [
  "clap",
  "gct_save_files",
  "lookahead_engine",
+ "oxidd",
  "serde",
  "serde_json",
 ]

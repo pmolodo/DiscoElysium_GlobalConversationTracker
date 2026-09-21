@@ -13,7 +13,7 @@
 //! So this checks the FLOOR - what construction alone costs, and that a budget covers it
 //! and is mostly spent by it. What a node costs once the table has grown is the other half
 //! of the question and cannot be answered by building empty managers; it is measured in
-//! `performance/manager_memory.rs`, and `DiagramBudget::BYTES_PER_NODE` is derived from
+//! `crates/gct-measure/examples/manager_memory.rs`, and `DiagramBudget::BYTES_PER_NODE` is derived from
 //! that rather than from anything here.
 
 use lookahead_engine::symbolic::budget::DiagramBudget;

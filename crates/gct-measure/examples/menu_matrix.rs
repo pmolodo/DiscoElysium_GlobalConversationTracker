@@ -68,7 +68,7 @@
 //! EVERY ROW IS A MEASUREMENT. Two things that are not:
 //!
 //! A GROUP WITH NO MENU IN IT, which is a fact about the dialogue - nothing it reaches offers the
-//! player anything - found by edge analysis in `performance/group_list.rs` and never asked about
+//! player anything - found by edge analysis in `crates/gct-measure/examples/group_list.rs` and never asked about
 //! here, because such a group is not in the list this measures.
 //!
 //! A PROFILE THIS RUN COULD NOT BUILD, which is a finding about the run: the profile is walked,
@@ -141,7 +141,7 @@
 //! nothing here is the wall failing to hold. Eight options that each behave are still eight
 //! options, and on 761 they add to three seconds.
 //!
-//! That is the question `performance/menu_wall.rs` asks, and this is the first whole-game
+//! That is the question `crates/gct-measure/examples/menu_wall.rs` asks, and this is the first whole-game
 //! answer to it: TWO GROUPS, NAMED, out of 395. A per-option reading cannot produce that
 //! list - 761's worst option is well inside its budget - which is the whole reason this
 //! measurement exists beside the option matrix rather than instead of it.
@@ -169,7 +169,7 @@
 //! `--header` prints the column names and measures nothing, which is how a driver
 //! writing one file out of many processes gets a header without parsing a row.
 //!
-//! WHICH GROUPS THERE ARE IS A DIFFERENT COMMAND, `performance/group_list.rs`, which is how
+//! WHICH GROUPS THERE ARE IS A DIFFERENT COMMAND, `crates/gct-measure/examples/group_list.rs`, which is how
 //! `tools/measure-menus.py all` learns what to measure.
 //!
 //! `--starts` sets the menu's width, `--unseen` how many of the deepest entries are
@@ -1008,7 +1008,7 @@ impl Prep {
 /// as nothing.
 ///
 /// NOT "NO MENU", WHICH IS A DIFFERENT AND STRONGER CLAIM. Whether a group contains a menu at all
-/// is a property of the dialogue, answered by edge analysis in `performance/group_list.rs`, and a
+/// is a property of the dialogue, answered by edge analysis in `crates/gct-measure/examples/group_list.rs`, and a
 /// group that has none never reaches this code. What is refused HERE is the adversarial profile:
 /// it is built under a walk, in a world, with as many of the deepest entries called unread as
 /// this run was told to - so the same group can refuse under one question and answer under

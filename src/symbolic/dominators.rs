@@ -25,13 +25,13 @@
 //!
 //! The iterative Cooper-Harvey-Kennedy fixed point rather than Lengauer-Tarjan. 1,372 of
 //! the game's 1,422 groups hold about forty-three entries and the largest is under five
-//! thousand (`performance/group_census.rs`), and `performance/dominance_share.rs` builds
-//! every group's tree in the game plus every candidate list in about a second and a half.
+//! thousand (`crates/gct-measure/examples/group_census.rs`), and building every group's tree
+//! in the game plus every candidate list takes about a second and a half (de-kqgq).
 //! The fast algorithm is a page of machinery bought with nothing to spend it on.
 //!
 //! ## What it is worth
 //!
-//! Structurally, over the whole game by `performance/dominance_share.rs` (de-kqgq): 87.7
+//! Structurally, over the whole game (de-kqgq): 87.7
 //! per cent of the candidates in a driver's list have a strict dominator EARLIER in that
 //! same list. That is the ceiling - it is the saving on a row that refuses every candidate,
 //! and an over-estimate on one that finds something, since a yes ends the search anyway.

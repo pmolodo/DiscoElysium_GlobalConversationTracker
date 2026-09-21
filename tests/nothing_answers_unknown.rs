@@ -22,7 +22,7 @@
 //!
 //! ## What it does NOT claim
 //!
-//! That Unknown is unreachable. `performance/permissive_census.rs` produces one deliberately, to
+//! That Unknown is unreachable. `crates/gct-measure/examples/permissive_census.rs` produces one deliberately, to
 //! ask what is unreachable in EVERY save rather than in one; and a plugin that throws still
 //! answers Unknown, which is the case the rule allows. This says only that a world built from the
 //! shipped table and a committed save, asked what a group's guards ask, always answers.

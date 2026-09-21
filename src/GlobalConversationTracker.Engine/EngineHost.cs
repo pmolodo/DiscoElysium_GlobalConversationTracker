@@ -86,7 +86,7 @@ namespace GlobalConversationTracker.Engine
         /// sits an order of magnitude out - which is the gap it exists to hold, because the
         /// two limits are different in kind. Crossing the wall costs the options at the
         /// bottom of a menu their markers; crossing this KILLS THE ENGINE. See de-dt75.3 and
-        /// <c>performance/menu_wall.rs</c>.</para>
+        /// <c>crates/gct-measure/examples/menu_wall.rs</c>.</para>
         ///
         /// <para>DELIBERATELY NOT A CONFIGURATION SETTING, unlike the budgets it stands
         /// behind. It is a liveness check rather than a preference: there is no value of it

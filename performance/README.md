@@ -1,7 +1,10 @@
 # Performance
 
-The long-running measurements themselves, and under `logs/` what they produced. Nothing
-under here is committed except the measurements and this file.
+Under `logs/`, what the long-running measurements produced. Nothing under here is committed
+except this file.
+
+The measurements are `crates/gct-measure`: its `examples/` are the drivers, one file each,
+and its `src/` the modules they share.
 
 The directory is named for what the measurements are ABOUT rather than for what they are,
 which keeps it beside `testing/` and `analysis/` as one of three things a run can be: a
@@ -15,10 +18,18 @@ were being confused - this repository has already had a measurement's figures qu
 though a test had verified them - and a measurement that asserts nothing still looks green
 when it is run, which is what invites that mistake. See de-18bo.
 
-They are Cargo EXAMPLES, named in `Cargo.toml` with an explicit `path` because Cargo looks
-for examples in `examples/` and these live beside their logs. Being examples also takes
-them out of `cargo test`, which would otherwise compile and link every one of them on the way
-to running none of them.
+They are Cargo EXAMPLES, and of a package the root one takes only as a dev-dependency, so
+`cargo test` compiles and links none of them on its way to running none of them. Each still
+links a thirty-megabyte library, and there are thirty-two.
+
+**WHICH MEANS THE SUITE DOES NOT COMPILE THEM, and the way they break is a shared module
+changing under them.** One command checks every driver without running any:
+
+    cargo build --release -p gct_measure --examples
+
+Run it before committing anything in `crates/gct-measure/src/` or in the library's public
+surface. Nothing else compiles a driver, so a driver stays broken until someone reaches for
+it - which is months, for the ones reached for once a question.
 
 **Not everything here produces a number**, and the directory's name undersells it. Three of
 its contents are a different kind of thing, and they are here because the split that
@@ -55,23 +66,15 @@ them passes or fails on its own, so none of them belongs in `tests/`.
 Run one the way anything slow is run here - through `tools/run-logged.sh`, so there is a
 log to read afterwards:
 
-    tools/run-logged.sh cargo answers -- cargo run --release --example symbolic_answers
+    tools/run-logged.sh cargo residue -- cargo run --release -p gct_measure --example search_residue
 
     tools/run-logged.sh cargo slots -- \
-      cargo run --release --example layout_shape -- slots --conversation 14
+      cargo run --release -p gct_measure --example layout_shape -- slots --conversation 14
 
 Several take an argument, and it selects a stage rather than a setting. `layout_shape`
 takes `groups` (the default), which counts the slot classes per group, or `slots`, which
 lists one group's slots so the classifier behind the counts can be read rather than trusted.
-`dominance_share` takes `rows` (the default), `menu`, `all` for the whole game, or `verify`,
-which re-derives its dominator relation by deleting entries and comparing. `candidate_recurrence`
-takes `links` (the default), where a menu's options are one node's own links, `deepest`,
-where they come from the adversarial profile - the two disagree on purpose - or `walk`,
-successive menus along one group rather than the options of one node. `cacheable_asks` runs
-the very asks that last arm counts, over the same walk, so the two numbers multiply.
-`dead_quantify` takes `sets` (the default), the forward fixed point over a whole group, or
-`menu`, the shipped call over an adversarial menu - and those two can move opposite ways,
-which is the reason both are there.
+Each such driver's module doc lists its own stages.
 
 ## The whole-game menu matrix
 
@@ -119,8 +122,8 @@ The same word later resumes the most recent folder carrying it.
 Reading the index, building a group's graph and building its world from the save are the same
 answers in every process of every pass, and they were most of what a pass spent. They are now
 kept under the build output - `target/degct-cache/`, never in the repository - and read back;
-see `performance/kept.rs` and `performance/prepared.rs`, and `index ms` for what a process that
-needed none of them reports.
+see `crates/gct-measure/src/kept.rs` and `crates/gct-measure/src/prepared.rs`, and `index ms`
+for what a process that needed none of them reports.
 
 What `group_list` answers is kept as well - what each group reaches, and whether anything it
 reaches offers the player a choice - and that one is keyed on the CONVERSATIONS rather than on

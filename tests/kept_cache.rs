@@ -7,7 +7,7 @@
 //! megabyte index, build the group's graph and build its world from the save - the same answers
 //! every time, in 521 processes per pass. Those answers are now kept under the build output and
 //! read back, which takes a whole-game pass from about 150 seconds of work to about 25. See
-//! de-9z1u, `performance/kept.rs` and `performance/prepared.rs`.
+//! de-9z1u, `crates/gct-measure/src/kept.rs` and `crates/gct-measure/src/prepared.rs`.
 //!
 //! A CACHE NOTHING VERIFIES IS A CACHE NOBODY SHOULD TRUST, and this one sits underneath every
 //! performance number the project produces. The failure it guards against is silent by

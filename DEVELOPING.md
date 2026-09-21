@@ -450,6 +450,18 @@ tools/run-logged.sh --kind testing cargo full-suite -- cargo test --release
 tools/smoke.sh
 ```
 
+**And when a shared measurement module moves, the drivers, which the suite does not build:**
+
+```bash
+cargo build --release -p gct_measure --examples
+```
+
+The thirty-two measurement drivers are examples of `crates/gct-measure`, which the root
+package takes only as a dev-dependency, so `cargo test` links none of them. That is worth
+several minutes a suite and costs one thing: a change to `crates/gct-measure/src/` or to the
+library's public surface can leave a driver uncompilable and nothing says so until someone
+reaches for it. The command above is what says so. See `performance/README.md`.
+
 Measured 2026-09-19, by touching a library source and asking for a verdict:
 
 | what was run                      | edit to verdict | what it covers                   |
