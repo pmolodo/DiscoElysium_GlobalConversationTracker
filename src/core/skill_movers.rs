@@ -72,8 +72,12 @@ pub struct DamageMove {
 pub struct SkillMoves {
     /// Items the entry takes away, which unequips them if worn.
     pub lost_items: Vec<String>,
-    /// Whether the entry gains an item that puts itself on.
-    pub puts_on: bool,
+    /// The items the entry gains that put themselves on.
+    ///
+    /// THE NAMES RATHER THAN A FLAG, because which skills going on moves depends on WHICH
+    /// garment it is - see [`crate::core::garment`]. The name is in hand where this is filled
+    /// in and used to be thrown away.
+    pub puts_on: Vec<String>,
     /// The blows and heals the entry deals.
     pub damage: Vec<DamageMove>,
 }
@@ -98,7 +102,9 @@ impl SkillMoves {
             if let Some(item) = name.strip_prefix(UNEQUIPPED_PREFIX) {
                 moves.lost_items.push(item.to_string());
             } else if let Some(item) = name.strip_prefix(ITEM_PREFIX) {
-                moves.puts_on |= action.value() > 0 && is_autoequip(item);
+                if action.value() > 0 && is_autoequip(item) {
+                    moves.puts_on.push(item.to_string());
+                }
             } else if let Some(skill) = name.strip_prefix(DAMAGE_PREFIX) {
                 moves.damage.push(DamageMove {
                     skill: skill.to_string(),

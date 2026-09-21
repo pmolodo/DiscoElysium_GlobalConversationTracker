@@ -174,7 +174,7 @@ impl LookAheadNode {
             && self.actions.is_empty()
             && self.failure_actions.is_empty()
             && self.skill_moves.lost_items.is_empty()
-            && !self.skill_moves.puts_on
+            && self.skill_moves.puts_on.is_empty()
             && self.skill_moves.damage.is_empty()
             && self.cost == 0
             && self.click_cost == 0

@@ -21,12 +21,13 @@ pub struct Fitting {
     pub hardcore: bool,
     /// The thoughts the world holds fixed, among those an action is conditioned on.
     pub fixed: BTreeSet<String>,
-    /// Whether the group can take off an item the world has on, which moves skill values - see
-    /// [`crate::core::skill_movers`]. A slot the world could not read counts as holding one.
-    pub lost_worn: bool,
-    /// The passive checks whose margin the group's damage or healing can cross - see
-    /// [`crate::core::skill_movers`].
-    pub damage_unsettled: HashSet<DialogueNodeId>,
+    /// The passive checks this group can change the outcome of, and so cannot be answered
+    /// from the world alone - see [`crate::core::skill_movers`].
+    ///
+    /// TWO WAYS IN, and both need the world, which is why the set is decided here rather than
+    /// in [`LookAheadGraph::fit`]: the group's own damage can cross a check's margin, and the
+    /// group can take off or put on a garment that moves the skill the check compares.
+    pub unsettled: HashSet<DialogueNodeId>,
     /// The variables the world holds set, among those a settled conditional write tests - see
     /// [`crate::core::action::DialogueAction::settled_by_world`].
     pub set_variables: BTreeSet<String>,
@@ -39,25 +40,19 @@ impl Fitting {
     /// What `world` says about everything `graph` depends on, and nothing else - so two worlds
     /// that differ only in what the graph never asks give the same fitting.
     pub fn read(graph: &LookAheadGraph, world: &dyn crate::world::ILookAheadWorld) -> Self {
-        let lost = graph.items_lost_near_passive_checks();
-        let lost_worn = !lost.is_empty()
-            && crate::core::equipment::SLOTS
-                .iter()
-                .any(|slot| match world.item_in_slot(slot) {
-                    Some(item) => lost.contains(item.as_str()),
-                    None => true,
-                });
         let fixed: BTreeSet<String> = graph
             .thoughts_deciding_actions()
             .into_iter()
             .filter(|thought| crate::core::thought_effects::is_fixed(world, thought))
             .map(str::to_string)
             .collect();
+        let mut unsettled = graph.checks_damage_can_flip(world, &fixed);
+        unsettled.extend(graph.checks_clothing_can_flip(world));
+
         Self {
             hardcore: graph.prices_by_mode() && crate::core::game_mode::is_hardcore(world),
-            damage_unsettled: graph.checks_damage_can_flip(world, &fixed),
+            unsettled,
             fixed,
-            lost_worn,
             set_variables: graph
                 .variables_deciding_actions()
                 .into_iter()
@@ -599,6 +594,61 @@ impl LookAheadGraph {
             .collect()
     }
 
+    /// The passive checks a garment this group takes off or puts on can flip.
+    ///
+    /// ## What changed, and why it was worth changing
+    ///
+    /// A group that can unclothe the player used to unsettle EVERY passive check in it, because
+    /// nothing knew which skill a garment moves. It does now - [`crate::core::garment`] holds
+    /// the fifty-five items that move one - so taking off a hat that moves Perception leaves the
+    /// Logic checks settled, and their entries keep an answer the world can give.
+    ///
+    /// ## What is asked of which
+    ///
+    /// TAKEN OFF COUNTS ONLY WHERE IT IS ON. An item the group deletes that the player is not
+    /// wearing has no bonus to take away. PUT ON COUNTS ALWAYS: the group gains the garment, so
+    /// what the world is wearing now does not decide whether it can.
+    ///
+    /// A CHECK WITH NO STATED SKILL IS UNSETTLED. The world states one for every passive check
+    /// it can - see [`crate::world::ILookAheadWorld::check_margin`] - and where it states none,
+    /// nothing here can tell whether the garment reaches it. More markers than earned, never
+    /// fewer, which is the direction this whole mechanism errs in.
+    pub fn checks_clothing_can_flip(
+        &self,
+        world: &dyn crate::world::ILookAheadWorld,
+    ) -> HashSet<DialogueNodeId> {
+        let lost = self.items_lost_near_passive_checks();
+        let mut moved: BTreeSet<&'static str> = BTreeSet::new();
+
+        if !lost.is_empty() {
+            for slot in crate::core::equipment::SLOTS {
+                let worn = world.item_in_slot(slot).unwrap_or_default();
+                if lost.contains(worn.as_str()) {
+                    moved.extend(crate::core::garment::skills_moved_by_item(&worn));
+                }
+            }
+        }
+
+        for node in self.nodes() {
+            for item in &node.skill_moves.puts_on {
+                moved.extend(crate::core::garment::skills_moved_by_item(item));
+            }
+        }
+
+        if moved.is_empty() {
+            return HashSet::new();
+        }
+
+        self.nodes()
+            .filter(|node| node.kind == DialogueCheckKind::Passive)
+            .filter(|node| match world.check_margin(node.id) {
+                Some((skill, _)) => moved.contains(skill.as_str()),
+                None => true,
+            })
+            .map(|node| node.id)
+            .collect()
+    }
+
     /// The passive checks whose margin in `world` the group's damage or healing can cross, with
     /// the thoughts in `fixed` held fixed - see [`crate::core::skill_movers`].
     pub fn checks_damage_can_flip(
@@ -679,10 +729,9 @@ impl LookAheadGraph {
     /// the group takes. Fitting starts from each node's own data every time, so a graph can be
     /// fitted to one world and then another.
     pub fn fit(&mut self, fitting: &Fitting) {
-        let unsettled = fitting.lost_worn || self.nodes().any(|node| node.skill_moves.puts_on);
         for node in self.nodes.values_mut() {
-            node.check_settled = node.kind != DialogueCheckKind::Passive
-                || !(unsettled || fitting.damage_unsettled.contains(&node.id));
+            node.check_settled =
+                node.kind != DialogueCheckKind::Passive || !fitting.unsettled.contains(&node.id);
             node.cost =
                 crate::core::price::price(node.click_cost, node.price_scale, fitting.hardcore);
             for action in node.actions.iter_mut().chain(&mut node.failure_actions) {

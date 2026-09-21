@@ -48,6 +48,14 @@ use crate::world::ILookAheadWorld;
 /// refused; see [`crate::service::Service::open`].
 pub struct GameWorld {
     snapshot: WorldRawData,
+    /// The check margins by the entry they are about, built on the first ask.
+    ///
+    /// A LINEAR SCAN WAS ENOUGH while the plugin sent a margin for Volition and Endurance
+    /// alone. It sends one for every passive check now (de-sr1u.4), and the callers ask once
+    /// per passive node - `checks_damage_can_flip` and `checks_clothing_can_flip` both sweep
+    /// the graph - so the scan became quadratic in the checks a group holds. Measured by the
+    /// test suite going from minutes to not finishing.
+    margins: std::sync::OnceLock<std::collections::HashMap<NodeRef, (String, i32)>>,
     /// What a variable reads where the snapshot could not answer it.
     declared: Arc<dyn crate::world::IVariableTable>,
 }
@@ -64,6 +72,7 @@ impl GameWorld {
         Self {
             snapshot,
             declared: Arc::new(crate::index::VariableTable::empty()),
+            margins: std::sync::OnceLock::new(),
         }
     }
 
@@ -72,7 +81,11 @@ impl GameWorld {
         snapshot: WorldRawData,
         declared: Arc<dyn crate::world::IVariableTable>,
     ) -> Self {
-        Self { snapshot, declared }
+        Self {
+            snapshot,
+            declared,
+            margins: std::sync::OnceLock::new(),
+        }
     }
 
     /// Puts the plugin's positional answers onto the names the engine asked under.
@@ -530,12 +543,16 @@ impl ILookAheadWorld for GameWorld {
     }
 
     fn check_margin(&self, node: DialogueNodeId) -> Option<(String, i32)> {
-        let node = NodeRef::from(node);
-        self.snapshot
-            .check_margins
-            .iter()
-            .find(|margin| margin.node == node)
-            .map(|margin| (margin.skill.clone(), margin.margin))
+        self.margins
+            .get_or_init(|| {
+                self.snapshot
+                    .check_margins
+                    .iter()
+                    .map(|margin| (margin.node, (margin.skill.clone(), margin.margin)))
+                    .collect()
+            })
+            .get(&NodeRef::from(node))
+            .cloned()
     }
 }
 

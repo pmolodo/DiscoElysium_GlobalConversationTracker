@@ -520,6 +520,45 @@ mod tests {
             .check_settled
     }
 
+    /// A garment unsettles the checks on the skill IT moves, and leaves the others settled.
+    ///
+    /// THE POINT OF de-sr1u.3. Before it, a group that could take off anything worn unsettled
+    /// every passive check in it, because nothing knew which skill a garment moved. The hat
+    /// here moves Encyclopedia - `core::garment` says so, from what the database states - so a
+    /// Logic check beside it keeps the answer the world gives.
+    ///
+    /// EACH CHECK NEEDS A STATED SKILL for this to narrow anything: a check the world states
+    /// none for is unsettled whatever the garment moves, because nothing can tell whether it is
+    /// reached. That is why both worlds below set a margin.
+    #[test]
+    fn a_garment_unsettles_only_the_checks_on_the_skill_it_moves() {
+        let shape = || {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1)
+                    .script(r#"LoseItem("hat_mullen")"#)
+                    .links(&[2]),
+                Entry::new(2).kind(DialogueCheckKind::Passive).links(&[3]),
+                Entry::new(3),
+            ]
+        };
+        let wearing_it = |skill: &str| {
+            GameWorld::blank()
+                .set_equipped("HAT", "hat_mullen")
+                .set_check_result(node(2), Ternary::False)
+                .set_check_margin(node(2), skill, -1)
+        };
+
+        assert!(
+            !settled_check(shape(), &wearing_it("ENCYCLOPEDIA")),
+            "the hat moves Encyclopedia, so an Encyclopedia check can flip when it comes off"
+        );
+        assert!(
+            settled_check(shape(), &wearing_it("LOGIC")),
+            "the hat does not move Logic, so a Logic check keeps the world's answer"
+        );
+    }
+
     /// A passive check the world says fails is carried both ways where the group can take off
     /// something worn - and not where what it takes is not worn. What the check's own script
     /// raises is what shows it was entered.
