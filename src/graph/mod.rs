@@ -643,12 +643,20 @@ impl LookAheadGraph {
     }
 
     /// Whether anything in the graph depends on a [`Fitting`].
+    ///
+    /// EVERY CLAUSE IS SOMETHING `fit` DECIDES, and a caller that skips fitting on a `false`
+    /// here - `workspace::fitting_of` does - skips all of them. So a thing fitting decides and
+    /// this does not ask about is a thing silently left undone on that path and done on every
+    /// other: the candidate slots are the newest of them, and a group whose prices, thoughts,
+    /// variables and checks all need nothing would otherwise carry every settled slot in its
+    /// layout for want of a clause here.
     pub fn needs_fitting(&self) -> bool {
         self.prices_by_mode()
             || !self.thoughts_deciding_actions().is_empty()
             || !self.variables_deciding_actions().is_empty()
             || !self.items_lost_near_passive_checks().is_empty()
             || self.damages_near_passive_checks()
+            || !self.settled_candidates().is_empty()
     }
 
     /// Fits the graph to a world: every price to the game mode - see [`crate::core::price`] -
