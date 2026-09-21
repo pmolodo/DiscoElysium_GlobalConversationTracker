@@ -22,7 +22,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
             WireConvert.Write(request);
 
         private static LookAheadRequest Request() =>
-            new LookAheadRequest(1, new WorldSnapshot());
+            new LookAheadRequest(1, new WorldRawData());
 
         /// <summary>Every budget crosses, under the name the engine reads.</summary>
         [Fact]

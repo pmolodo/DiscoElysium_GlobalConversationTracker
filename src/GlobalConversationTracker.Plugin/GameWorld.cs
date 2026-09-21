@@ -11,8 +11,8 @@ namespace GlobalConversationTracker
     /// The player's situation, read out of the running game for one look-ahead crawl.
     /// </summary>
     /// <remarks>
-    /// <para>Built fresh per response menu and thrown away, because everything it holds
-    /// is a snapshot: the balance, the variables, what Kim is doing. Caching one across
+    /// <para>Built fresh per response menu and thrown away, because everything it holds is
+    /// read at one moment: the balance, the variables, what Kim is doing. Caching one across
     /// menus would answer this menu's question with the last one's facts.</para>
     ///
     /// <para>Whatever cannot be answered comes back
@@ -25,7 +25,7 @@ namespace GlobalConversationTracker
     /// each distinct query is run once and cached for the life of the crawl. A menu asks
     /// the same handful of questions hundreds of times as the search fans out.</para>
     /// </remarks>
-    internal sealed class GameLookAheadWorld : ILookAheadWorld
+    internal sealed class GameWorld : ILookAheadWorld
     {
         private readonly Dictionary<string, GuardValue> _queries =
             new Dictionary<string, GuardValue>();
@@ -34,8 +34,8 @@ namespace GlobalConversationTracker
         private readonly Dictionary<DialogueNodeId, Ternary> _checks =
             new Dictionary<DialogueNodeId, Ternary>();
 
-        /// <summary>Creates a snapshot.</summary>
-        internal GameLookAheadWorld()
+        /// <summary>Reads the running game.</summary>
+        internal GameWorld()
         {
             Money = GameFacts.ReadMoney();
 

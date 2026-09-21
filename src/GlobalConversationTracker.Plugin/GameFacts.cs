@@ -12,8 +12,8 @@ namespace GlobalConversationTracker
     /// </summary>
     /// <remarks>
     /// <para>Shared by the two worlds that exist while the look-ahead moves from C# to Rust
-    /// - <see cref="GameLookAheadWorld"/>, which answers the managed engine directly, and
-    /// <see cref="GameWorldSnapshot"/>, which writes the same facts down for the native
+    /// - <see cref="GameWorld"/>, which answers the managed engine directly, and
+    /// <see cref="LookAheadRequestBuilder"/>, which writes the same facts down for the native
     /// one. They must agree, and the way to make two things agree is for them to be one
     /// thing.</para>
     ///

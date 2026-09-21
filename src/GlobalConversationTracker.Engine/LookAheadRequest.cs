@@ -26,7 +26,7 @@ namespace GlobalConversationTracker.Engine
         /// </param>
         /// <param name="world">The player's situation.</param>
         /// <exception cref="ArgumentNullException">The world is null.</exception>
-        public LookAheadRequest(int conversation, WorldSnapshot world)
+        public LookAheadRequest(int conversation, WorldRawData world)
         {
             Conversation = conversation;
             World = world ?? throw new ArgumentNullException(nameof(world));
@@ -36,7 +36,7 @@ namespace GlobalConversationTracker.Engine
         public int Conversation { get; }
 
         /// <summary>The player's situation. One answer comes back per start.</summary>
-        public WorldSnapshot World { get; }
+        public WorldRawData World { get; }
 
         /// <summary>The option entries to score.</summary>
         public IList<NodeRef> Starts { get; } = new List<NodeRef>();
@@ -44,7 +44,7 @@ namespace GlobalConversationTracker.Engine
         /// <summary>Entries SOME save has shown, which is what the global state records.</summary>
         /// <remarks>
         /// One of the two facts that decide an entry's seen state; the other is
-        /// <see cref="WorldSnapshot.Seen"/>, what THIS save has shown. Neither is a claim about
+        /// <see cref="WorldRawData.Seen"/>, what THIS save has shown. Neither is a claim about
         /// the other, and the engine takes the three states from the pair in one place. So
         /// nothing sends "unseen this save": an entry this world has not seen and this set holds
         /// IS that state.

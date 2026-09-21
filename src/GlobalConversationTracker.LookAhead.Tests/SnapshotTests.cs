@@ -22,7 +22,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
     /// SHAPE: that an entry set writes the runs the engine reads, that a positional answer
     /// list lands on the names the engine asked under, and that a request built here comes
     /// back answered. What needs the game - that the answers are the ones
-    /// <c>GameLookAheadWorld</c> would give - is checked in the in-game suite.</para>
+    /// <c>GameWorld</c> would give - is checked in the in-game suite.</para>
     ///
     /// <para>The shape tests need nothing at all. The round trip needs the library and the
     /// index, and skips loudly where they have not been produced, like every other suite
@@ -104,7 +104,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         [Fact]
         public void ARequestIsWrittenUnderTheNamesTheEngineReads()
         {
-            var world = new WorldSnapshot { Money = 250, DayMinutes = 720, DayCounter = 1 };
+            var world = new WorldRawData { Money = 250, DayMinutes = 720, DayCounter = 1 };
             world.VariableValues.Add(WireValue.FromNumber(3));
             world.QueryValues.Add(WireValue.FromBoolean(true));
             world.Items.Add("badge");
@@ -162,7 +162,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         /// <summary>One value, as it leaves a snapshot.</summary>
         private static Wire.WireValue Sent(WireValue value)
         {
-            var world = new WorldSnapshot();
+            var world = new WorldRawData();
             world.VariableValues.Add(value);
             return Assert.Single(WireConvert.Write(world).VariableValues);
         }
@@ -261,7 +261,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
             Assert.Contains(636, questions.Conversations);
             Assert.NotEmpty(questions.Entries);
 
-            var world = new WorldSnapshot { Money = 250, DayMinutes = 720, DayCounter = 1 };
+            var world = new WorldRawData { Money = 250, DayMinutes = 720, DayCounter = 1 };
             foreach (string _ in questions.Variables)
             {
                 world.VariableValues.Add(WireValue.Unknown);
@@ -346,7 +346,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 index, NativeLookAhead.Declared);
             LookAheadQuestions questions = engine.QuestionsFor(FanConversation);
 
-            var world = new WorldSnapshot { DayMinutes = 720, DayCounter = 1 };
+            var world = new WorldRawData { DayMinutes = 720, DayCounter = 1 };
             foreach (string _ in questions.Variables)
             {
                 world.VariableValues.Add(WireValue.Unknown);
@@ -407,7 +407,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
 
             using LookAheadLibrary engine = LookAheadLibrary.Open(index, NativeLookAhead.Declared);
 
-            var world = new WorldSnapshot();
+            var world = new WorldRawData();
             world.VariableValues.Add(WireValue.FromBoolean(true));
 
             var request = new LookAheadRequest(631, world);

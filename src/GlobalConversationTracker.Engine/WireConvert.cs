@@ -148,7 +148,7 @@ namespace GlobalConversationTracker.Engine
         }
 
         /// <summary>The player's situation, as the plugin sees it.</summary>
-        public static Wire.WorldRawData Write(WorldSnapshot world)
+        public static Wire.WorldRawData Write(WorldRawData world)
         {
             var written = new Wire.WorldRawData
             {

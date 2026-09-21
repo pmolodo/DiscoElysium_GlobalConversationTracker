@@ -636,7 +636,7 @@ namespace GlobalConversationTracker
                 }
 
                 LookAheadRequest request =
-                    GameWorldSnapshot.Build(conversation, questions, session);
+                    LookAheadRequestBuilder.Build(conversation, questions, session);
 
                 // THE BUDGETS THE PLAYER SET, sent rather than applied here. The crawl is
                 // on the other side of the bridge, so a budget that stays in this process

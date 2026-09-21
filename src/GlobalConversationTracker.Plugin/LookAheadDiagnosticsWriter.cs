@@ -170,7 +170,7 @@ namespace GlobalConversationTracker
             LookAheadAnswer answer,
             int memoryBudgetMb,
             int groupEntryCount,
-            WorldSnapshot world)
+            WorldRawData world)
         {
             if (KeepStatistics)
             {
@@ -199,7 +199,7 @@ namespace GlobalConversationTracker
         }
 
         private void AppendOverflow(
-            LookAheadAnswer answer, int memoryBudgetMb, int groupEntryCount, WorldSnapshot world)
+            LookAheadAnswer answer, int memoryBudgetMb, int groupEntryCount, WorldRawData world)
         {
             if (_overflowLogFailed)
             {
@@ -240,7 +240,7 @@ namespace GlobalConversationTracker
         /// the size; the tally was the refinement.</para>
         /// </remarks>
         private static string DescribeOverflow(
-            LookAheadAnswer answer, int memoryBudgetMb, int groupEntryCount, WorldSnapshot world)
+            LookAheadAnswer answer, int memoryBudgetMb, int groupEntryCount, WorldRawData world)
         {
             var text = new StringBuilder();
             text.Append("=== ")

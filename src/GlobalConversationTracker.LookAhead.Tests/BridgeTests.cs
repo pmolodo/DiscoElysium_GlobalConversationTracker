@@ -148,7 +148,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
 
             using LookAheadLibrary engine = LookAheadLibrary.Open(index, NativeLookAhead.Declared);
 
-            var world = new WorldSnapshot { DayMinutes = 720, DayCounter = 1 };
+            var world = new WorldRawData { DayMinutes = 720, DayCounter = 1 };
             var request = new LookAheadRequest(1123, world);
             request.Starts.Add(new NodeRef(1123, 0));
             // A PLAYER WHO HAS SEEN NOTHING ANYWHERE, so everything the group holds is unread

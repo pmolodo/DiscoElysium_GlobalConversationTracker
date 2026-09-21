@@ -10,7 +10,7 @@ namespace GlobalConversationTracker.Engine
     /// </summary>
     /// <remarks>
     /// <para>THE ENGINE ASKS THE QUESTIONS, and this is the list. Every answer must come
-    /// back under the exact key given here - see <see cref="WorldSnapshot"/> - because the
+    /// back under the exact key given here - see <see cref="WorldRawData"/> - because the
     /// alternative was for both sides to render every call identically forever, including how a number is formatted and how a string is
     /// escaped. One disagreement there and the answer silently goes missing, the query
     /// reads Unknown, the guard turns permissive, and the marker is wrong with nothing to
@@ -70,7 +70,7 @@ namespace GlobalConversationTracker.Engine
 
         /// <summary>World state the engine wants READ rather than evaluated.</summary>
         /// <remarks>
-        /// Answered in this order, as <see cref="WorldSnapshot.DataValues"/>. Unlike
+        /// Answered in this order, as <see cref="WorldRawData.DataValues"/>. Unlike
         /// <see cref="Queries"/>, servicing one of these is a read of game state and never
         /// the running of a dialogue function - see <see cref="DataRequest"/>.
         /// </remarks>

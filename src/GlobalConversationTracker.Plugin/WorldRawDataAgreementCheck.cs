@@ -8,12 +8,12 @@ using GlobalConversationTracker.Session;
 namespace GlobalConversationTracker
 {
     /// <summary>
-    /// Does the snapshot say what the managed world says, for the same questions?
+    /// Does the raw data say what the managed world says, for the same questions?
     /// </summary>
     /// <remarks>
     /// <para>The check de-i5xj.7 exists to pass, and the one that cannot be made anywhere
-    /// but inside a running game: <see cref="GameLookAheadWorld"/> is the world whose
-    /// answers reach a player today, and <see cref="GameWorldSnapshot"/> is the one that
+    /// but inside a running game: <see cref="GameWorld"/> is the world whose
+    /// answers reach a player today, and <see cref="LookAheadRequestBuilder"/> is the one that
     /// will. They are asked the same questions here and their answers compared, entry by
     /// entry and name by name.</para>
     ///
@@ -28,7 +28,7 @@ namespace GlobalConversationTracker
     /// deliberately, and a failure to run it is a line in the log rather than a broken
     /// playthrough.</para>
     /// </remarks>
-    internal static class SnapshotAgreementCheck
+    internal static class WorldRawDataAgreementCheck
     {
         /// <summary>The prefix every line here starts with, so a harness can find them.</summary>
         internal const string LogPrefix = "Snapshot agreement:";
@@ -79,8 +79,8 @@ namespace GlobalConversationTracker
 
                 LookAheadQuestions questions = index.Engine.QuestionsFor(conversation);
                 LookAheadRequest request =
-                    GameWorldSnapshot.Build(conversation, questions, session);
-                var managed = new GameLookAheadWorld();
+                    LookAheadRequestBuilder.Build(conversation, questions, session);
+                var managed = new GameWorld();
 
                 var differences = new List<string>();
                 string report = Compare(questions, request, managed, differences);
@@ -107,10 +107,10 @@ namespace GlobalConversationTracker
         private static string Compare(
             LookAheadQuestions questions,
             LookAheadRequest request,
-            GameLookAheadWorld managed,
+            GameWorld managed,
             List<string> differences)
         {
-            WorldSnapshot world = request.World;
+            WorldRawData world = request.World;
             var counts = new List<string>();
 
             bool situation = managed.Money == world.Money
@@ -202,7 +202,7 @@ namespace GlobalConversationTracker
         /// Compares one membership set, asking the managed world the same query by name.
         /// </summary>
         /// <remarks>
-        /// Through <see cref="GameLookAheadWorld.Query"/> rather than its <c>HasItem</c>, so that the managed world RENDERS the call itself. That is
+        /// Through <see cref="GameWorld.Query"/> rather than its <c>HasItem</c>, so that the managed world RENDERS the call itself. That is
         /// the comparison worth making here: both sides turn a name into a Lua call, by
         /// different code, and if the two renderings ever disagreed this is where it would
         /// show.
@@ -211,7 +211,7 @@ namespace GlobalConversationTracker
             IReadOnlyList<string> names,
             string query,
             ISet<string> holding,
-            GameLookAheadWorld managed,
+            GameWorld managed,
             List<string> differences)
         {
             int differing = 0;

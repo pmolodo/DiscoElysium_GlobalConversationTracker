@@ -220,7 +220,7 @@ namespace GlobalConversationTracker
                 ?? throw new InvalidOperationException("The global state log is unavailable.");
             GlobalStateStore store = _store
                 ?? throw new InvalidOperationException("The global state store is unavailable.");
-            SnapshotAgreementCheck.Report(log, Session, store.DirectoryPath, conversation);
+            WorldRawDataAgreementCheck.Report(log, Session, store.DirectoryPath, conversation);
         }
 
         /// <summary>

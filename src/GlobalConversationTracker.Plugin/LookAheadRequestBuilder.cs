@@ -19,7 +19,7 @@ namespace GlobalConversationTracker
     /// returned, asking the game each one and putting the answer in the matching slot. It
     /// invents nothing and decides nothing.</para>
     ///
-    /// <para>This is a RE-SHAPING of what <see cref="GameLookAheadWorld"/> already does
+    /// <para>This is a RE-SHAPING of what <see cref="GameWorld"/> already does
     /// rather than new knowledge: the same Lua, the same defaults, the same direction of
     /// caution. The two share their game reads through <see cref="GameFacts"/> so they
     /// cannot drift on the parts that are simply reads, and what is left to check between
@@ -30,7 +30,7 @@ namespace GlobalConversationTracker
     /// Unknown, which is permissive: it widens the reachable set rather than narrowing it,
     /// costing a wasted click instead of hiding content the player has never read.</para>
     /// </remarks>
-    internal static class GameWorldSnapshot
+    internal static class LookAheadRequestBuilder
     {
 
         /// <summary>
@@ -46,7 +46,7 @@ namespace GlobalConversationTracker
         internal static LookAheadRequest Build(
             int conversation, LookAheadQuestions questions, GlobalStateSession session)
         {
-            var world = new WorldSnapshot();
+            var world = new WorldRawData();
             var request = new LookAheadRequest(conversation, world);
 
             world.Money = GameFacts.ReadMoney();
@@ -99,7 +99,7 @@ namespace GlobalConversationTracker
         /// <remarks>
         /// A coupling worth naming: the engine renders these keys and this runs them,
         /// which works because the rendering is a call with literal arguments and is
-        /// exactly what <see cref="GameLookAheadWorld"/> rebuilds by hand today. A key that
+        /// exactly what <see cref="GameWorld"/> rebuilds by hand today. A key that
         /// stopped being valid Lua would not crash anything - the run fails and the answer
         /// is Unknown - but every query in the group would quietly go permissive, so the
         /// in-game comparison counts how many answered.
@@ -433,7 +433,7 @@ namespace GlobalConversationTracker
         /// <summary>Whether a Lua answer counts as yes.</summary>
         /// <remarks>
         /// Lua's own truthiness, which is what <c>GuardValue.AsCondition</c> applies and
-        /// therefore what <see cref="GameLookAheadWorld"/> answers these three with: only
+        /// therefore what <see cref="GameWorld"/> answers these three with: only
         /// false is false, and a number or a string is true. Written out here because
         /// requiring a boolean instead would have quietly answered "not held" for a query
         /// that returns a count.
@@ -444,7 +444,7 @@ namespace GlobalConversationTracker
         }
 
         /// <summary>Whether each entry's passive check fires, per <see cref="PassiveCheckRule"/>.</summary>
-        private static void FillChecks(IReadOnlyList<NodeRef> checks, WorldSnapshot world)
+        private static void FillChecks(IReadOnlyList<NodeRef> checks, WorldRawData world)
         {
             DialogueDatabase database = DialogueManager.masterDatabase;
             foreach (NodeRef node in checks)
@@ -493,7 +493,7 @@ namespace GlobalConversationTracker
         /// ones its checks carry. A table that cannot be read leaves the set empty, which reads
         /// as nothing locked - the permissive direction, as everywhere else here.</para>
         /// </remarks>
-        private static void FillFailedWhiteChecks(WorldSnapshot world)
+        private static void FillFailedWhiteChecks(WorldRawData world)
         {
             try
             {
@@ -533,7 +533,7 @@ namespace GlobalConversationTracker
         /// <para>A flag that cannot be read sends false, which leaves every red check free to
         /// succeed - the permissive direction, as everywhere else here.</para>
         /// </remarks>
-        private static void FillRedChecksFail(WorldSnapshot world)
+        private static void FillRedChecksFail(WorldRawData world)
         {
             try
             {
@@ -557,7 +557,7 @@ namespace GlobalConversationTracker
         private static void FillSeenState(
             IReadOnlyList<NodeRef> entries,
             GlobalStateSession session,
-            WorldSnapshot world,
+            WorldRawData world,
             LookAheadRequest request)
         {
             GlobalConversationState state = session.EnsureInitialized();

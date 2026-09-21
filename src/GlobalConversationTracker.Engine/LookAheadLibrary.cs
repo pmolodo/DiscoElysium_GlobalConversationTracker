@@ -245,7 +245,7 @@ namespace GlobalConversationTracker.Engine
         /// CACHE THIS PER CONVERSATION. The questions cannot change while the game is
         /// running, the walk over a group's guards is not free, and a request answers the
         /// lists BY POSITION - so the cached list is also the agreement about what each
-        /// answer means. See <see cref="WorldSnapshot.VariableValues"/>.
+        /// answer means. See <see cref="WorldRawData.VariableValues"/>.
         /// </remarks>
         /// <param name="conversation">Any conversation in the group.</param>
         /// <exception cref="InvalidOperationException">The group could not be built.</exception>

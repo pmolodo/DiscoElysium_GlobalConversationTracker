@@ -24,7 +24,7 @@ namespace GlobalConversationTracker.Engine
     /// never seen. It is also the answer for a question left out of the snapshot
     /// altogether, so sending it explicitly and omitting it mean the same thing - except
     /// for a dialogue variable, where both fall back to what the database declares: see
-    /// <see cref="WorldSnapshot.VariableValues"/>.</para>
+    /// <see cref="WorldRawData.VariableValues"/>.</para>
     /// </remarks>
     public readonly struct WireValue
     {

@@ -19,7 +19,7 @@ namespace GlobalConversationTracker.Engine
     /// it, costing a wasted click instead of hiding content the player has never seen. A
     /// guess does neither reliably.</para>
     /// </remarks>
-    public sealed class WorldSnapshot
+    public sealed class WorldRawData
     {
         /// <summary>The player's balance in centimes, before the crawl.</summary>
         public int Money { get; set; }
