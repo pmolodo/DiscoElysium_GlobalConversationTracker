@@ -321,3 +321,47 @@ fn no_guard_calls_anything_with_a_computed_argument() {
     );
     assert_eq!(sample(&failures), Vec::<String>::new());
 }
+
+/// Every reputation the game compares must be declared a NUMBER by the database.
+///
+/// ## What rests on it
+///
+/// `IsHighestPolitical` and `IsHighestCopotype` are answered by `reputation::highest`, which
+/// walks its whole range and gives up - answering Unknown for the question - as soon as one
+/// amount cannot be read as a number. It gives up rather than treating the gap as a zero on
+/// purpose: a zero is a PARTICIPANT in that comparison, not an absence, and one invented in
+/// the wrong place ties with a real zero and clears the winner.
+///
+/// So the question stays answerable exactly while the table declares all eight as numbers. It
+/// does, and each starts at zero. A database that changed one to a Boolean would make every
+/// reputation question in the game Unknown, and nothing else would say so - the guard would
+/// simply turn permissive and mark entries no play can reach.
+///
+/// The group's half of it needs no test: `reputation::variables_read_by` returns the WHOLE
+/// range, and `LookAheadGraph` adds all of them, so a guard that asks is a guard whose group
+/// declares every amount the answer needs.
+///
+/// See de-m11s.8.
+#[test]
+fn every_reputation_the_game_compares_is_declared_a_number() {
+    use lookahead_engine::core::guard_value::GuardValueKind;
+    use lookahead_engine::world::IVariableTable;
+
+    let Some(declared) = common::variable_table() else {
+        return;
+    };
+
+    let mut wrong: Vec<String> = Vec::new();
+    for reputation in lookahead_engine::core::reputation::IN_ENUM_ORDER {
+        let name = lookahead_engine::core::reputation::variable_of(reputation);
+        let value = declared.unset(&name);
+        if value.kind() != GuardValueKind::Number {
+            wrong.push(format!(
+                "{name} is declared {:?}, not a number",
+                value.kind()
+            ));
+        }
+    }
+
+    assert_eq!(wrong, Vec::<String>::new());
+}

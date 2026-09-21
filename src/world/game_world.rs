@@ -19,7 +19,6 @@
 //! lookup here always has an answer, and none of the constructors below can be reached without
 //! saying where that answer comes from.
 
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::bridge::{
@@ -30,7 +29,7 @@ use crate::core::guard_value::{GuardValue, GuardValueKind};
 use crate::core::state::VariableRef;
 use crate::core::types::{DialogueNodeId, Ternary};
 use crate::core::{equipment, inventory_tabs};
-use crate::world::{ILookAheadWorld, IVariableTable};
+use crate::world::ILookAheadWorld;
 
 /// A [`WorldRawData`], answering as a world.
 ///
