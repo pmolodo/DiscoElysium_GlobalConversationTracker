@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 using System.Text;
 
 namespace GlobalConversationTracker.DialogueAsset
@@ -28,6 +29,13 @@ namespace GlobalConversationTracker.DialogueAsset
 
         /// <summary>The field carrying which group it belongs to, as an index.</summary>
         private const string GroupTitle = "itemGroup";
+
+        /// <summary>The field carrying what the item moves, as prose a player reads.</summary>
+        /// <remarks>
+        /// <c>+1 Rhetoric: The heroic deeds (of others)</c>, and several joined by an
+        /// escaped newline. Seventy of the database's items carry one.
+        /// </remarks>
+        private const string BonusTitle = "MediumTextValue";
 
         /// <summary>
         /// The group names, by the index the database stores, from <c>ItemUtil.itemGroup</c>.
@@ -81,6 +89,7 @@ namespace GlobalConversationTracker.DialogueAsset
             string? name = null;
             string? stack = null;
             string? group = null;
+            string? bonusText = null;
             string? pendingField = null;
 
             string? line;
@@ -103,10 +112,11 @@ namespace GlobalConversationTracker.DialogueAsset
 
                 if (line.StartsWith(ItemStartPrefix, StringComparison.Ordinal))
                 {
-                    Flush(found, name, stack, group);
+                    Flush(found, name, stack, group, bonusText);
                     name = null;
                     stack = null;
                     group = null;
+                    bonusText = null;
                     pendingField = null;
                     continue;
                 }
@@ -136,22 +146,118 @@ namespace GlobalConversationTracker.DialogueAsset
                 {
                     group = value;
                 }
+                else if (pendingField == BonusTitle)
+                {
+                    bonusText = value;
+                }
             }
 
-            Flush(found, name, stack, group);
+            Flush(found, name, stack, group, bonusText);
             return found;
         }
 
         /// <summary>Keeps an item, where the record carried a name to keep it under.</summary>
         private static void Flush(
-            List<DialogueItem> found, string? name, string? stack, string? group)
+            List<DialogueItem> found,
+            string? name,
+            string? stack,
+            string? group,
+            string? bonusText)
         {
             if (!string.IsNullOrEmpty(name))
             {
                 found.Add(new DialogueItem(
-                    name!, stack ?? string.Empty, string.Empty, GroupNameOf(group)));
+                    name!,
+                    stack ?? string.Empty,
+                    string.Empty,
+                    GroupNameOf(group),
+                    BonusesIn(bonusText)));
             }
         }
+
+        /// <summary>The bonuses stated in one item's <see cref="BonusTitle"/>, in order.</summary>
+        /// <remarks>
+        /// <para>WHAT THE TEXT LOOKS LIKE. A signed amount, what it moves, a colon, and flavour
+        /// the player reads - <c>+1 Pain Threshold: Thicker skin</c>. Several are one value
+        /// separated by an escaped newline. Some say <c>+1 to X when equipped</c>. Some state no
+        /// bonus at all: <c>Heal all Health.</c></para>
+        ///
+        /// <para>TAKEN VERBATIM, spelling and all. The database is inconsistent with itself -
+        /// <c>Electrochemisty</c> beside <c>Electrochemistry</c>, <c>Reaction</c> beside
+        /// <c>Reaction Speed</c> - and it names things that are not skills at all: Health,
+        /// Morale, the attribute abbreviations on substances, and two thoughts. Deciding what
+        /// each one means needs the engine's list of skills, which is over there; see
+        /// <see cref="ItemBonus"/>.</para>
+        ///
+        /// <para>A CONDITION IS NOT READ. One bonus says <c>-1 Suggestion (unless wearing full
+        /// armor)</c>, and the parenthetical travels with the name rather than being dropped, so
+        /// a reader can see it is there rather than believing the bonus unconditional.</para>
+        /// </remarks>
+        private static IReadOnlyList<ItemBonus> BonusesIn(string? text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return Array.Empty<ItemBonus>();
+            }
+
+            var found = new List<ItemBonus>();
+            foreach (string part in text!.Split(EscapedNewline, StringSplitOptions.None))
+            {
+                ItemBonus? bonus = BonusOf(part);
+                if (bonus != null)
+                {
+                    found.Add(bonus);
+                }
+            }
+
+            return found.Count == 0 ? Array.Empty<ItemBonus>() : found;
+        }
+
+        /// <summary>One line of bonus text, or null where it states none.</summary>
+        private static ItemBonus? BonusOf(string line)
+        {
+            string trimmed = line.Trim();
+            if (trimmed.Length < 2 || (trimmed[0] != '+' && trimmed[0] != '-'))
+            {
+                return null;
+            }
+
+            int digits = 1;
+            while (digits < trimmed.Length && char.IsDigit(trimmed[digits]))
+            {
+                digits++;
+            }
+
+            if (digits == 1
+                || !int.TryParse(
+                    trimmed.Substring(0, digits),
+                    NumberStyles.AllowLeadingSign,
+                    CultureInfo.InvariantCulture,
+                    out int amount))
+            {
+                return null;
+            }
+
+            string rest = trimmed.Substring(digits).Trim();
+
+            // `+1 to X when equipped` says the same thing as `+1 X`; the words carry no more.
+            if (rest.StartsWith("to ", StringComparison.Ordinal))
+            {
+                rest = rest.Substring(3);
+            }
+
+            int colon = rest.IndexOf(':');
+            string moves = (colon < 0 ? rest : rest.Substring(0, colon)).Trim();
+            if (moves.EndsWith(" when equipped", StringComparison.Ordinal))
+            {
+                moves = moves.Substring(0, moves.Length - " when equipped".Length);
+            }
+
+            return moves.Length == 0 ? null : new ItemBonus(amount, moves);
+        }
+
+        /// <summary>How the database joins several bonuses into one value.</summary>
+        private static readonly string[] EscapedNewline = { "\\n" };
 
         /// <summary>The group's name, from the index the database stores.</summary>
         /// <remarks>

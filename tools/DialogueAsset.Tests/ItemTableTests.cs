@@ -152,14 +152,107 @@ namespace GlobalConversationTracker.DialogueAsset.Tests
 
             Assert.Equal(
                 "{\"name\":\"drug_alcohol_commodore_red\",\"stack\":\"\",\"display\":\"\","
-                    + "\"group\":\"alcohol\"}\n"
+                    + "\"group\":\"alcohol\",\"bonuses\":[]}\n"
                     + "{\"name\":\"key_trash_container\",\"stack\":\"key_ring\",\"display\":\"\","
-                    + "\"group\":\"none\"}\n"
+                    + "\"group\":\"none\",\"bonuses\":[]}\n"
                     + "{\"name\":\"glass_tare\",\"stack\":\"\",\"display\":\"\","
-                    + "\"group\":\"tare\"}\n"
+                    + "\"group\":\"tare\",\"bonuses\":[]}\n"
                     + "{\"name\":\"revacholian_nationhood\",\"stack\":\"\",\"display\":\"\","
-                    + "\"group\":\"none\"}\n",
+                    + "\"group\":\"none\",\"bonuses\":[]}\n",
                 written.ToString());
+        }
+        /// <summary>An item stating what it moves, in the forms the database uses.</summary>
+        /// <remarks>
+        /// Every shape here is one the shipped database contains - see de-sr1u.2, which counted
+        /// them. The flavour after the colon is the player's and is not kept.
+        /// </remarks>
+        private static string Stating(string text) => $$"""
+              items:
+              - id: 1
+                fields:
+                - title: Name
+                  value: worn_thing
+                  type: 0
+                  typeString:
+                - title: MediumTextValue
+                  value: {{text}}
+                  type: 0
+                  typeString:
+            """;
+
+        [Fact]
+        public void ReadsASingleStatedBonus()
+        {
+            ItemBonus bonus = Assert.Single(Read(Stating("'+1 Rhetoric: The heroic deeds'"))[0].Bonuses);
+
+            Assert.Equal(1, bonus.Amount);
+            Assert.Equal("Rhetoric", bonus.Moves);
+        }
+
+        /// <summary>Several bonuses are one value, joined by an escaped newline.</summary>
+        [Fact]
+        public void ReadsEveryBonusInOneValue()
+        {
+            IReadOnlyList<ItemBonus> bonuses = Read(Stating(
+                @"""+1 Pain Threshold: Thicker skin\n+1 Authority: Borrowed confidence\n-2 Empathy: Numb"""))[0].Bonuses;
+
+            Assert.Equal(3, bonuses.Count);
+            Assert.Equal(new ItemBonus(1, "Pain Threshold"), bonuses[0]);
+            Assert.Equal(new ItemBonus(1, "Authority"), bonuses[1]);
+            Assert.Equal(new ItemBonus(-2, "Empathy"), bonuses[2]);
+        }
+
+        /// <summary><c>+1 to X when equipped</c> says what <c>+1 X</c> says.</summary>
+        [Fact]
+        public void ReadsTheLongerFormAsTheSameBonus()
+        {
+            ItemBonus bonus = Assert.Single(
+                Read(Stating("'+1 to Kingdom of Conscience when equipped: You moralist douche'"))[0].Bonuses);
+
+            Assert.Equal(new ItemBonus(1, "Kingdom of Conscience"), bonus);
+        }
+
+        /// <summary>A condition travels with the name rather than being dropped.</summary>
+        /// <remarks>
+        /// One bonus in the database is conditional. Keeping the parenthetical means a reader
+        /// can see the condition is there; dropping it would state the bonus as unconditional,
+        /// which is a claim the database does not make.
+        /// </remarks>
+        [Fact]
+        public void KeepsAConditionWithWhatItQualifies()
+        {
+            ItemBonus bonus = Assert.Single(
+                Read(Stating("'-1 Suggestion (unless wearing full armor): Clanking'"))[0].Bonuses);
+
+            Assert.Equal(new ItemBonus(-1, "Suggestion (unless wearing full armor)"), bonus);
+        }
+
+        /// <summary>Text that states no bonus yields none, rather than a zero.</summary>
+        [Theory]
+        [InlineData("'Heal all Health.'")]
+        [InlineData("'Heals all health (when consumed in dialogue): Culinary resurrection'")]
+        public void TextStatingNoBonusYieldsNone(string text)
+        {
+            Assert.Empty(Read(Stating(text))[0].Bonuses);
+        }
+
+        /// <summary>An item that states nothing carries no bonuses, which is nearly all of them.</summary>
+        [Fact]
+        public void AnItemWithNoStatementCarriesNoBonuses()
+        {
+            Assert.All(Read(Asset), item => Assert.Empty(item.Bonuses));
+        }
+
+        /// <summary>
+        /// The spelling is the database's, misspellings and all - see <see cref="ItemBonus"/>.
+        /// </summary>
+        [Fact]
+        public void KeepsTheDatabasesOwnSpelling()
+        {
+            ItemBonus bonus = Assert.Single(
+                Read(Stating("'+1 Electrochemisty: Become an addict'"))[0].Bonuses);
+
+            Assert.Equal("Electrochemisty", bonus.Moves);
         }
     }
 }

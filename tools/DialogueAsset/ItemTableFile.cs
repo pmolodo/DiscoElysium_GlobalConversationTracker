@@ -56,12 +56,30 @@ namespace GlobalConversationTracker.DialogueAsset
                 writer.WriteLine(
                     string.Format(
                         CultureInfo.InvariantCulture,
-                        "{{\"name\":{0},\"stack\":{1},\"display\":{2},\"group\":{3}}}",
+                        "{{\"name\":{0},\"stack\":{1},\"display\":{2},\"group\":{3},"
+                        + "\"bonuses\":[{4}]}}",
                         JsonText.Quote(item.Name),
                         JsonText.Quote(item.StackName),
                         JsonText.Quote(item.DisplayName),
-                        JsonText.Quote(item.Group)));
+                        JsonText.Quote(item.Group),
+                        Bonuses(item)));
             }
+        }
+
+        /// <summary>One item's bonuses, as the members of a JSON array.</summary>
+        private static string Bonuses(DialogueItem item)
+        {
+            var written = new List<string>();
+            foreach (ItemBonus bonus in item.Bonuses)
+            {
+                written.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{{\"amount\":{0},\"moves\":{1}}}",
+                    bonus.Amount,
+                    JsonText.Quote(bonus.Moves)));
+            }
+
+            return string.Join(",", written);
         }
     }
 }
