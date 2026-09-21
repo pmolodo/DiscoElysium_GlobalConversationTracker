@@ -52,7 +52,7 @@ namespace GlobalConversationTracker
 
         private readonly IGlobalStateLog _log;
         private readonly string _rebuiltPath;
-        private readonly string? _variablesPath;
+        private readonly string _variablesPath;
 
         /// <summary>
         /// What has already been checked, by group, and what it said.
@@ -68,7 +68,7 @@ namespace GlobalConversationTracker
         private LookAheadLibrary _engine;
 
         private LookAheadIndex(
-            LookAheadLibrary engine, string rebuiltPath, string? variablesPath, IGlobalStateLog log)
+            LookAheadLibrary engine, string rebuiltPath, string variablesPath, IGlobalStateLog log)
         {
             _engine = engine;
             _rebuiltPath = rebuiltPath;
@@ -111,11 +111,19 @@ namespace GlobalConversationTracker
         {
             string rebuiltPath = Path.Combine(modDirectory, RebuiltFileName);
             string shippedPath = Path.Combine(pluginDirectory, NativeEngineCheck.IndexFileName);
-            string? variablesPath = Path.Combine(
+            string variablesPath = Path.Combine(
                 pluginDirectory, NativeEngineCheck.VariablesFileName);
+
+            // NO TABLE IS A BROKEN DEPLOY, not a mode to run in. Opening anyway would answer
+            // every variable the game will not answer with Unknown, which a symbolic search
+            // cannot prune on - so the mod would run, mark fewer options, and say nothing
+            // about why. No look-ahead at all is the loud version of the same state.
             if (!File.Exists(variablesPath))
             {
-                variablesPath = null;
+                log.Warning(
+                    $"{LogPrefix} no {NativeEngineCheck.VariablesFileName} beside the plugin; "
+                    + "the look-ahead has no graph.");
+                return null;
             }
 
             foreach (string candidate in new[] { rebuiltPath, shippedPath })

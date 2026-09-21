@@ -302,6 +302,6 @@ fn build_of_save(
 /// the save merely lacks from a name NOTHING declares: without the table every unanswered
 /// variable looks alike, and `SnapshotWorld::get_variable` will not call one undeclared on
 /// that evidence.
-pub fn declared() -> Option<std::sync::Arc<lookahead_engine::index::VariableTable>> {
-    common::variable_table()
+pub fn declared() -> std::sync::Arc<lookahead_engine::index::VariableTable> {
+    common::declared()
 }

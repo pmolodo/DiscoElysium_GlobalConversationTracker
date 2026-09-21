@@ -218,8 +218,13 @@ fn answer_unguarded(engine: &mut Option<Service>, request: Request) -> Response 
     }
 
     if let Kind::Open(open) = kind {
-        let variables = open.variables.map(PathBuf::from);
-        return match Service::open(&PathBuf::from(open.index), variables.as_deref()) {
+        // AN EMPTY PATH IS WHAT AN OMITTED TABLE ARRIVES AS, since proto3 has no way to say
+        // required and the field is a plain string - see the proto. Refused here rather than
+        // handed on, so the reason is "no table named" rather than an io error about "".
+        if open.variables.is_empty() {
+            return answers::bare(Status::BadArgument);
+        }
+        return match Service::open(&PathBuf::from(open.index), &PathBuf::from(open.variables)) {
             Ok(opened) => {
                 *engine = Some(opened);
                 answers::bare(Status::Ok)
@@ -363,17 +368,18 @@ mod tests {
             vec![0x2a, 0x03, 0x08, 0xf7, 0x04],
         );
 
-        // Field 2, holding a string in ITS field 1 and nothing for the absent optional -
-        // which is the point of the optional: a caller with no variable table sends no
-        // bytes for it rather than a null.
+        // Field 2, holding both paths as strings in ITS fields 1 and 2 - seven bytes of
+        // name apiece behind a tag and a length.
         assert_eq!(
             asking(Kind::Open(wire::OpenRequest {
                 index: "i.jsonl".into(),
-                variables: None,
+                variables: "v.jsonl".into(),
             }))
             .encode_to_vec(),
             vec![
-                0x12, 0x09, 0x0a, 0x07, b'i', b'.', b'j', b's', b'o', b'n', b'l',
+                0x12, 0x12, //
+                0x0a, 0x07, b'i', b'.', b'j', b's', b'o', b'n', b'l', //
+                0x12, 0x07, b'v', b'.', b'j', b's', b'o', b'n', b'l',
             ],
         );
     }
@@ -483,10 +489,14 @@ mod tests {
 
     #[test]
     fn opening_a_path_that_is_not_an_index_reports_it_and_keeps_serving() {
+        // A table that reads, so the refusal is about the index and nothing else.
+        let table = std::env::temp_dir().join("degct-host-open-table.jsonl");
+        std::fs::write(&table, "").expect("an empty table writes");
+
         let answers = served(&[
             asking(Kind::Open(wire::OpenRequest {
                 index: "no-such-file.jsonl".into(),
-                variables: None,
+                variables: table.to_string_lossy().into_owned(),
             })),
             asking(Kind::Version(wire::VersionRequest {})),
         ]);
@@ -497,6 +507,30 @@ mod tests {
             Status::Ok,
             "one bad request does not end the server"
         );
+    }
+
+    /// An open naming no table is refused before the index is even looked at.
+    ///
+    /// The engine answers a variable the plugin could not read with what the database
+    /// declares it starts as, and without a table it would have to answer Unknown - which a
+    /// symbolic search cannot prune on, so both branches of every guard reading such a
+    /// variable stay in the crawl. See `Service::open`.
+    #[test]
+    fn opening_without_naming_a_variable_table_is_refused() {
+        let answers = served(&[
+            asking(Kind::Open(wire::OpenRequest {
+                index: "no-such-file.jsonl".into(),
+                variables: String::new(),
+            })),
+            asking(Kind::Version(wire::VersionRequest {})),
+        ]);
+
+        assert_eq!(
+            status_of(&answers[0]),
+            Status::BadArgument,
+            "an omitted table is the argument being wrong, not the index being unreadable"
+        );
+        assert_eq!(status_of(&answers[1]), Status::Ok);
     }
 
     /// A frame that is not a request at all is answered rather than acted on.

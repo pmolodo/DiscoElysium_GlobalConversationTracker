@@ -611,27 +611,33 @@ fn place(
 /// boolean false for it makes every ordering comparison over a COUNTER undecidable, which
 /// is the bug de-sze.5.4 exists about.
 ///
-/// So where the table has been loaded - `variables.jsonl`, deployed beside the index - a
-/// variable the snapshot could not answer falls back to its declared initial value, which
-/// carries the right KIND as well as the right value. Without the table nothing changes
-/// and it stays Unknown.
+/// So a variable the snapshot could not answer falls back to its declared initial value,
+/// which carries the right KIND as well as the right value. THERE IS ALWAYS A TABLE -
+/// `variables.jsonl`, deployed beside the index - because an engine opened without one is
+/// refused; see [`crate::service::Service::open`].
 pub struct SnapshotWorld {
     snapshot: WorldSnapshot,
-    /// What the database declares its variables to be, where it has been deployed.
-    declared: Option<Arc<VariableTable>>,
+    /// What the database declares its variables to be.
+    declared: Arc<VariableTable>,
 }
 
 impl SnapshotWorld {
-    /// A world that knows only what the snapshot says.
-    pub fn new(snapshot: WorldSnapshot) -> Self {
+    /// A world whose table declares nothing at all.
+    ///
+    /// NAMED FOR WHAT IT LACKS, so that a test about something else says out loud that it
+    /// is measuring a world where no variable has a declared kind - a variable the snapshot
+    /// cannot answer reads as the game's false here, where a declared one would answer with
+    /// what the database says it starts as. The table itself is never absent: see
+    /// [`crate::index::VariableTable::empty`].
+    pub fn declaring_nothing(snapshot: WorldSnapshot) -> Self {
         Self {
             snapshot,
-            declared: None,
+            declared: Arc::new(crate::index::VariableTable::empty()),
         }
     }
 
     /// The same, falling back to the database's declared variables.
-    pub fn declaring(snapshot: WorldSnapshot, declared: Option<Arc<VariableTable>>) -> Self {
+    pub fn declaring(snapshot: WorldSnapshot, declared: Arc<VariableTable>) -> Self {
         Self { snapshot, declared }
     }
 
@@ -765,14 +771,10 @@ impl ILookAheadWorld for SnapshotWorld {
 
         // The plugin could not read it. What the database says it starts as is a better
         // answer than "no idea", and is the only one that gets a counter's KIND right.
-        let Some(table) = self.declared.as_ref() else {
-            // NO TABLE, so there is nothing to be undeclared AGAINST. Without it every
-            // variable looks undeclared, and answering them all false would be a guess
-            // about the whole group rather than a fact about one name.
-            return GuardValue::unknown();
-        };
-
-        match table.initial(name) {
+        //
+        // THERE IS ALWAYS A TABLE, so there is always something to be undeclared AGAINST -
+        // see `Service::open`, which refuses to open without one.
+        match self.declared.initial(name) {
             Some(value) => value.clone(),
             // DECLARED BY NOBODY, so the game reads it as false: `FlagSet` is a call to
             // `LuaHelper.GetVariable`, which returns `bool`, and a name Lua never heard of
@@ -1776,7 +1778,7 @@ pub fn entered_at_of(request: &LookAheadRequest) -> Vec<i32> {
 /// index; see [`SnapshotWorld`] for what it is for and what its absence costs.
 pub fn answer(
     index: &Index,
-    declared: Option<Arc<VariableTable>>,
+    declared: Arc<VariableTable>,
     facts: Option<&crate::index::facts::FactStore>,
     request: &LookAheadRequest,
 ) -> LookAheadResponse {
@@ -3107,7 +3109,8 @@ mod tests {
             request,
             DataAnswer::of_names(vec!["ultraliberal".to_string()]),
         );
-        let fitting = crate::graph::Fitting::read(&graph, &SnapshotWorld::new(snapshot));
+        let fitting =
+            crate::graph::Fitting::read(&graph, &SnapshotWorld::declaring_nothing(snapshot));
         assert!(fitting.fixed.contains("ultraliberal"));
 
         graph.fit(&fitting);
@@ -3256,7 +3259,7 @@ mod tests {
                     value: mode.to_string(),
                 }),
             );
-            SnapshotWorld::new(snapshot)
+            SnapshotWorld::declaring_nothing(snapshot)
                 .query("IsHardcoreModeActive", &[])
                 .boolean()
         };
@@ -3293,7 +3296,7 @@ mod tests {
                 request.clone(),
                 DataAnswer::of_value(WireValue::Number { value: damage }),
             );
-            SnapshotWorld::new(snapshot)
+            SnapshotWorld::declaring_nothing(snapshot)
                 .query("HasVolitionDamage", &[])
                 .boolean()
         };
@@ -3384,7 +3387,7 @@ mod tests {
         world
             .queries
             .insert(key.clone(), WireValue::Bool { value: true });
-        let world = SnapshotWorld::new(world);
+        let world = SnapshotWorld::declaring_nothing(world);
 
         let answer = world.query(
             "UnportedQuery",
@@ -3461,7 +3464,7 @@ mod tests {
                 };
                 snapshot.data.insert(request.clone(), answer);
             }
-            SnapshotWorld::new(snapshot)
+            SnapshotWorld::declaring_nothing(snapshot)
         };
         let tie = [GuardValue::from_text("neck_tie".to_string())];
 
@@ -3484,7 +3487,7 @@ mod tests {
     /// way - `try_as_number` gives nothing for a boolean. Only a number answers it.
     #[test]
     fn a_variable_the_game_could_not_read_falls_back_to_what_the_database_declares() {
-        let mut table = VariableTable::default();
+        let mut table = VariableTable::empty();
         table.add(&crate::index::VariableRecord {
             name: "jam.lorrymans_questioned".to_string(),
             declared: "Number".to_string(),
@@ -3507,7 +3510,7 @@ mod tests {
             WireValue::Number { value: 4.0 },
         );
 
-        let world = SnapshotWorld::declaring(snapshot, Some(Arc::new(table)));
+        let world = SnapshotWorld::declaring(snapshot, Arc::new(table));
 
         assert_eq!(
             read(&world, "jam.lorrymans_questioned").try_as_number(),
@@ -3534,7 +3537,7 @@ mod tests {
     /// 1467:104.
     #[test]
     fn a_variable_nothing_declares_reads_false_as_the_game_reads_it() {
-        let mut table = VariableTable::default();
+        let mut table = VariableTable::empty();
         table.add(&crate::index::VariableRecord {
             name: "whirling.pinball_asked_about_the_goats".to_string(),
             declared: "Boolean".to_string(),
@@ -3542,7 +3545,7 @@ mod tests {
         });
         let table = Arc::new(table);
 
-        let world = SnapshotWorld::declaring(WorldSnapshot::default(), Some(table.clone()));
+        let world = SnapshotWorld::declaring(WorldSnapshot::default(), table.clone());
         let undefined = read(&world, "undefined.pinball_asked_about_the_goats");
         assert_eq!(
             undefined.kind(),
@@ -3551,21 +3554,11 @@ mod tests {
         );
         assert!(!undefined.boolean());
 
-        // WITHOUT THE TABLE IT STAYS UNKNOWN, and that is the point of the distinction:
-        // nothing can be called undeclared when there is nothing to be undeclared against.
-        // Answering false here would turn a missing table into a claim about every variable
-        // in the group rather than a fact about one name.
-        let bare = SnapshotWorld::new(WorldSnapshot::default());
-        assert_eq!(
-            read(&bare, "undefined.pinball_asked_about_the_goats").kind(),
-            GuardValueKind::Unknown,
-        );
-
         // AND A CHECK'S FAILURE SLOT IS UNDECLARED ON PURPOSE - ours, not the database's -
         // so it reads false by the same rule and says nothing about it. See
         // `undeclared_variable_warning`.
         let failed = format!("church.soona_pale_wc{}", crate::index::FAILED_FLAG_SUFFIX);
-        let world = SnapshotWorld::declaring(WorldSnapshot::default(), Some(table));
+        let world = SnapshotWorld::declaring(WorldSnapshot::default(), table);
         let slot = read(&world, &failed);
         assert_eq!(slot.kind(), GuardValueKind::Boolean);
         assert!(!slot.boolean());
@@ -3574,7 +3567,7 @@ mod tests {
     /// A declared counter nobody wrote answers as a NUMBER, so an ordering guard decides.
     #[test]
     fn a_declared_counter_answers_as_a_number_rather_than_undecidably() {
-        let mut table = VariableTable::default();
+        let mut table = VariableTable::empty();
         table.add(&crate::index::VariableRecord {
             name: "pier.reporting_counter".to_string(),
             declared: "Number".to_string(),
@@ -3583,18 +3576,22 @@ mod tests {
 
         // Nothing about it in the snapshot at all, which is what a group whose variable
         // the plugin never saw looks like.
-        let world = SnapshotWorld::declaring(WorldSnapshot::default(), Some(Arc::new(table)));
+        let world = SnapshotWorld::declaring(WorldSnapshot::default(), Arc::new(table));
         assert_eq!(
             read(&world, "pier.reporting_counter").try_as_number(),
             Some(0.0)
         );
 
-        // And without the table it is Unknown, which is what it was before.
-        let bare = SnapshotWorld::new(WorldSnapshot::default());
+        // AND THE DECLARATION IS WHAT DOES IT: against a table that declares nothing the
+        // same name reads as the game's false - correct for the many variables that are
+        // flags, and the whole of the bug where the one being compared is a counter, since
+        // an ordering guard over a boolean decides nothing.
+        let bare = SnapshotWorld::declaring_nothing(WorldSnapshot::default());
         assert_eq!(
             read(&bare, "pier.reporting_counter").kind(),
-            GuardValueKind::Unknown
+            GuardValueKind::Boolean
         );
+        assert_eq!(read(&bare, "pier.reporting_counter").try_as_number(), None);
     }
 
     /// A positional answer lands on the name the engine asked under.
@@ -3618,7 +3615,7 @@ mod tests {
             .resolve(&questions)
             .expect("the lists are the same length");
 
-        let world = SnapshotWorld::new(snapshot);
+        let world = SnapshotWorld::declaring_nothing(snapshot);
         assert_eq!(read(&world, "a.first").try_as_number(), Some(4.0));
         assert!(read(&world, "b.second").boolean());
         assert!(world.query("UnportedQuery", &[]).boolean());
@@ -3644,7 +3641,7 @@ mod tests {
             .expect("the lists are the same length");
 
         assert_eq!(
-            read(&SnapshotWorld::new(snapshot), "a.first").try_as_number(),
+            read(&SnapshotWorld::declaring_nothing(snapshot), "a.first").try_as_number(),
             Some(9.0),
         );
     }
@@ -3675,15 +3672,16 @@ mod tests {
         );
     }
 
-    /// Anything unanswered reads Unknown, which is the permissive direction.
+    /// An unanswered question reads Unknown, which is the permissive direction.
+    ///
+    /// A VARIABLE IS NOT ONE OF THEM, and the difference is who can answer. Nobody can say
+    /// what a query about the world would have returned, so Unknown is the only honest
+    /// answer - where a variable nothing wrote has a value the game will produce on demand,
+    /// and the table says what it is.
     #[test]
     fn an_unanswered_question_is_unknown_rather_than_false() {
-        let world = SnapshotWorld::new(WorldSnapshot::default());
+        let world = SnapshotWorld::declaring_nothing(WorldSnapshot::default());
 
-        assert_eq!(
-            read(&world, "never.mentioned").kind(),
-            GuardValueKind::Unknown
-        );
         assert_eq!(
             world.query("IsKimHere", &[]).kind(),
             GuardValueKind::Unknown
@@ -3697,7 +3695,7 @@ mod tests {
     /// All three check outcomes come across, and the third one is silence.
     #[test]
     fn a_check_answer_carries_all_three_outcomes() {
-        let world = SnapshotWorld::new(WorldSnapshot {
+        let world = SnapshotWorld::declaring_nothing(WorldSnapshot {
             checks_pass: NodeSet::from_iter([NodeRef {
                 conversation: 1,
                 entry: 1,
@@ -3722,7 +3720,7 @@ mod tests {
 
     #[test]
     fn seen_entries_are_carried_across() {
-        let world = SnapshotWorld::new(WorldSnapshot {
+        let world = SnapshotWorld::declaring_nothing(WorldSnapshot {
             seen: NodeSet::from_iter([NodeRef {
                 conversation: 7,
                 entry: 3,

@@ -109,7 +109,8 @@ fn the_host_answers_what_the_service_answers() {
     let Some(path) = common::conversation_index() else {
         return;
     };
-    let here = Service::open(&path, None).expect("the index reads in this process");
+    let here =
+        Service::open(&path, &common::declared_path()).expect("the index reads in this process");
     let mut host = Host::spawn();
 
     let version = host.ask(Kind::Version(wire::VersionRequest {}));
@@ -122,7 +123,7 @@ fn the_host_answers_what_the_service_answers() {
 
     let opened = host.ask(Kind::Open(wire::OpenRequest {
         index: path.to_string_lossy().into_owned(),
-        variables: None,
+        variables: common::declared_path().to_string_lossy().into_owned(),
     }));
     assert_eq!(
         status_of(&opened),
@@ -214,12 +215,13 @@ fn a_look_ahead_crosses_and_comes_back_the_same() {
     let Some(path) = common::conversation_index() else {
         return;
     };
-    let here = Service::open(&path, None).expect("the index reads in this process");
+    let here =
+        Service::open(&path, &common::declared_path()).expect("the index reads in this process");
     let mut host = Host::spawn();
 
     let opened = host.ask(Kind::Open(wire::OpenRequest {
         index: path.to_string_lossy().into_owned(),
-        variables: None,
+        variables: common::declared_path().to_string_lossy().into_owned(),
     }));
     assert_eq!(status_of(&opened), Status::Ok);
 
@@ -276,7 +278,7 @@ fn a_refusal_crosses_as_a_status_and_leaves_the_host_serving() {
 
     let missing = host.ask(Kind::Open(wire::OpenRequest {
         index: "no-such-file.jsonl".into(),
-        variables: None,
+        variables: common::declared_path().to_string_lossy().into_owned(),
     }));
     assert_eq!(status_of(&missing), Status::IndexUnreadable);
 
@@ -285,7 +287,7 @@ fn a_refusal_crosses_as_a_status_and_leaves_the_host_serving() {
     };
     let opened = host.ask(Kind::Open(wire::OpenRequest {
         index: path.to_string_lossy().into_owned(),
-        variables: None,
+        variables: common::declared_path().to_string_lossy().into_owned(),
     }));
     assert_eq!(
         status_of(&opened),

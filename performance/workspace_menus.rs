@@ -129,8 +129,12 @@ fn main() {
         eprintln!("no shipped index; skipping.");
         return;
     };
+    let Some(variables) = common::variable_table_path() else {
+        eprintln!("no variable table; skipping.");
+        return;
+    };
     let index = read_index(&path).expect("the shipped index reads");
-    let service = Service::open(&path, None).expect("the engine opens");
+    let service = Service::open(&path, &variables).expect("the engine opens");
 
     let rounds = asked.rounds;
     let starts_wanted = asked.starts.starts;

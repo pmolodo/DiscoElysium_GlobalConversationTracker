@@ -49,7 +49,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
             }
 
             int id;
-            using (LookAheadLibrary engine = LookAheadLibrary.Open(index))
+            using (LookAheadLibrary engine = LookAheadLibrary.Open(index, NativeLookAhead.Declared))
             {
                 id = engine.ProcessId;
                 Assert.True(id > 0, "an opened engine should name its process");
@@ -81,7 +81,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 return;
             }
 
-            LookAheadLibrary engine = LookAheadLibrary.Open(index);
+            LookAheadLibrary engine = LookAheadLibrary.Open(index, NativeLookAhead.Declared);
             engine.Dispose();
 
             InvalidOperationException refused = Assert.Throws<InvalidOperationException>(
@@ -104,7 +104,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 return;
             }
 
-            LookAheadLibrary engine = LookAheadLibrary.Open(index);
+            LookAheadLibrary engine = LookAheadLibrary.Open(index, NativeLookAhead.Declared);
             engine.Dispose();
             engine.Dispose();
         }
@@ -132,7 +132,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 return;
             }
 
-            using LookAheadLibrary engine = LookAheadLibrary.Open(index);
+            using LookAheadLibrary engine = LookAheadLibrary.Open(index, NativeLookAhead.Declared);
             using (Process child = Process.GetProcessById(engine.ProcessId))
             {
                 child.Kill();
@@ -192,7 +192,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
             LookAheadLibrary.DeadlineMs = PatienceMs;
             try
             {
-                using LookAheadLibrary engine = LookAheadLibrary.Open(index);
+                using LookAheadLibrary engine = LookAheadLibrary.Open(index, NativeLookAhead.Declared);
                 using (Process child = Process.GetProcessById(engine.ProcessId))
                 {
                     child.Kill();

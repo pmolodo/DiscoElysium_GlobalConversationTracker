@@ -191,7 +191,7 @@ impl Workspace {
         group: Vec<i32>,
         entered_at: Vec<i32>,
         world: WorldSnapshot,
-        declared: Option<Arc<VariableTable>>,
+        declared: Arc<VariableTable>,
         budget: DiagramBudget,
     ) -> Option<Self> {
         let questions = Arc::new(crate::bridge::questions_of(&graph, group.clone()));
@@ -261,7 +261,7 @@ impl Workspace {
         group: &[i32],
         entered_at: &[i32],
         world: &WorldSnapshot,
-        declared: Option<Arc<VariableTable>>,
+        declared: Arc<VariableTable>,
         budget: DiagramBudget,
     ) -> bool {
         self.key.group == group
@@ -337,7 +337,7 @@ struct Opening {
     entered_at: Vec<i32>,
     /// The world the layout is sized from, and nothing else - every request brings its own.
     layout_world: WorldSnapshot,
-    declared: Option<Arc<VariableTable>>,
+    declared: Arc<VariableTable>,
     budget: DiagramBudget,
 }
 
@@ -442,7 +442,7 @@ fn fitting_of(
     graph: &LookAheadGraph,
     questions: &Questions,
     world: &WorldSnapshot,
-    declared: Option<Arc<VariableTable>>,
+    declared: Arc<VariableTable>,
 ) -> Fitting {
     if !graph.needs_fitting() {
         return Fitting::default();
@@ -462,7 +462,7 @@ fn fitting_of(
 fn ceiling_of(
     graph: &LookAheadGraph,
     world: &WorldSnapshot,
-    declared: Option<Arc<VariableTable>>,
+    declared: Arc<VariableTable>,
 ) -> Option<u32> {
     let world = SnapshotWorld::declaring(world.clone(), declared);
     DataLayout::money_ceiling(graph, world.money())

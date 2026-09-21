@@ -200,7 +200,7 @@ fn main() {
                 day_counter: 1,
                 ..Default::default()
             },
-            None,
+            common::declared(),
         );
         let layout = DataLayout::for_group(&graph, &held_money, COUNTER_CAP);
         let Some(vars) = DataVars::try_new(&layout, &symbols, budget) else {
@@ -235,7 +235,7 @@ fn main() {
                     seen: seen.iter().copied().collect(),
                     ..Default::default()
                 },
-                None,
+                common::declared(),
             );
 
             // REBUILT PER ROUND, which is what a workspace would do: one to five

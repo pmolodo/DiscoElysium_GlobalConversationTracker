@@ -205,7 +205,7 @@ fn report(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budg
             day_counter: 1,
             ..Default::default()
         },
-        None,
+        common::declared(),
     );
     let layout = DataLayout::for_group(graph, &world, COUNTER_CAP);
     let Some(vars) = DataVars::try_new(&layout, &symbols, budget) else {

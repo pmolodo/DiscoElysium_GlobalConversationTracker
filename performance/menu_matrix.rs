@@ -731,7 +731,7 @@ fn main() {
 /// THE SAME WORLD `menu` MEASURES IN, wrapped the same way, because it has to be: a graph fitted
 /// to one world and measured in another describes neither.
 fn fitted_to(graph: &mut LookAheadGraph, world: &WorldSnapshot) {
-    let world = SnapshotWorld::declaring(world.clone(), None);
+    let world = SnapshotWorld::declaring(world.clone(), common::declared());
     graph.fit(&lookahead_engine::graph::Fitting::read(graph, &world));
 }
 
@@ -768,7 +768,7 @@ where
         // the seen-any-game set and the profile's to say.
         //
         // THE SAME WORLD `main` FITTED THE GRAPH TO, which it must be - see `fitted_to`.
-        let world = SnapshotWorld::declaring(snapshot.clone(), None);
+        let world = SnapshotWorld::declaring(snapshot.clone(), common::declared());
         let layout = DataLayout::for_group(graph, &world, COUNTER_CAP);
         // WHAT THE LAYOUT ALONE COST, so that "the cost is in building the layout" is a number
         // rather than the only unmeasured thing left in setup. See de-mau4.

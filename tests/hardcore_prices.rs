@@ -107,14 +107,24 @@ fn best_of(response: &LookAheadResponse, save: &str) -> i32 {
 #[test]
 fn magnesium_is_affordable_in_normal_mode() {
     let Some((_, index)) = shipped() else { return };
-    let response = answer(&index, None, None, &request_in(&index, NORMAL_SAVE));
+    let response = answer(
+        &index,
+        common::declared(),
+        None,
+        &request_in(&index, NORMAL_SAVE),
+    );
     assert_eq!(best_of(&response, NORMAL_SAVE), UNSEEN_ANY_GAME);
 }
 
 #[test]
 fn magnesium_costs_double_in_hardcore_mode() {
     let Some((_, index)) = shipped() else { return };
-    let response = answer(&index, None, None, &request_in(&index, HARDCORE_SAVE));
+    let response = answer(
+        &index,
+        common::declared(),
+        None,
+        &request_in(&index, HARDCORE_SAVE),
+    );
     assert!(
         best_of(&response, HARDCORE_SAVE) < UNSEEN_ANY_GAME,
         "reached the magnesium at 180 with {MONEY}"
@@ -168,7 +178,7 @@ fn a_kept_workspace_is_repriced_when_the_mode_changes() {
     let Some((path, index)) = shipped() else {
         return;
     };
-    let service = Service::open(&path, None).expect("the service opens");
+    let service = Service::open(&path, &common::declared_path()).expect("the service opens");
 
     for (save, reaches) in [
         (NORMAL_SAVE, true),

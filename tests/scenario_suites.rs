@@ -136,13 +136,13 @@ impl Staged {
     ) -> Result<Walkthrough, String> {
         let mut snapshot = self.request.world.clone();
         snapshot.resolve(&self.questions)?;
-        // WITH THE DECLARED TABLE, as the game has it. Without one, a variable the save does
-        // not hold answers UNKNOWN, which is permissive - and the game answers it the way
-        // `SnapshotWorld::get_variable` does with a table: the declared initial, or false for
-        // a name nothing declares. A walk taken without it goes where the game will not.
+        // WITH THE DECLARED TABLE, as the game has it: a variable the save does not hold
+        // answers with the initial the database declares, or false for a name nothing
+        // declares. A walk taken against a table declaring nothing gets the second of those
+        // for every variable, and goes where the game will not.
         walk_inputs(
             &self.graph,
-            &SnapshotWorld::declaring(snapshot, common::variable_table()),
+            &SnapshotWorld::declaring(snapshot, common::declared()),
             conversation,
             inputs,
         )
@@ -521,7 +521,7 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
                 }
 
                 let request = staged.asking(&walk);
-                let response = answer(&index, None, None, &request);
+                let response = answer(&index, common::declared(), None, &request);
                 assert!(
                     response.error.is_none(),
                     "{}/{}: {:?}",
@@ -740,7 +740,7 @@ fn every_offline_claim_holds_over_the_whole_group() {
                         starts: about.clone(),
                         ..staged.request.clone()
                     };
-                    let response = answer(&index, None, None, &request);
+                    let response = answer(&index, common::declared(), None, &request);
                     assert!(
                         response.error.is_none(),
                         "{}/{}: {:?}",

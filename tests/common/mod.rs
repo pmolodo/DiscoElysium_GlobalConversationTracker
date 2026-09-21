@@ -246,12 +246,22 @@ pub fn actors() -> Option<PathBuf> {
     derived("actors.jsonl", &ACTORS_COMMAND, "actors.jsonl")
 }
 
+/// Where the database's variable table is, regenerated if absent.
+///
+/// `None` where the game data cannot be had at all, which is what skips a fixture that
+/// needs it rather than running it against a table declaring nothing.
+pub fn variable_table_path() -> Option<PathBuf> {
+    derived(
+        lookahead_engine::index::VariableTable::FILE_NAME,
+        &VARIABLES_COMMAND,
+        lookahead_engine::index::VariableTable::FILE_NAME,
+    )
+}
+
 /// The database's variable table, read once and shared.
 ///
 /// Once, because every world built in a run wants the same 10,645 entries and reading
-/// them per fixture would be the measurement measuring its own setup. `None` where the
-/// game data cannot be had, in which case a world falls back to the old guess - which is
-/// what it had always done, so nothing gets worse where the table is missing.
+/// them per fixture would be the measurement measuring its own setup.
 pub fn variable_table() -> Option<std::sync::Arc<lookahead_engine::index::VariableTable>> {
     use std::sync::OnceLock;
     static TABLE: OnceLock<Option<std::sync::Arc<lookahead_engine::index::VariableTable>>> =
@@ -259,16 +269,36 @@ pub fn variable_table() -> Option<std::sync::Arc<lookahead_engine::index::Variab
 
     TABLE
         .get_or_init(|| {
-            let path = derived(
-                lookahead_engine::index::VariableTable::FILE_NAME,
-                &VARIABLES_COMMAND,
-                lookahead_engine::index::VariableTable::FILE_NAME,
-            )?;
-            lookahead_engine::index::VariableTable::read(&path)
+            lookahead_engine::index::VariableTable::read(&variable_table_path()?)
                 .ok()
                 .map(std::sync::Arc::new)
         })
         .clone()
+}
+
+/// The same table, for a caller that has already established the game data is there.
+///
+/// Panics rather than declaring nothing: a crawl against an empty table answers every
+/// variable the world does not hold as false, which is not what the game does, so a suite
+/// that ran anyway would be checking the wrong engine quietly. A caller that can legitimately
+/// carry on without the data checks [`variable_table_path`] and skips.
+pub fn declared() -> std::sync::Arc<lookahead_engine::index::VariableTable> {
+    variable_table().expect("the database's variable table reads")
+}
+
+/// Where that table is, for a caller that opens an engine rather than building a world.
+pub fn declared_path() -> PathBuf {
+    variable_table_path().expect("the database's variable table is there")
+}
+
+/// A table declaring nothing, for a world built to answer one mechanism's questions.
+///
+/// SAID OUT LOUD rather than defaulted to, which is the whole point of there being no
+/// default table: a fixture that names the four variables its subject reads leaves every
+/// other one to the table, and the database's initials would decide guards the fixture
+/// never meant to arrange. Declaring nothing keeps those guards where the fixture put them.
+pub fn nothing_declared() -> std::sync::Arc<lookahead_engine::index::VariableTable> {
+    std::sync::Arc::new(lookahead_engine::index::VariableTable::empty())
 }
 
 /// A world shaped like a real save, for measuring the guard corpus against.
@@ -731,7 +761,7 @@ pub fn compiled_guards(
     snapshot
         .resolve(&questions_of(&graph, group))
         .expect("the world answers the group's questions");
-    let world = SnapshotWorld::new(snapshot);
+    let world = SnapshotWorld::declaring_nothing(snapshot);
     graph.fit(&lookahead_engine::graph::Fitting::read(&graph, &world));
 
     let symbols = graph.symbols().clone();

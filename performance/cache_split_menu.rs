@@ -258,7 +258,7 @@ where
                 day_counter: 1,
                 ..Default::default()
             },
-            None,
+            common::declared(),
         );
         let seen_state = &lookahead_engine::world::seen_states(&world, seen_any_game);
         let layout = DataLayout::for_group(graph, &world, COUNTER_CAP);

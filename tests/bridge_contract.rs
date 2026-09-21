@@ -76,7 +76,7 @@ fn the_engine_names_questions_the_snapshot_can_answer() {
                 .queries
                 .insert(key.clone(), WireValue::Bool { value: true });
         }
-        let filled = SnapshotWorld::new(world);
+        let filled = SnapshotWorld::declaring_nothing(world);
 
         // Asked through the graph's own guards rather than by re-rendering the keys here,
         // which would just be this test agreeing with itself.
@@ -214,14 +214,14 @@ fn an_answer_survives_the_crossing() {
         // Through JSON, exactly as it would travel.
         let text = serde_json::to_string(&request).expect("it serialises");
         let parsed: LookAheadRequest = serde_json::from_str(&text).expect("it comes back");
-        let crossed = answer(&index, None, None, &parsed);
+        let crossed = answer(&index, common::declared(), None, &parsed);
 
         // And the same request WITHOUT the crossing, which is what this compares against.
         //
         // THE SAME ENGINE ON BOTH SIDES, deliberately. What is being tested is whether a
         // round trip through JSON changes an answer, so anything else that differed between
         // the two sides would be measuring something other than the crossing.
-        let direct = answer(&index, None, None, &request);
+        let direct = answer(&index, common::declared(), None, &request);
 
         assert!(crossed.error.is_none(), "{:?}", crossed.error);
         assert!(direct.error.is_none(), "{:?}", direct.error);
@@ -305,7 +305,7 @@ fn a_menu_that_runs_out_of_its_wall_still_answers_every_option() {
         },
     };
 
-    let response = answer(&index, None, None, &request);
+    let response = answer(&index, common::declared(), None, &request);
     assert!(response.error.is_none(), "{:?}", response.error);
 
     for start in &starts {

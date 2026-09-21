@@ -196,12 +196,7 @@ fn every_request_kind_survives_the_wire() {
         wire::request::Kind::Version(wire::VersionRequest {}),
         wire::request::Kind::Open(wire::OpenRequest {
             index: "index.jsonl".to_string(),
-            variables: Some("variables.jsonl".to_string()),
-        }),
-        // The optional half left out, which is the shape a caller with no table sends.
-        wire::request::Kind::Open(wire::OpenRequest {
-            index: "index.jsonl".to_string(),
-            variables: None,
+            variables: "variables.jsonl".to_string(),
         }),
         wire::request::Kind::ConversationCount(wire::ConversationCountRequest {}),
         wire::request::Kind::VariableCount(wire::VariableCountRequest {}),

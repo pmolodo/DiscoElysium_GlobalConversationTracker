@@ -69,7 +69,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
             }
 
             InvalidOperationException refused = Assert.Throws<InvalidOperationException>(
-                () => LookAheadLibrary.Open("no-such-index.jsonl"));
+                () => LookAheadLibrary.Open("no-such-index.jsonl", NativeLookAhead.Declared));
 
             Assert.Contains(nameof(Status.IndexUnreadable), refused.Message);
         }
@@ -84,7 +84,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 return;
             }
 
-            using LookAheadLibrary engine = LookAheadLibrary.Open(index);
+            using LookAheadLibrary engine = LookAheadLibrary.Open(index, NativeLookAhead.Declared);
 
             int conversations = engine.ConversationCount;
             _output.WriteLine($"{conversations} conversations in the index");
@@ -112,7 +112,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 return;
             }
 
-            using LookAheadLibrary engine = LookAheadLibrary.Open(index);
+            using LookAheadLibrary engine = LookAheadLibrary.Open(index, NativeLookAhead.Declared);
 
             // Conversation 631's group is the one every measurement uses, so its shape is
             // known independently of this bridge: six conversations and 4,514 entries.
@@ -146,7 +146,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 return;
             }
 
-            using LookAheadLibrary engine = LookAheadLibrary.Open(index);
+            using LookAheadLibrary engine = LookAheadLibrary.Open(index, NativeLookAhead.Declared);
 
             var world = new WorldSnapshot { DayMinutes = 720, DayCounter = 1 };
             var request = new LookAheadRequest(1123, world);
@@ -178,7 +178,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 return;
             }
 
-            LookAheadLibrary engine = LookAheadLibrary.Open(index);
+            LookAheadLibrary engine = LookAheadLibrary.Open(index, NativeLookAhead.Declared);
             engine.Dispose();
             engine.Dispose();
         }

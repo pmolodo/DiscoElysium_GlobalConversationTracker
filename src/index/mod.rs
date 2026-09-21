@@ -343,20 +343,34 @@ pub struct VariableRecord {
 /// THE INITIAL VALUE MATTERS TOO, and is not always zero: `apt.smoker_second_departure`
 /// starts at 9999 and `apt.apt_for_rent_door_closed_counter` at -1. A fixture that
 /// assumed zero was wrong about those before it was wrong about anything else.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct VariableTable {
     initial: HashMap<String, crate::core::guard_value::GuardValue>,
     numbers: usize,
 }
 
 impl VariableTable {
+    /// A table declaring nothing at all, which a caller has to ask for BY NAME.
+    ///
+    /// THERE IS NO DEFAULT TABLE, deliberately. A table nobody asked for is how a crawl ends up
+    /// answering Unknown for every variable the plugin could not read - see
+    /// [`crate::bridge::SnapshotWorld`], where a declared initial value is what stands in - so
+    /// the type refuses to appear by itself. A test or a fixture that really means "nothing
+    /// declared yet" says so here.
+    pub fn empty() -> Self {
+        Self {
+            initial: Default::default(),
+            numbers: 0,
+        }
+    }
+
     /// What the extractor calls the file.
     pub const FILE_NAME: &'static str = "variables.jsonl";
 
     /// Reads `variables.jsonl`, as `dotnet run --project tools/DialogueExtract -- variables`
     /// writes it.
     pub fn read(path: &Path) -> anyhow::Result<Self> {
-        let mut table = Self::default();
+        let mut table = Self::empty();
         for line in BufReader::new(File::open(path)?).lines() {
             let line = line?;
             if line.trim().is_empty() {

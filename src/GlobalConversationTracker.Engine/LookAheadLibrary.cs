@@ -100,29 +100,35 @@ namespace GlobalConversationTracker.Engine
         /// </summary>
         /// <param name="indexPath">The conversation index shipped with the mod.</param>
         /// <param name="variablesPath">
-        /// The database's variable table, shipped beside it, or null. Optional and
-        /// non-fatal: without it a dialogue variable the game would not answer reads
-        /// Unknown, where with it the value the database declares is used instead - which
-        /// is what an unwritten variable actually is, and the only answer that gets a
-        /// counter's kind right. <see cref="VariableCount"/> says whether one was read.
+        /// The database's variable table, shipped beside the index. REQUIRED: without it a
+        /// dialogue variable the game would not answer reads Unknown, where with it the value
+        /// the database declares is used instead - which is what an unwritten variable
+        /// actually is, and the only answer that gets a counter's kind right. Unknown is also
+        /// what a symbolic search cannot prune on, so a crawl without a table carries both
+        /// branches of every guard reading such a variable.
         /// </param>
-        /// <exception cref="ArgumentNullException">The index path is null.</exception>
+        /// <exception cref="ArgumentNullException">Either path is null.</exception>
         /// <exception cref="InvalidOperationException">The engine refused to open it.</exception>
-        public static LookAheadLibrary Open(string indexPath, string? variablesPath = null)
+        public static LookAheadLibrary Open(string indexPath, string variablesPath)
         {
             if (indexPath == null)
             {
                 throw new ArgumentNullException(nameof(indexPath));
             }
 
+            if (variablesPath == null)
+            {
+                throw new ArgumentNullException(nameof(variablesPath));
+            }
+
             EngineHost host = EngineHost.Start();
             try
             {
-                var open = new Wire.OpenRequest { Index = indexPath };
-                if (variablesPath != null)
+                var open = new Wire.OpenRequest
                 {
-                    open.Variables = variablesPath;
-                }
+                    Index = indexPath,
+                    Variables = variablesPath,
+                };
 
                 Status status = host.Ask(new Wire.Request { Open = open }).Status;
                 if (status != Status.Ok)

@@ -74,7 +74,7 @@ fn scene_answers(save: &str, asked: &Questions) -> [WireValue; 3] {
     snapshot
         .resolve(asked)
         .expect("the fixture answers the list it was asked");
-    let exterior = SnapshotWorld::new(snapshot).query("IsExterior", &[]);
+    let exterior = SnapshotWorld::declaring_nothing(snapshot).query("IsExterior", &[]);
     let outdoors = if exterior.kind() == GuardValueKind::Boolean {
         WireValue::Bool {
             value: exterior.boolean(),
@@ -146,7 +146,7 @@ fn the_engine_asks_about_the_scene_where_the_guards_do() {
     let Some(path) = common::conversation_index() else {
         return;
     };
-    let engine = Service::open(&path, None).expect("the index reads");
+    let engine = Service::open(&path, &common::declared_path()).expect("the index reads");
 
     let questions = engine.questions(ASKS_ALL_THREE).expect("the group builds");
 
@@ -180,7 +180,7 @@ fn every_conversation_that_guards_on_the_scene_asks_about_it() {
     let Some(path) = common::conversation_index() else {
         return;
     };
-    let engine = Service::open(&path, None).expect("the index reads");
+    let engine = Service::open(&path, &common::declared_path()).expect("the index reads");
 
     for conversation in GUARDED_CONVERSATIONS {
         let questions = engine
@@ -384,7 +384,7 @@ fn no_committed_save_leaves_a_scene_query_unanswered() {
     let Some(path) = common::conversation_index() else {
         return;
     };
-    let engine = Service::open(&path, None).expect("the index reads");
+    let engine = Service::open(&path, &common::declared_path()).expect("the index reads");
     let asked = engine.questions(ASKS_ALL_THREE).expect("the group builds");
 
     for save in common::fixtures::committed_saves() {
@@ -404,7 +404,7 @@ fn the_scene_is_answered_as_something_a_guard_can_compare() {
     let Some(path) = common::conversation_index() else {
         return;
     };
-    let engine = Service::open(&path, None).expect("the index reads");
+    let engine = Service::open(&path, &common::declared_path()).expect("the index reads");
     let asked = engine.questions(ASKS_ALL_THREE).expect("the group builds");
 
     let says = |answer: &WireValue| match answer {

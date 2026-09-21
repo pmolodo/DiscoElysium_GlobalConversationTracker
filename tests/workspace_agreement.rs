@@ -50,7 +50,8 @@ fn a_kept_manager_answers_what_a_fresh_one_answers() {
         return;
     };
     let index = read_index(&path).expect("the index reads");
-    let service = Service::open(&path, None).expect("the engine opens over the index");
+    let service =
+        Service::open(&path, &common::declared_path()).expect("the engine opens over the index");
 
     let mut compared = 0;
     for conversation in GROUPS {
@@ -102,7 +103,7 @@ fn a_kept_manager_answers_what_a_fresh_one_answers() {
             };
 
             let through_workspace = service.answer_request(request.clone());
-            let direct = answer(&index, None, None, &request);
+            let direct = answer(&index, common::declared(), None, &request);
 
             assert_eq!(
                 through_workspace.error, direct.error,
@@ -149,7 +150,8 @@ fn a_world_answering_the_wrong_questions_is_refused_through_a_workspace() {
         return;
     };
     let index = read_index(&path).expect("the index reads");
-    let service = Service::open(&path, None).expect("the engine opens over the index");
+    let service =
+        Service::open(&path, &common::declared_path()).expect("the engine opens over the index");
 
     let mut refused = 0;
     for conversation in GROUPS {
@@ -187,7 +189,7 @@ fn a_world_answering_the_wrong_questions_is_refused_through_a_workspace() {
         };
 
         let through_workspace = service.answer_request(request.clone());
-        let direct = answer(&index, None, None, &request);
+        let direct = answer(&index, common::declared(), None, &request);
 
         let reason = through_workspace
             .error
@@ -230,7 +232,8 @@ fn a_workspace_replaced_by_another_group_still_answers_the_first() {
         return;
     };
     let index = read_index(&path).expect("the index reads");
-    let service = Service::open(&path, None).expect("the engine opens over the index");
+    let service =
+        Service::open(&path, &common::declared_path()).expect("the engine opens over the index");
 
     let requests: Vec<LookAheadRequest> = GROUPS
         .iter()

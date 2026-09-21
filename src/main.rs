@@ -44,6 +44,16 @@ struct Args {
     #[arg(long, default_value = "0")]
     menu_time_budget_ms: u64,
 
+    /// Path to the database's variable table, as the mod ships beside its index
+    ///
+    /// WITHOUT IT NOTHING IS DECLARED, and a variable the world cannot answer reads as the
+    /// game's false rather than as whatever the database says it starts at - right for the
+    /// many that are flags, wrong for a counter, whose ordering guards then decide nothing.
+    /// Name it to ask the question the mod asks; leave it out to ask about the dialogue
+    /// alone.
+    #[arg(long)]
+    variables: Option<PathBuf>,
+
     /// Collect trace of hottest nodes
     #[arg(long)]
     trace: bool,
@@ -168,6 +178,13 @@ fn main() -> anyhow::Result<()> {
 
     let index = read_index(&args.input)?;
 
+    // NAMED OR EMPTY, never absent: a crawl always has a table to be undeclared against,
+    // and an empty one is the explicit way to say the dialogue is all this run is about.
+    let declared = std::sync::Arc::new(match &args.variables {
+        Some(path) => lookahead_engine::index::VariableTable::read(path)?,
+        None => lookahead_engine::index::VariableTable::empty(),
+    });
+
     // The whole reachable GROUP, not the one conversation. Links cross conversation
     // boundaries, and clipping at the boundary would throw away most of the region a
     // search can actually walk - searching from WHIRLING / LENA INTRO's 511 entries
@@ -238,7 +255,7 @@ fn main() -> anyhow::Result<()> {
             ..Default::default()
         };
 
-        let response = answer(&index, None, None, &request);
+        let response = answer(&index, declared.clone(), None, &request);
         if let Some(error) = response.error {
             anyhow::bail!("the bridge refused the request: {error}");
         }
@@ -297,7 +314,7 @@ fn main() -> anyhow::Result<()> {
 
     let response = answer(
         &index,
-        None,
+        declared,
         None,
         &LookAheadRequest {
             conversation: args.conversation_id,

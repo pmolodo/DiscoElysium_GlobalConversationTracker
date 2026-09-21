@@ -420,12 +420,19 @@ message VersionRequest {}
 // IS the handle, and closing it is closing the process.
 message OpenRequest {
   string index = 1;
-  optional string variables = 2;
+  // The database's variable table. REQUIRED, like the index beside it: an engine without one
+  // answers Unknown for every variable the plugin could not read, and unknown is what a
+  // symbolic search cannot prune on - see `Service::open`.
+  //
+  // NOT `optional`, so nothing can send an open that simply omits it. proto3 has no way to
+  // say required outright, so an unset field arrives as the empty path and the engine refuses
+  // it there; what the wire can do is stop offering absence as a shape.
+  string variables = 2;
 }
 
 // How many conversations the open index holds.
 message ConversationCountRequest {}
-// How many variables the deployed table declares; zero if none was read.
+// How many variables the table the engine was opened with declares.
 message VariableCountRequest {}
 // How many entries one conversation holds.
 message EntryCountRequest {

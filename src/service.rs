@@ -90,13 +90,12 @@ impl TryFrom<i32> for Status {
 /// frame that draws the menu.
 pub struct Service {
     index: Index,
-    /// The database's variable table, where the caller deployed one.
+    /// The database's variable table, which every crawl requires - see [`Self::open`].
     ///
-    /// Optional, and the mod works without it - see [`crate::bridge::SnapshotWorld`]. Its
-    /// own file rather than something read out of the index because it describes VARIABLES
+    /// Its own file rather than something read out of the index because it describes VARIABLES
     /// and the index describes conversations; the extractor writes them separately and the
     /// measurements already read it from there.
-    declared: Option<Arc<VariableTable>>,
+    declared: Arc<VariableTable>,
     /// What the index said it was, or `None` where it had no header.
     header: Option<IndexHeader>,
     /// The live manager for the group most recently asked about, if there is one.
@@ -120,17 +119,24 @@ pub struct Service {
 }
 
 impl Service {
-    /// Opens the engine over a conversation index.
+    /// Opens the engine over a conversation index and the database's variable table.
     ///
-    /// `variables` is the database's variable table, or `None`. A table that will not read
-    /// is not an error - the mod works without it, one variable in seventy-five answering
-    /// less precisely - and [`Self::variable_count`] says which happened.
-    pub fn open(index: &Path, variables: Option<&Path>) -> Result<Self, Status> {
+    /// ## THE TABLE IS REQUIRED, and a missing or unreadable one is [`Status::BadArgument`]
+    ///
+    /// It used to be optional, and the mod worked without it with one variable in
+    /// seventy-five answering less precisely. What that cost is worse than "less precisely":
+    /// a variable the plugin could not read has nothing to be undeclared AGAINST without the
+    /// table, so it answers UNKNOWN - and unknown is what a symbolic search cannot prune on,
+    /// so a crawl carries both branches of every guard reading it. See
+    /// [`crate::bridge::SnapshotWorld::get_variable`] for what the table answers instead.
+    ///
+    /// A DEPLOYMENT MISSING IT NOW REFUSES TO OPEN rather than running less well, which is
+    /// the fail-fast the rest of this engine takes: a half-installed mod folder should say so
+    /// at load rather than answer menus slightly wrongly for a session.
+    pub fn open(index: &Path, variables: &Path) -> Result<Self, Status> {
         // Read before the index, which is the expensive one: a table that will not read
         // costs nothing here and would otherwise be discovered after a 15 MB parse.
-        let declared = variables
-            .and_then(|path| VariableTable::read(path).ok())
-            .map(Arc::new);
+        let declared = Arc::new(VariableTable::read(variables).map_err(|_| Status::BadArgument)?);
 
         // An index whose header names a version this build does not read is refused
         // outright rather than half-understood: it would pass a content check while
@@ -153,7 +159,7 @@ impl Service {
     pub(crate) fn empty() -> Self {
         Self {
             index: Index::new(),
-            declared: None,
+            declared: Arc::new(VariableTable::empty()),
             header: None,
             workspace: Default::default(),
             facts: None,
@@ -165,14 +171,14 @@ impl Service {
         self.index.len() as i32
     }
 
-    /// How many variables the deployed table declares; zero if none was read.
+    /// How many variables the deployed table declares.
     ///
     /// The plugin logs this at load for the same reason it logs the conversation count: a
     /// table that was not deployed, or that would not read, is a mod that still works and
     /// answers less precisely - which is exactly the kind of thing that is never noticed
     /// unless a line says it.
     pub fn variable_count(&self) -> i32 {
-        self.declared.as_ref().map_or(0, |table| table.len()) as i32
+        self.declared.len() as i32
     }
 
     /// How many entries one conversation holds.
@@ -412,10 +418,29 @@ mod tests {
         );
     }
 
+    /// A table that will not read refuses the open, rather than opening without one.
+    ///
+    /// AND IT IS REFUSED BEFORE THE INDEX IS TOUCHED, which is what the order in [`Service::open`]
+    /// is for: the index is a fifteen-megabyte parse and the table is a file that either opens or
+    /// does not.
+    #[test]
+    fn opening_without_a_variable_table_is_refused() {
+        let opened = Service::open(
+            Path::new("no-such-index.jsonl"),
+            Path::new("no-such-table.jsonl"),
+        );
+        assert_eq!(opened.err(), Some(Status::BadArgument));
+    }
+
     #[test]
     fn opening_a_path_that_is_not_an_index_reports_it() {
-        let opened = Service::open(Path::new("no-such-file.jsonl"), None);
+        let table = std::env::temp_dir().join("degct-service-open-table.jsonl");
+        std::fs::write(&table, "").expect("an empty table writes");
+
+        let opened = Service::open(Path::new("no-such-file.jsonl"), &table);
+
         assert!(matches!(opened, Err(Status::IndexUnreadable)));
+        let _ = std::fs::remove_file(&table);
     }
 
     #[test]

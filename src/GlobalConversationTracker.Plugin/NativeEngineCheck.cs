@@ -50,11 +50,13 @@ namespace GlobalConversationTracker
         /// </remarks>
         internal const string IndexFileName = "GlobalConversationTracker.Index.jsonl";
 
-        /// <summary>The variable table, if it was deployed beside the plugin.</summary>
+        /// <summary>The variable table, deployed beside the plugin.</summary>
         /// <remarks>
-        /// Renamed from the extractor's <c>variables.jsonl</c> for the same reason as the
-        /// index, and optional in the same way: without it a variable the game will not
-        /// answer reads Unknown instead of the value the database declares.
+        /// Called this rather than the extractor's <c>variables.jsonl</c> for the same reason
+        /// as the index: only <c>GlobalConversationTracker*</c> is installed. REQUIRED, and
+        /// the engine refuses to open without it - a variable the game will not answer reads
+        /// as what the database declares it starts at, and there is no such answer to give
+        /// without the table.
         /// </remarks>
         internal const string VariablesFileName = "GlobalConversationTracker.Variables.jsonl";
 
@@ -95,14 +97,22 @@ namespace GlobalConversationTracker
                 return;
             }
 
+            string? variables = Deployed(VariablesFileName);
+            if (variables == null)
+            {
+                log.LogWarning(
+                    $"{LogPrefix} no {VariablesFileName} beside the plugin; "
+                    + "the engine will not open without it.");
+                return;
+            }
+
             try
             {
-                using LookAheadLibrary engine = LookAheadLibrary.Open(
-                    index, Deployed(VariablesFileName));
+                using LookAheadLibrary engine = LookAheadLibrary.Open(index, variables);
 
-                // The variable count is reported whether or not there is one, because zero
-                // is the interesting answer: a mod that still works and answers unset
-                // variables less precisely is exactly what goes unnoticed otherwise.
+                // The declared count is worth a line for the same reason the conversation
+                // count is: a table that deployed but would not parse is a number far short
+                // of the database's, and nothing else would say so.
                 log.LogMessage(
                     $"{LogPrefix} index opened, {engine.ConversationCount} conversations, "
                     + $"{engine.VariableCount} declared variables.");

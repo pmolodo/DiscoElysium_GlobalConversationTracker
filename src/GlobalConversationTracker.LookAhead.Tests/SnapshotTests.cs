@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -248,7 +249,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
             }
 
             using LookAheadLibrary engine = LookAheadLibrary.Open(
-                index, NativeLookAhead.Variables);
+                index, NativeLookAhead.Declared);
 
             // Conversation 631's group is the one every measurement uses, so its shape is
             // known independently of this bridge.
@@ -342,7 +343,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
             }
 
             using LookAheadLibrary engine = LookAheadLibrary.Open(
-                index, NativeLookAhead.Variables);
+                index, NativeLookAhead.Declared);
             LookAheadQuestions questions = engine.QuestionsFor(FanConversation);
 
             var world = new WorldSnapshot { DayMinutes = 720, DayCounter = 1 };
@@ -404,7 +405,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 return;
             }
 
-            using LookAheadLibrary engine = LookAheadLibrary.Open(index);
+            using LookAheadLibrary engine = LookAheadLibrary.Open(index, NativeLookAhead.Declared);
 
             var world = new WorldSnapshot();
             world.VariableValues.Add(WireValue.FromBoolean(true));
@@ -420,9 +421,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
             Assert.Empty(response.Answers);
         }
 
-        /// <summary>The deployed variable table is read, and says how many it declares.</summary>
+        /// <summary>The deployed variable table is read, and nothing opens without it.</summary>
         [Fact]
-        public void TheVariableTableIsReadWhenItIsThere()
+        public void TheVariableTableIsReadAndRequired()
         {
             string? index = NativeLookAhead.Index;
             string? variables = NativeLookAhead.Variables;
@@ -438,9 +439,12 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 with.VariableCount > 10_000,
                 $"expected the whole table, got {with.VariableCount}");
 
-            // And without it the mod still opens, answering unset variables less precisely.
-            using LookAheadLibrary without = LookAheadLibrary.Open(index);
-            Assert.Equal(0, without.VariableCount);
+            // AND THERE IS NO OPENING WITHOUT ONE. An engine that answered every variable the
+            // game will not answer with Unknown would still mark a menu, just fewer of it, and
+            // nothing in a playthrough would say which answers were the weaker ones.
+            InvalidOperationException refused = Assert.Throws<InvalidOperationException>(
+                () => LookAheadLibrary.Open(index, string.Empty));
+            Assert.Contains(nameof(Status.BadArgument), refused.Message);
         }
 
         private static IEnumerable<T> Take<T>(IReadOnlyList<T> items, int count)

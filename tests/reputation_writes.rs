@@ -14,7 +14,8 @@
 //! has to carry the amounts and compare them where it stands, which is what these ask.
 //!
 //! No save reaches the dream, so the world is stated here: the four political amounts, the
-//! thought where a test fixes it, and every other variable at what the database starts it as.
+//! thought where a test fixes it, the one ledger entry that opens the hub's way on, and every
+//! other variable at what the database starts it as.
 
 mod common;
 
@@ -85,6 +86,18 @@ fn request(
         clock_locked: true,
         ..Default::default()
     };
+
+    // WHAT OPENS THE WAY ON AT ALL, which is not what these are about but has to hold for
+    // them to reach the split. Every route from the hub towards 149 passes a guard shaped
+    // `IsTHCPresent("white_mourning") or Variable["inventory.ledger_white_mourning"]` - 445,
+    // 739 and 795. This world answers the thoughts it holds, so the first half is a definite
+    // false, and the database starts the ledger entry at false too: both halves decided
+    // against, and the hub has no way on. A player who has read the White Mourning ledger
+    // entry is the one these are about.
+    world.variables.insert(
+        "inventory.ledger_white_mourning".to_string(),
+        WireValue::Bool { value: true },
+    );
     let fixed = if thought_fixed {
         vec![THOUGHT.to_string()]
     } else {
@@ -126,7 +139,7 @@ fn request(
 fn reaches(index: &Index, start: i32, target: i32, amounts: [i32; 4], thought_fixed: bool) -> bool {
     let request = request(index, start, target, amounts, thought_fixed);
     let start = request.starts[0];
-    let response = answer(index, None, None, &request);
+    let response = answer(index, common::declared(), None, &request);
     assert!(response.error.is_none(), "{:?}", response.error);
     let reply = response
         .find(start, None)

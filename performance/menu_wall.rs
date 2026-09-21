@@ -173,7 +173,7 @@ fn main() {
         // A SERVICE PER GROUP, so no group is answered by a workspace another group warmed.
         // Sharing one would make every row after the first cheaper for a reason that has
         // nothing to do with the menu it is reporting.
-        let service = Service::open(&path, None).expect("the engine opens");
+        let service = Service::open(&path, &common::declared_path()).expect("the engine opens");
 
         let began = Instant::now();
         let response = service.answer_request(request.clone());

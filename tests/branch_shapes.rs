@@ -282,7 +282,12 @@ fn disagreements(index: &lookahead_engine::index::Index, check: &Check) -> Vec<S
             ..Default::default()
         };
 
-        let response = answer(index, None, None, &request);
+        let response = answer(
+            index,
+            std::sync::Arc::new(lookahead_engine::index::VariableTable::empty()),
+            None,
+            &request,
+        );
         assert!(
             response.error.is_none(),
             "{}: {:?}",

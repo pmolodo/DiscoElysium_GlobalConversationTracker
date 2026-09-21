@@ -92,6 +92,17 @@ namespace GlobalConversationTracker.LookAhead.Tests
         /// <summary>The variable table, or null where it has not been extracted.</summary>
         internal static string? Variables => Derived("variables.jsonl");
 
+        /// <summary>The same table, for a test that has already found the index.</summary>
+        /// <remarks>
+        /// The engine refuses to open without one, so every test that opens has to name it.
+        /// Both files come out of the same extraction, so an index with no table beside it is
+        /// a half-built working copy rather than a machine without the game data - which is
+        /// what the null check on <see cref="Index"/> is there to skip.
+        /// </remarks>
+        internal static string Declared =>
+            Variables ?? throw new InvalidOperationException(
+                "variables.jsonl is not beside the extracted index; re-run the extractor.");
+
         /// <summary>One extracted file, or null if it is not there.</summary>
         private static string? Derived(string fileName)
         {

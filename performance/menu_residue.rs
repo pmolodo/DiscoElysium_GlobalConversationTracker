@@ -285,7 +285,7 @@ fn main() {
                 day_counter: 1,
                 ..Default::default()
             },
-            None,
+            common::declared(),
         );
         let budget = DiagramBudget::new(memory_budget_mb * 1024 * 1024);
 
@@ -325,7 +325,7 @@ fn main() {
         println!("asking about all {} starts in one call...", starts.len());
         flush();
 
-        let response = answer(&index, None, None, &whole_menu);
+        let response = answer(&index, common::declared(), None, &whole_menu);
         assert!(response.error.is_none(), "{:?}", response.error);
         work.add(&response.answers);
     } else {
@@ -333,7 +333,7 @@ fn main() {
             println!("  start {:>2}/{}: {start:?}", n + 1, starts.len());
             flush();
 
-            let response = answer(&index, None, None, request);
+            let response = answer(&index, common::declared(), None, request);
             assert!(response.error.is_none(), "{start:?}: {:?}", response.error);
             work.add(&response.answers);
         }

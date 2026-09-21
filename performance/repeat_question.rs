@@ -206,7 +206,7 @@ fn main() {
                         day_counter: 1,
                         ..Default::default()
                     },
-                    None,
+                    common::declared(),
                 );
 
                 let building = Instant::now();

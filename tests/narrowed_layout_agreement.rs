@@ -201,7 +201,7 @@ fn a_narrowed_layout_answers_what_the_whole_group_answers() {
 
 /// The request's world, as a world.
 fn declaring(request: &LookAheadRequest) -> SnapshotWorld {
-    SnapshotWorld::declaring(request.world.clone(), None)
+    SnapshotWorld::declaring(request.world.clone(), common::declared())
 }
 
 /// The answers one layout produces, or `None` where no manager could be had for it.

@@ -49,7 +49,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 _output.WriteLine(File.ReadAllText(path));
                 Assert.Equal(2, written);
 
-                using LookAheadLibrary engine = LookAheadLibrary.Open(path);
+                using LookAheadLibrary engine = LookAheadLibrary.Open(path, NativeLookAhead.Declared);
 
                 Assert.Equal(ShippedIndexWriter.FormatVersion, engine.IndexFormat);
                 Assert.Equal(2, engine.ConversationCount);
@@ -91,7 +91,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
             try
             {
                 ShippedIndexWriter.Write(path, built);
-                using LookAheadLibrary engine = LookAheadLibrary.Open(path);
+                using LookAheadLibrary engine = LookAheadLibrary.Open(path, NativeLookAhead.Declared);
 
                 foreach (IndexConversation conversation in built)
                 {
@@ -124,7 +124,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
             try
             {
                 File.WriteAllText(path, "{\"id\":900,\"entries\":[]}\n");
-                using LookAheadLibrary engine = LookAheadLibrary.Open(path);
+                using LookAheadLibrary engine = LookAheadLibrary.Open(path, NativeLookAhead.Declared);
 
                 Assert.Equal(0, engine.IndexFormat);
                 Assert.Equal(string.Empty, engine.HashOf(900));
