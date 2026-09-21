@@ -238,12 +238,19 @@ namespace GlobalConversationTracker.DialogueAsset
                 return null;
             }
 
-            string rest = trimmed.Substring(digits).Trim();
+            // A NON-BREAKING SPACE SEPARATES ONE OF THEM, as a raw 0xA0 that is not valid
+            // UTF-8 - so it arrives as a replacement character, not as a space. Both are
+            // treated as the space they stand for, or `to` would travel into the name.
+            string rest = trimmed
+                .Substring(digits)
+                .Replace(' ', ' ')
+                .Replace('�', ' ')
+                .Trim();
 
             // `+1 to X when equipped` says the same thing as `+1 X`; the words carry no more.
             if (rest.StartsWith("to ", StringComparison.Ordinal))
             {
-                rest = rest.Substring(3);
+                rest = rest.Substring(3).Trim();
             }
 
             int colon = rest.IndexOf(':');

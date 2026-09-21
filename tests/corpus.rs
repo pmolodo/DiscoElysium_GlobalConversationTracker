@@ -365,3 +365,55 @@ fn every_reputation_the_game_compares_is_declared_a_number() {
 
     assert_eq!(wrong, Vec::<String>::new());
 }
+
+/// Every bonus the shipped database states is one the engine has been told about.
+///
+/// ## What goes wrong without it
+///
+/// `item_names.jsonl` carries an item's bonus as the database spells it, and
+/// `core::garment` translates that into the engine's skills. The translation is a list
+/// somebody wrote by reading the data - it has to be, since the data is inconsistent with
+/// itself: `Electrochemisty` beside `Electrochemistry`, `Reaction` beside `Reaction Speed`.
+///
+/// A game patch that adds an item, or fixes one of those misspellings, states a name the list
+/// has never seen. `garment::moved_by` answers `None` for it, which means the garment stops
+/// unsettling the checks it moves - and the symptom is one entry marked wrongly, which nobody
+/// would trace back to a table of names.
+///
+/// See de-sr1u.5.
+#[test]
+fn every_bonus_the_database_states_is_one_the_engine_knows() {
+    use lookahead_engine::core::garment;
+
+    let Some(path) = common::item_names() else {
+        return;
+    };
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{} does not read: {error}", path.display()));
+
+    let mut stated = 0;
+    let mut unknown: Vec<String> = Vec::new();
+    for line in text.lines().filter(|line| !line.trim().is_empty()) {
+        let row: serde_json::Value = serde_json::from_str(line)
+            .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        let Some(bonuses) = row["bonuses"].as_array() else {
+            continue;
+        };
+        for bonus in bonuses {
+            let Some(moves) = bonus["moves"].as_str() else {
+                continue;
+            };
+            stated += 1;
+            if garment::moved_by(moves).is_none() {
+                unknown.push(format!(
+                    "{} states '{moves}', which core::garment has not been told about",
+                    row["name"].as_str().unwrap_or("?"),
+                ));
+            }
+        }
+    }
+
+    assert!(stated > 0, "no item states a bonus, so nothing was checked");
+    println!("{stated} bonus(es) stated by the database");
+    assert_eq!(sample(&unknown), Vec::<String>::new());
+}

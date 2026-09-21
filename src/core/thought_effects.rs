@@ -169,6 +169,15 @@ const SKILLS: [(&str, &str, Ability); 28] = [
     ("0x0100000A0000003A", "COMPOSURE", Ability::Mot),
 ];
 
+/// Whether `name` is one of the skills this engine holds.
+///
+/// For a caller translating some other vocabulary into this one - see [`crate::core::garment`],
+/// which maps what the dialogue database calls a skill onto what the engine does. A name that
+/// is not here is a name nothing else in the engine will match either.
+pub fn names_a_skill(name: &str) -> bool {
+    SKILLS.iter().any(|(_, skill, _)| *skill == name)
+}
+
 /// The ability of the skill an articy id names, or `None` for an id that names no skill.
 pub fn ability_of_skill_id(articy_id: &str) -> Option<Ability> {
     SKILLS

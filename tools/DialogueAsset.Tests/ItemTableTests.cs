@@ -227,6 +227,23 @@ namespace GlobalConversationTracker.DialogueAsset.Tests
             Assert.Equal(new ItemBonus(-1, "Suggestion (unless wearing full armor)"), bonus);
         }
 
+        /// <summary>A non-breaking space between <c>to</c> and the name is still a space.</summary>
+        /// <remarks>
+        /// One bonus in the database separates them with a raw 0xA0, which is not valid UTF-8
+        /// and arrives as a replacement character rather than as a space. Read as written, the
+        /// word <c>to</c> travels into the name.
+        /// </remarks>
+        [Theory]
+        [InlineData(" ")]
+        [InlineData("�")]
+        public void ReadsAcrossANonBreakingSpace(string gap)
+        {
+            ItemBonus bonus = Assert.Single(
+                Read(Stating($"'+1 to{gap}Kingdom of Conscience when equipped: Douche'"))[0].Bonuses);
+
+            Assert.Equal(new ItemBonus(1, "Kingdom of Conscience"), bonus);
+        }
+
         /// <summary>Text that states no bonus yields none, rather than a zero.</summary>
         [Theory]
         [InlineData("'Heal all Health.'")]
