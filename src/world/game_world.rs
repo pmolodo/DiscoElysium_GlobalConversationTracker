@@ -408,96 +408,102 @@ impl ILookAheadWorld for GameWorld {
     }
 
     fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue {
-        // WHETHER A TAB HOLDS ANYTHING, and whether the scene is outdoors, as the plugin read
-        // them. No query key behind either.
-        let read_value = |request: DataRequest| match self.snapshot.data.get(&request) {
-            Some(answer) if answer.read => GuardValue::from(&answer.value),
-            _ => GuardValue::unknown(),
-        };
-        if let Some(tab) = inventory_tabs::tab_read_by(name) {
-            return read_value(DataRequest::about(DataKind::TabHoldsItems, tab));
-        }
-        if name == crate::core::scene::IS_EXTERIOR {
-            return read_value(DataRequest::set(DataKind::SceneIsOutside));
-        }
-        if name == crate::core::game_mode::WAS_GAME_BEATEN_IN_HARDCORE_MODE {
-            return read_value(DataRequest::set(DataKind::HardcorePlaythroughCompleted));
-        }
-        // WHO IS WITH THE PLAYER, from the party flags the plugin read.
-        let party_flag = |flag: &str| {
-            let value = read_value(DataRequest::about(DataKind::PartyFlag, flag));
-            (value.kind() == GuardValueKind::Boolean).then(|| value.boolean())
-        };
-        if let Some(here) = crate::core::party::answer(name, party_flag) {
-            return here.map_or_else(GuardValue::unknown, GuardValue::from_boolean);
-        }
-        if name == crate::core::game_mode::IS_HARDCORE_MODE_ACTIVE {
-            let mode = read_value(DataRequest::set(DataKind::GameMode));
-            return if mode.kind() == GuardValueKind::Text {
-                GuardValue::from_boolean(mode.text() == crate::core::game_mode::HARDCORE)
-            } else {
-                GuardValue::unknown()
+        let answer = (|| {
+            // WHETHER A TAB HOLDS ANYTHING, and whether the scene is outdoors, as the plugin read
+            // them. No query key behind either.
+            let read_value = |request: DataRequest| match self.snapshot.data.get(&request) {
+                Some(answer) if answer.read => GuardValue::from(&answer.value),
+                _ => GuardValue::unknown(),
             };
-        }
-        if let Some(skill) = crate::core::damage::skill_read_by(name) {
-            let damage = read_value(DataRequest::about(DataKind::SkillDamage, skill));
-            return damage
-                .try_as_number()
-                .map_or_else(GuardValue::unknown, |value| {
-                    GuardValue::from_boolean(crate::core::damage::is_damaged(value))
-                });
-        }
-
-        // THE CABINET'S NARROW QUESTIONS, answered from the sets the plugin enumerated.
-        // Nothing asks it to evaluate these any more - see `collect` - so there is no query
-        // key to fall back to, and a set nobody sent leaves the question Unknown.
-        if let Some(kinds) = thought_state_kinds(name) {
-            let Some(subject) = arguments
-                .first()
-                .filter(|value| value.kind() == GuardValueKind::Text)
-                .map(|value| value.text())
-            else {
-                return GuardValue::unknown();
+            if let Some(tab) = inventory_tabs::tab_read_by(name) {
+                return read_value(DataRequest::about(DataKind::TabHoldsItems, tab));
+            }
+            if name == crate::core::scene::IS_EXTERIOR {
+                return read_value(DataRequest::set(DataKind::SceneIsOutside));
+            }
+            if name == crate::core::game_mode::WAS_GAME_BEATEN_IN_HARDCORE_MODE {
+                return read_value(DataRequest::set(DataKind::HardcorePlaythroughCompleted));
+            }
+            // WHO IS WITH THE PLAYER, from the party flags the plugin read.
+            let party_flag = |flag: &str| {
+                let value = read_value(DataRequest::about(DataKind::PartyFlag, flag));
+                (value.kind() == GuardValueKind::Boolean).then(|| value.boolean())
             };
-
-            let mut answered = false;
-            for kind in kinds.iter().copied() {
-                match self.in_set(kind, subject) {
-                    // IN ANY OF THEM IS ENOUGH, which is what cooking-or-fixed means and is
-                    // the only case for the other two.
-                    Some(true) => return GuardValue::from_boolean(true),
-                    Some(false) => answered = true,
-                    None => {}
-                }
+            if let Some(here) = crate::core::party::answer(name, party_flag) {
+                return here.map_or_else(GuardValue::unknown, GuardValue::from_boolean);
+            }
+            if name == crate::core::game_mode::IS_HARDCORE_MODE_ACTIVE {
+                let mode = read_value(DataRequest::set(DataKind::GameMode));
+                return if mode.kind() == GuardValueKind::Text {
+                    GuardValue::from_boolean(mode.text() == crate::core::game_mode::HARDCORE)
+                } else {
+                    GuardValue::unknown()
+                };
+            }
+            if let Some(skill) = crate::core::damage::skill_read_by(name) {
+                let damage = read_value(DataRequest::about(DataKind::SkillDamage, skill));
+                return damage
+                    .try_as_number()
+                    .map_or_else(GuardValue::unknown, |value| {
+                        GuardValue::from_boolean(crate::core::damage::is_damaged(value))
+                    });
             }
 
-            return if answered {
-                GuardValue::from_boolean(false)
-            } else {
-                GuardValue::unknown()
+            // THE CABINET'S NARROW QUESTIONS, answered from the sets the plugin enumerated.
+            // Nothing asks it to evaluate these any more - see `collect` - so there is no query
+            // key to fall back to, and a set nobody sent leaves the question Unknown.
+            if let Some(kinds) = thought_state_kinds(name) {
+                let Some(subject) = arguments
+                    .first()
+                    .filter(|value| value.kind() == GuardValueKind::Text)
+                    .map(|value| value.text())
+                else {
+                    return GuardValue::unknown();
+                };
+
+                let mut answered = false;
+                for kind in kinds.iter().copied() {
+                    match self.in_set(kind, subject) {
+                        // IN ANY OF THEM IS ENOUGH, which is what cooking-or-fixed means and is
+                        // the only case for the other two.
+                        Some(true) => return GuardValue::from_boolean(true),
+                        Some(false) => answered = true,
+                        None => {}
+                    }
+                }
+
+                return if answered {
+                    GuardValue::from_boolean(false)
+                } else {
+                    GuardValue::unknown()
+                };
+            }
+
+            // WHAT IS WORN, answered from the slots the plugin read. Like the cabinet, there is
+            // no query key behind it to fall back to.
+            let argument = match arguments {
+                [value] if value.kind() == GuardValueKind::Text => Some(value.text()),
+                _ => None,
             };
-        }
+            if let Some(worn) = equipment::answer(
+                name,
+                argument,
+                |slot| Some(self.in_slot(slot)),
+                |group| self.items_in_group(group),
+            ) {
+                return worn.map_or_else(GuardValue::unknown, GuardValue::from_boolean);
+            }
 
-        // WHAT IS WORN, answered from the slots the plugin read. Like the cabinet, there is
-        // no query key behind it to fall back to.
-        let argument = match arguments {
-            [value] if value.kind() == GuardValueKind::Text => Some(value.text()),
-            _ => None,
-        };
-        if let Some(worn) = equipment::answer(
-            name,
-            argument,
-            |slot| Some(self.in_slot(slot)),
-            |group| self.items_in_group(group),
-        ) {
-            return worn.map_or_else(GuardValue::unknown, GuardValue::from_boolean);
+            self.snapshot
+                .queries
+                .get(&query_key(name, arguments))
+                .map(GuardValue::from)
+                .unwrap_or_else(GuardValue::unknown)
+        })();
+        if answer.kind() == GuardValueKind::Unknown {
+            unanswered_warning(&query_key(name, arguments));
         }
-
-        self.snapshot
-            .queries
-            .get(&query_key(name, arguments))
-            .map(GuardValue::from)
-            .unwrap_or_else(GuardValue::unknown)
+        answer
     }
 
     fn check_passes(&self, node: DialogueNodeId) -> Ternary {
@@ -507,6 +513,10 @@ impl ILookAheadWorld for GameWorld {
         } else if self.snapshot.checks_fail.contains(&node) {
             Ternary::False
         } else {
+            unanswered_warning(&format!(
+                "whether the check on {}:{} passes",
+                node.conversation, node.entry
+            ));
             Ternary::Unknown
         }
     }
@@ -527,4 +537,41 @@ impl ILookAheadWorld for GameWorld {
             .find(|margin| margin.node == node)
             .map(|margin| (margin.skill.clone(), margin.margin))
     }
+}
+
+/// Says, once per question, that the world was never told the answer.
+///
+/// ## What reaching this means
+///
+/// Everything a group's guards ask is asked of the plugin - `bridge::collect` walks the
+/// guards and puts every call in `Questions`, either as a query by key or as a `DataRequest`
+/// for a kind the plugin services. So a question with no answer here is one the plugin was
+/// asked and could not give: it threw, or could not reach what the question needs.
+///
+/// THAT IS THE ONE UNKNOWN THE RULE ALLOWS - see de-m11s - because nobody can say what a
+/// query about the world would have returned. What was missing is that it said nothing: the
+/// Unknown became an ordinary value and travelled inward, indistinguishable downstream from a
+/// question nobody thought to ask, and its cost is the usual one - a guard that cannot be
+/// pruned on, and an entry behind it that can never be marked.
+///
+/// Measured over all 429 groups on 2026-09-21: never reached. So a line here is a thing to
+/// investigate rather than noise, and its absence is the expectation.
+fn unanswered_warning(question: &str) {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+    static ASKED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+
+    let Ok(mut asked) = ASKED.lock() else {
+        return;
+    };
+    if !asked
+        .get_or_insert_with(HashSet::new)
+        .insert(question.to_string())
+    {
+        return;
+    }
+
+    eprintln!(
+        "look-ahead: the world was not told {question}, so it cannot be decided and the guard          reading it is left undecided. The entry behind that guard can never be shown. The          plugin was asked and could not answer - see de-m11s.7."
+    );
 }
