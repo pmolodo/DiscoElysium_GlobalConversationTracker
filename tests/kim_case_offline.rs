@@ -20,7 +20,7 @@
 
 use std::collections::HashSet;
 
-use lookahead_engine::bridge::{LookAheadAnswer, LookAheadRequest, NodeRef, WorldSnapshot, answer};
+use lookahead_engine::bridge::{LookAheadAnswer, LookAheadRequest, NodeRef, WorldRawData, answer};
 use lookahead_engine::index::{build_group_graph, read_index};
 
 mod common;
@@ -209,7 +209,7 @@ fn report(
             .filter(|node| !rung.contains(node))
             .collect(),
         state_budget: suite.state_budget,
-        world: WorldSnapshot {
+        world: WorldRawData {
             // THE SAVE'S OWN WORLD, down to the hour it was saved at: a guard comparing the
             // time answers differently at midnight, and a report taken at some other hour
             // than the game was at would be a different menu that happens to share options.

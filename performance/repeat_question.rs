@@ -103,7 +103,7 @@
 
 use std::time::{Duration, Instant};
 
-use lookahead_engine::bridge::{SnapshotWorld, WorldSnapshot};
+use lookahead_engine::bridge::{GameWorld, WorldRawData};
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::backward::{Backward, Budget, SettledPass};
@@ -200,8 +200,8 @@ fn main() {
             // ONE THREAD, ONE MANAGER, as everything that builds one must - de-fpax.
             let (diagram_took, manager_took, search_took) = isolated::on_its_own_thread(|| {
                 let symbols = graph.symbols().clone();
-                let world = SnapshotWorld::declaring(
-                    WorldSnapshot {
+                let world = GameWorld::declaring(
+                    WorldRawData {
                         day_minutes: 720,
                         day_counter: 1,
                         ..Default::default()

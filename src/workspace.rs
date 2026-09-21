@@ -82,7 +82,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::thread::JoinHandle;
 
 use crate::bridge::{
-    COUNTER_CAP, LookAheadAnswer, LookAheadRequest, Questions, SnapshotWorld, WorldSnapshot,
+    COUNTER_CAP, GameWorld, LookAheadAnswer, LookAheadRequest, Questions, WorldRawData,
     answer_starts,
 };
 use crate::core::types::DialogueNodeId;
@@ -190,7 +190,7 @@ impl Workspace {
         mut graph: LookAheadGraph,
         group: Vec<i32>,
         entered_at: Vec<i32>,
-        world: WorldSnapshot,
+        world: WorldRawData,
         declared: Arc<VariableTable>,
         budget: DiagramBudget,
     ) -> Option<Self> {
@@ -260,7 +260,7 @@ impl Workspace {
         &self,
         group: &[i32],
         entered_at: &[i32],
-        world: &WorldSnapshot,
+        world: &WorldRawData,
         declared: Arc<VariableTable>,
         budget: DiagramBudget,
     ) -> bool {
@@ -336,7 +336,7 @@ struct Opening {
     questions: Arc<Questions>,
     entered_at: Vec<i32>,
     /// The world the layout is sized from, and nothing else - every request brings its own.
-    layout_world: WorldSnapshot,
+    layout_world: WorldRawData,
     declared: Arc<VariableTable>,
     budget: DiagramBudget,
 }
@@ -358,7 +358,7 @@ fn own(opening: Opening, inbox: Receiver<Job>, ready: Sender<bool>) {
     // THE LAYOUT IS BUILT FROM THE WORLD THAT OPENED THIS, and the key above records which
     // ceiling that produced - so a later request whose money moves the ceiling is refused
     // by `serves` rather than answered against a layout that does not fit it.
-    let opening = SnapshotWorld::declaring(layout_world, declared.clone());
+    let opening = GameWorld::declaring(layout_world, declared.clone());
     let layout = DataLayout::for_group_entered_at(&graph, &opening, COUNTER_CAP, Some(&entered_at));
 
     // FALLIBLY, and reported before any request is accepted: the node store is one big
@@ -396,7 +396,7 @@ fn own(opening: Opening, inbox: Receiver<Job>, ready: Sender<bool>) {
             let _ = job_answers.send(Err(reason));
             continue;
         }
-        let world = SnapshotWorld::declaring(snapshot, declared.clone());
+        let world = GameWorld::declaring(snapshot, declared.clone());
 
         // PER REQUEST, because these are what the world is baked into. One to five
         // milliseconds against the nine or ten the manager cost once, and unlike the
@@ -441,7 +441,7 @@ fn own(opening: Opening, inbox: Receiver<Job>, ready: Sender<bool>) {
 fn fitting_of(
     graph: &LookAheadGraph,
     questions: &Questions,
-    world: &WorldSnapshot,
+    world: &WorldRawData,
     declared: Arc<VariableTable>,
 ) -> Fitting {
     if !graph.needs_fitting() {
@@ -449,7 +449,7 @@ fn fitting_of(
     }
     let mut snapshot = world.clone();
     match snapshot.resolve(questions) {
-        Ok(()) => Fitting::read(graph, &SnapshotWorld::declaring(snapshot, declared)),
+        Ok(()) => Fitting::read(graph, &GameWorld::declaring(snapshot, declared)),
         Err(_) => Fitting::default(),
     }
 }
@@ -461,9 +461,9 @@ fn fitting_of(
 /// and the ceiling saturates well below the range money actually takes.
 fn ceiling_of(
     graph: &LookAheadGraph,
-    world: &WorldSnapshot,
+    world: &WorldRawData,
     declared: Arc<VariableTable>,
 ) -> Option<u32> {
-    let world = SnapshotWorld::declaring(world.clone(), declared);
+    let world = GameWorld::declaring(world.clone(), declared);
     DataLayout::money_ceiling(graph, world.money())
 }

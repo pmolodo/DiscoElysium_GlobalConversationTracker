@@ -128,7 +128,7 @@ impl Service {
     /// a variable the plugin could not read has nothing to be undeclared AGAINST without the
     /// table, so it answers UNKNOWN - and unknown is what a symbolic search cannot prune on,
     /// so a crawl carries both branches of every guard reading it. See
-    /// [`crate::bridge::SnapshotWorld::get_variable`] for what the table answers instead.
+    /// [`crate::bridge::GameWorld::get_variable`] for what the table answers instead.
     ///
     /// A DEPLOYMENT MISSING IT NOW REFUSES TO OPEN rather than running less well, which is
     /// the fail-fast the rest of this engine takes: a half-installed mod folder should say so

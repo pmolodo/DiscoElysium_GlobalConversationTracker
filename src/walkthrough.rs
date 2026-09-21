@@ -1319,7 +1319,7 @@ mod tests {
     use super::*;
     use crate::core::guard_value::GuardValue;
     use crate::test_graph::{Entry, GraphBuilder, node};
-    use crate::world::test_world::TestWorld;
+    use crate::world::GameWorld;
 
     fn graph(entries: Vec<Entry>) -> LookAheadGraph {
         entries
@@ -1330,7 +1330,7 @@ mod tests {
 
     fn walked(
         entries: Vec<Entry>,
-        world: &TestWorld,
+        world: &GameWorld,
         inputs: Option<&[Input]>,
     ) -> Result<Walkthrough, String> {
         walk_inputs(
@@ -1366,7 +1366,7 @@ mod tests {
 
     #[test]
     fn only_a_line_with_a_line_behind_it_waits_for_enter() {
-        let world = TestWorld::declaring_nothing();
+        let world = GameWorld::blank();
         let walk = walked(two_lines_then_a_menu(), &world, Some(&[Input::Enter])).unwrap();
         assert_eq!(walk.encountered, nodes(&[0, 1, 2]));
 
@@ -1376,12 +1376,7 @@ mod tests {
 
     #[test]
     fn no_inputs_presses_enter_to_the_first_menu() {
-        let walk = walked(
-            two_lines_then_a_menu(),
-            &TestWorld::declaring_nothing(),
-            None,
-        )
-        .unwrap();
+        let walk = walked(two_lines_then_a_menu(), &GameWorld::blank(), None).unwrap();
         assert_eq!(walk.encountered, nodes(&[0, 1, 2]));
         assert_eq!(walk.menu, nodes(&[3, 4]));
     }
@@ -1394,7 +1389,7 @@ mod tests {
         entries.push(Entry::new(6).player());
         let walk = walked(
             entries,
-            &TestWorld::declaring_nothing(),
+            &GameWorld::blank(),
             Some(&[Input::Enter, Input::Choose(2)]),
         )
         .unwrap();
@@ -1404,7 +1399,7 @@ mod tests {
 
     #[test]
     fn inputs_that_do_not_fit_the_screen_fail_by_name() {
-        let world = TestWorld::declaring_nothing();
+        let world = GameWorld::blank();
         let enter_at_several = walked(
             two_lines_then_a_menu(),
             &world,
@@ -1448,7 +1443,7 @@ mod tests {
         ];
         let walk = walked(
             entries,
-            &TestWorld::declaring_nothing(),
+            &GameWorld::blank(),
             Some(&[Input::Enter, Input::Enter]),
         )
         .unwrap();
@@ -1458,8 +1453,7 @@ mod tests {
 
     #[test]
     fn a_line_on_offer_wins_over_the_options_and_groups_open_in_place() {
-        let world =
-            TestWorld::declaring_nothing().set_variable("shut", GuardValue::from_boolean(false));
+        let world = GameWorld::blank().set_variable("shut", GuardValue::from_boolean(false));
         let entries = vec![
             Entry::new(0).links(&[1, 2, 3]),
             Entry::new(1).player(),
@@ -1495,7 +1489,7 @@ mod tests {
             Entry::new(2).links(&[3]),
             Entry::new(3).player(),
         ];
-        let world = TestWorld::declaring_nothing();
+        let world = GameWorld::blank();
         let walk = walked(entries, &world, None).unwrap();
         assert_eq!(walk.encountered, nodes(&[0, 2]));
 
@@ -1521,12 +1515,7 @@ mod tests {
             Entry::new(2).player(),
             Entry::new(3),
         ];
-        let error = walked(
-            entries,
-            &TestWorld::declaring_nothing(),
-            Some(&[Input::Choose(1)]),
-        )
-        .unwrap_err();
+        let error = walked(entries, &GameWorld::blank(), Some(&[Input::Choose(1)])).unwrap_err();
         assert!(error.contains("rolled check"), "{error}");
     }
 
@@ -1546,7 +1535,7 @@ mod tests {
         ]
     }
 
-    fn playthrough(entries: Vec<Entry>, world: &TestWorld) -> Playthrough {
+    fn playthrough(entries: Vec<Entry>, world: &GameWorld) -> Playthrough {
         greedy_playthrough(
             &graph(entries),
             world,
@@ -1560,7 +1549,7 @@ mod tests {
     /// Every entry a walk can reach is reached, and the walk says so rather than stopping.
     #[test]
     fn a_playthrough_shows_everything_it_can_reach() {
-        let done = playthrough(a_hub_of_three(), &TestWorld::declaring_nothing());
+        let done = playthrough(a_hub_of_three(), &GameWorld::blank());
 
         assert_eq!(done.stopped, Stop::Exhausted);
         assert_eq!(done.refused, 0, "{:?}", done.blocked);
@@ -1577,7 +1566,7 @@ mod tests {
     /// start - so only the first leg is a restart.
     #[test]
     fn legs_continue_from_where_the_last_one_stopped() {
-        let done = playthrough(a_hub_of_three(), &TestWorld::declaring_nothing());
+        let done = playthrough(a_hub_of_three(), &GameWorld::blank());
 
         assert!(
             done.legs[0].restarted,
@@ -1605,7 +1594,7 @@ mod tests {
             Entry::new(3).player().links(&[4]),
             Entry::new(4).links(&[1]),
         ];
-        let done = playthrough(entries, &TestWorld::declaring_nothing());
+        let done = playthrough(entries, &GameWorld::blank());
 
         assert_eq!(done.stopped, Stop::Exhausted);
         let restarts = done.legs.iter().filter(|leg| leg.restarted).count();
@@ -1631,7 +1620,7 @@ mod tests {
             Entry::new(2).player(),
             Entry::new(3).player(),
         ];
-        let done = playthrough(entries, &TestWorld::declaring_nothing());
+        let done = playthrough(entries, &GameWorld::blank());
 
         assert_eq!(done.legs[0].target, node(1), "the free line comes first");
         assert!(
@@ -1659,7 +1648,7 @@ mod tests {
         let built = graph(a_hub_of_three());
         let done = greedy_playthrough(
             &built,
-            &TestWorld::declaring_nothing(),
+            &GameWorld::blank(),
             crate::test_graph::DEFAULT_CONVERSATION,
             10_000,
             &HashSet::new(),
@@ -1669,7 +1658,7 @@ mod tests {
         let first = &done.legs[0];
         let replay = walk_inputs(
             &built,
-            &TestWorld::declaring_nothing(),
+            &GameWorld::blank(),
             crate::test_graph::DEFAULT_CONVERSATION,
             Some(&first.inputs()),
         )
@@ -1690,7 +1679,7 @@ mod tests {
     /// screen, so the step records that menu rather than leaving a reader to recover it.
     #[test]
     fn a_step_records_the_menu_its_number_indexed() {
-        let done = playthrough(a_hub_of_three(), &TestWorld::declaring_nothing());
+        let done = playthrough(a_hub_of_three(), &GameWorld::blank());
 
         let chose = done
             .legs
@@ -1712,7 +1701,7 @@ mod tests {
     /// been shown is not shown again, and its one-time effects stay fired.
     #[test]
     fn what_the_world_has_shown_is_not_walked_to_again() {
-        let already = TestWorld::declaring_nothing().set_seen(node(4), true);
+        let already = GameWorld::blank().set_seen(node(4), true);
         let done = greedy_playthrough(
             &graph(a_hub_of_three()),
             &already,
@@ -1735,7 +1724,7 @@ mod tests {
         let built = graph(a_hub_of_three());
         let whole = greedy_playthrough(
             &built,
-            &TestWorld::declaring_nothing(),
+            &GameWorld::blank(),
             crate::test_graph::DEFAULT_CONVERSATION,
             10_000,
             &HashSet::new(),
@@ -1745,7 +1734,7 @@ mod tests {
 
         let stopped = greedy_playthrough(
             &built,
-            &TestWorld::declaring_nothing(),
+            &GameWorld::blank(),
             crate::test_graph::DEFAULT_CONVERSATION,
             10_000,
             &HashSet::new(),
@@ -1789,7 +1778,7 @@ mod tests {
     fn the_first_stage_fails_every_roll_and_still_walks_the_check() {
         let stages = roll_escalation(
             &graph(a_check_off_a_hub()),
-            &TestWorld::declaring_nothing(),
+            &GameWorld::blank(),
             crate::test_graph::DEFAULT_CONVERSATION,
             10_000,
         );
@@ -1816,7 +1805,7 @@ mod tests {
     fn each_stage_concedes_one_more_check() {
         let stages = roll_escalation(
             &graph(a_check_off_a_hub()),
-            &TestWorld::declaring_nothing(),
+            &GameWorld::blank(),
             crate::test_graph::DEFAULT_CONVERSATION,
             10_000,
         );
@@ -1850,7 +1839,7 @@ mod tests {
             Entry::new(3).player(),
             Entry::new(4).player(),
         ];
-        let world = TestWorld::declaring_nothing();
+        let world = GameWorld::blank();
         let built = graph(entries);
         let stopped = greedy_playthrough(
             &built,
@@ -1877,7 +1866,7 @@ mod tests {
     #[test]
     fn playing_on_gives_nothing_where_the_conversation_ends() {
         let entries = vec![Entry::new(0).links(&[1]), Entry::new(1)];
-        let world = TestWorld::declaring_nothing();
+        let world = GameWorld::blank();
         let built = graph(entries);
         let done = greedy_playthrough(
             &built,

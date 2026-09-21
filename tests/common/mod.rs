@@ -310,7 +310,7 @@ pub fn nothing_declared() -> std::sync::Arc<lookahead_engine::index::VariableTab
 ///
 /// ## What makes it save-shaped rather than test-shaped
 ///
-/// `TestWorld` answers UNKNOWN for anything it has not been told, which is the safe
+/// `GameWorld` answers UNKNOWN for anything it has not been told, which is the safe
 /// answer for a search and the useless one for a measurement: every guard mentioning an
 /// unset variable becomes undecidable, and most of the database's variables are unset for
 /// most of a playthrough. A save answers. An unset Lua variable is nil and nil is falsy,
@@ -703,7 +703,7 @@ pub fn compiled_guards(
     entries: &[DialogueNodeId],
 ) -> CompiledGuards {
     use lookahead_engine::bridge::{
-        COUNTER_CAP, SnapshotWorld, entered_at_of, questions_of, starts_of,
+        COUNTER_CAP, GameWorld, entered_at_of, questions_of, starts_of,
     };
     use lookahead_engine::symbolic::data_layout::DataLayout;
     use lookahead_engine::symbolic::guard_formula::GuardCompiler;
@@ -716,7 +716,7 @@ pub fn compiled_guards(
     snapshot
         .resolve(&questions_of(&graph, group))
         .expect("the world answers the group's questions");
-    let world = SnapshotWorld::declaring_nothing(snapshot);
+    let world = GameWorld::declaring_nothing(snapshot);
     graph.fit(&lookahead_engine::graph::Fitting::read(&graph, &world));
 
     let symbols = graph.symbols().clone();

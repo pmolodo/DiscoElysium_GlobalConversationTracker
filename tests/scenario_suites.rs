@@ -45,7 +45,7 @@
 use std::collections::HashSet;
 
 use lookahead_engine::bridge::{
-    DataKind, LookAheadAnswer, LookAheadRequest, NodeRef, Questions, SnapshotWorld, WorldSnapshot,
+    DataKind, GameWorld, LookAheadAnswer, LookAheadRequest, NodeRef, Questions, WorldRawData,
     answer,
 };
 use lookahead_engine::core::types::{DialogueNodeId, SeenState};
@@ -142,7 +142,7 @@ impl Staged {
         // for every variable, and goes where the game will not.
         walk_inputs(
             &self.graph,
-            &SnapshotWorld::declaring(snapshot, common::declared()),
+            &GameWorld::declaring(snapshot, common::declared()),
             conversation,
             inputs,
         )
@@ -250,7 +250,7 @@ fn stage(
         request: LookAheadRequest {
             conversation,
             state_budget: suite.state_budget,
-            world: WorldSnapshot {
+            world: WorldRawData {
                 // THE ROW WINS OVER THE SAVE where it names one, because a row that names a
                 // balance is staging a balance - the money suite's three scenarios are one
                 // save at three of them, and the save can only hold one.

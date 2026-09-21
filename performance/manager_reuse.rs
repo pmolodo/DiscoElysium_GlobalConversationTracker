@@ -84,9 +84,7 @@
 use std::collections::HashSet;
 use std::time::Instant;
 
-use lookahead_engine::bridge::{
-    LookAheadRequest, NodeRef, SnapshotWorld, WorldSnapshot, answer_starts,
-};
+use lookahead_engine::bridge::{GameWorld, LookAheadRequest, NodeRef, WorldRawData, answer_starts};
 use lookahead_engine::core::types::{DialogueNodeId, SeenState};
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::budget::DiagramBudget;
@@ -194,8 +192,8 @@ fn main() {
 
         // THE LAYOUT AND THE MANAGER, ONCE. The money is held across rounds precisely so
         // this stays valid - the money ceiling is the one world fact the layout reads.
-        let held_money = SnapshotWorld::declaring(
-            WorldSnapshot {
+        let held_money = GameWorld::declaring(
+            WorldRawData {
                 day_minutes: 720,
                 day_counter: 1,
                 ..Default::default()
@@ -228,8 +226,8 @@ fn main() {
                 .take(round.saturating_mul(4).min(walkable.len()))
                 .map(|id| NodeRef::from(*id))
                 .collect();
-            let world = SnapshotWorld::declaring(
-                WorldSnapshot {
+            let world = GameWorld::declaring(
+                WorldRawData {
                     day_minutes: 720,
                     day_counter: 1,
                     seen: seen.iter().copied().collect(),

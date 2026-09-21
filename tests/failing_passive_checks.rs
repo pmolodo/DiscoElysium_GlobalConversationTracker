@@ -27,7 +27,7 @@ use std::collections::HashSet;
 
 use common::fixtures;
 use lookahead_engine::bridge::{
-    LookAheadAnswer, LookAheadRequest, NodeRef, WorldSnapshot, answer, questions_of,
+    LookAheadAnswer, LookAheadRequest, NodeRef, WorldRawData, answer, questions_of,
 };
 use lookahead_engine::index::{build_group_graph, read_index};
 
@@ -120,7 +120,7 @@ fn menu_markers(consult_the_sheet: bool) -> Option<Vec<(i32, String)>> {
             .into_iter()
             .chain(by_class(UNSEEN_THIS_GAME))
             .collect(),
-        world: WorldSnapshot {
+        world: WorldRawData {
             day_minutes: DAY_MINUTES,
             day_counter: DAY_COUNTER,
             // WHAT THIS SAVE HAS READ, which is the world's to say. Nothing sends the middle
@@ -234,7 +234,7 @@ fn best_reachable(start: (i32, i32), candidate: (i32, i32)) -> Option<i32> {
             .map(|node| NodeRef::from(node.id))
             .filter(|node| *node != of(candidate))
             .collect(),
-        world: WorldSnapshot {
+        world: WorldRawData {
             day_minutes: DAY_MINUTES,
             day_counter: DAY_COUNTER,
             // EVERYTHING ELSE IS READ, which is what makes the candidate the only thing worth

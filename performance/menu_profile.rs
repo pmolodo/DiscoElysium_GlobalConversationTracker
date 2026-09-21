@@ -158,7 +158,7 @@ pub struct Walked {
     pub profile: MenuProfile,
     /// The world the menu is asked in: the save's, less what the walk has now shown and what
     /// its variables now hold. Filled by the caller, which is what knows the save.
-    pub world: lookahead_engine::bridge::WorldSnapshot,
+    pub world: lookahead_engine::bridge::WorldRawData,
     /// Entries the walk put on screen before it stopped: what the world should call seen.
     pub seen: Vec<DialogueNodeId>,
     /// The dialogue variables at the point it stopped, by name - the counters at the values

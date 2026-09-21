@@ -108,7 +108,7 @@
 
 use std::collections::HashSet;
 
-use lookahead_engine::bridge::{SnapshotWorld, WorldSnapshot};
+use lookahead_engine::bridge::{GameWorld, WorldRawData};
 use lookahead_engine::core::guard::GuardExpression;
 use lookahead_engine::core::types::{DialogueCheckKind, DialogueNodeId, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;
@@ -199,8 +199,8 @@ fn main() {
 
 fn report(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget: DiagramBudget) {
     let symbols = graph.symbols().clone();
-    let world = SnapshotWorld::declaring(
-        WorldSnapshot {
+    let world = GameWorld::declaring(
+        WorldRawData {
             day_minutes: 720,
             day_counter: 1,
             ..Default::default()

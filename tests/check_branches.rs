@@ -7,15 +7,15 @@
 //! two branches - and require an ordinary option in the same group to carry none, since it
 //! is the ABSENCE that tells the mod which options get a Pass/Fail line.
 
-use lookahead_engine::bridge::{LookAheadRequest, NodeRef, WorldSnapshot, answer};
+use lookahead_engine::bridge::{LookAheadRequest, NodeRef, WorldRawData, answer};
 use lookahead_engine::core::types::DialogueCheckKind;
 use lookahead_engine::index::{build_group_graph, read_index};
 
 mod common;
 
 /// A world that decides nothing, so every check is open and both its branches are live.
-fn undecided() -> WorldSnapshot {
-    WorldSnapshot {
+fn undecided() -> WorldRawData {
+    WorldRawData {
         day_minutes: 720,
         day_counter: 1,
         ..Default::default()

@@ -30,7 +30,7 @@
 
 use std::collections::HashSet;
 
-use lookahead_engine::bridge::{LookAheadAnswer, LookAheadRequest, NodeRef, WorldSnapshot, answer};
+use lookahead_engine::bridge::{LookAheadAnswer, LookAheadRequest, NodeRef, WorldRawData, answer};
 use lookahead_engine::index::{build_group_graph, read_index};
 use serde::Deserialize;
 
@@ -269,7 +269,7 @@ fn disagreements(index: &lookahead_engine::index::Index, check: &Check) -> Vec<S
                 .filter(|node| rung_of(node) < 2)
                 .collect(),
             state_budget: row.state_budget,
-            world: WorldSnapshot {
+            world: WorldRawData {
                 day_minutes: 720,
                 day_counter: 1,
                 seen: everything

@@ -41,7 +41,7 @@ use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::test_graph::{Entry, GraphBuilder, node};
-use lookahead_engine::world::test_world::TestWorld;
+use lookahead_engine::world::GameWorld;
 use proptest::prelude::*;
 
 /// The counter cap the rest of the repository measures with.
@@ -434,7 +434,7 @@ proptest! {
         shapes in (3usize..8).prop_flat_map(|n| prop::collection::vec(shape(n), n..=n)),
     ) {
         let graph = graph_from(&shapes);
-        let world = TestWorld::declaring_nothing()
+        let world = GameWorld::blank()
             .with_money(10)
             .set_variable("open", GuardValue::from_boolean(false))
             .set_variable("count", GuardValue::from_number(0.0));

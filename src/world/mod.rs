@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 
-pub mod test_world;
+pub mod game_world;
+
+pub use game_world::GameWorld;
 
 use crate::core::clock::ClockTime;
 use crate::core::guard::IGuardContext;

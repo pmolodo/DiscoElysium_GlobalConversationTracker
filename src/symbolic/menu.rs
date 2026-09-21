@@ -798,7 +798,7 @@ mod tests {
     use crate::symbolic::seen_state_search::Where;
     use crate::symbolic::vars::DataVars;
     use crate::test_graph::{Entry, GraphBuilder, node};
-    use crate::world::test_world::TestWorld;
+    use crate::world::GameWorld;
 
     /// Which of the markings to run.
     ///
@@ -824,9 +824,9 @@ mod tests {
     fn with_menu<R>(
         graph: &LookAheadGraph,
         options: &[i32],
-        run: impl FnOnce(&mut GuardCompiler<'_>, &TestWorld, &[Contestant]) -> R,
+        run: impl FnOnce(&mut GuardCompiler<'_>, &GameWorld, &[Contestant]) -> R,
     ) -> R {
-        let world = TestWorld::declaring_nothing();
+        let world = GameWorld::blank();
         let layout = DataLayout::for_graph(graph, 16, None, false);
         let vars = DataVars::new(&layout, graph.symbols(), DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);

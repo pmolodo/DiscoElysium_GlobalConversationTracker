@@ -234,7 +234,7 @@ fn a_look_ahead_crosses_and_comes_back_the_same() {
                 conversation,
                 entry: 0,
             }],
-            world: Some(wire::WorldSnapshot {
+            world: Some(wire::WorldRawData {
                 day_minutes: 720,
                 day_counter: 1,
                 ..Default::default()

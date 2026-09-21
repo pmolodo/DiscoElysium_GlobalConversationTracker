@@ -44,7 +44,7 @@
 
 use std::time::Instant;
 
-use lookahead_engine::bridge::{LookAheadRequest, NodeRef, WorldSnapshot};
+use lookahead_engine::bridge::{LookAheadRequest, NodeRef, WorldRawData};
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::service::Service;
@@ -162,7 +162,7 @@ fn main() {
                 .collect(),
             time_budget_ms,
             menu_time_budget_ms: menu_budget_ms,
-            world: WorldSnapshot {
+            world: WorldRawData {
                 day_minutes: 720,
                 day_counter: 1,
                 ..Default::default()

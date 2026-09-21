@@ -56,8 +56,8 @@ fn text_value(text: &str) -> wire::WireValue {
 }
 
 /// A snapshot with nothing left at its default, so a dropped member is visible.
-fn full_snapshot() -> wire::WorldSnapshot {
-    wire::WorldSnapshot {
+fn full_snapshot() -> wire::WorldRawData {
+    wire::WorldRawData {
         money: 5100,
         day_minutes: 7 * 60 + 42,
         day_counter: 3,

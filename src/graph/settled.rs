@@ -189,7 +189,7 @@ mod tests {
     use crate::graph::Fitting;
     use crate::graph::node::LookAheadNode;
     use crate::symbolic::data_layout::DataLayout;
-    use crate::world::test_world::TestWorld;
+    use crate::world::GameWorld;
 
     fn node(entry: i32) -> DialogueNodeId {
         DialogueNodeId::new(1, entry)
@@ -231,12 +231,12 @@ mod tests {
     }
 
     /// A world that says which way the check went.
-    fn world_where_the_check(outcome: Option<Ternary>) -> TestWorld {
-        let mut world = TestWorld::declaring_nothing();
-        if let Some(outcome) = outcome {
-            world.check_results.insert(node(1), outcome);
+    fn world_where_the_check(outcome: Option<Ternary>) -> GameWorld {
+        let world = GameWorld::blank();
+        match outcome {
+            Some(outcome) => world.set_check_result(node(1), outcome),
+            None => world,
         }
-        world
     }
 
     /// The write dominates the read, so the slot is a candidate whatever any world says.

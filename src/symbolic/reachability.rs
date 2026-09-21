@@ -613,7 +613,7 @@ mod branch_tests {
     use crate::symbolic::data_layout::DataLayout;
     use crate::symbolic::vars::DataVars;
     use crate::test_graph::{Entry, GraphBuilder, node};
-    use crate::world::test_world::TestWorld;
+    use crate::world::GameWorld;
 
     const CAP: i32 = 16;
 
@@ -644,8 +644,7 @@ mod branch_tests {
     /// about what that state can go on to reach. One pass per entry is nothing on a graph
     /// of four.
     fn reached(graph: &LookAheadGraph, branch: StartBranch) -> Vec<i32> {
-        let world =
-            TestWorld::declaring_nothing().set_variable("roll", GuardValue::from_boolean(false));
+        let world = GameWorld::blank().set_variable("roll", GuardValue::from_boolean(false));
         let symbols = graph.symbols().clone();
         let layout = DataLayout::for_graph(graph, CAP, None, false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
@@ -756,7 +755,7 @@ mod branch_tests {
             .add(Entry::new(2))
             .build();
 
-        let world = TestWorld::declaring_nothing().with_money(DEEP_PURSE as i32 / 2);
+        let world = GameWorld::blank().with_money(DEEP_PURSE as i32 / 2);
         let symbols = graph.symbols().clone();
         let layout = DataLayout::for_graph(&graph, CAP, Some(DEEP_PURSE), false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::new(SQUEEZED));
@@ -801,7 +800,7 @@ mod branch_tests {
             .add(Entry::new(3))
             .build();
 
-        let world = TestWorld::declaring_nothing().with_money(DEEP_PURSE as i32 / 2);
+        let world = GameWorld::blank().with_money(DEEP_PURSE as i32 / 2);
         let symbols = graph.symbols().clone();
         let layout = DataLayout::for_graph(&graph, CAP, Some(DEEP_PURSE), false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::new(TOO_SQUEEZED));

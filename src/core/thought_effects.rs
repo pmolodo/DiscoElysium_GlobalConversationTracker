@@ -316,6 +316,25 @@ impl ThoughtEffect {
     }
 }
 
+/// Every thought this module asks about, for a fixture stating that all of them are fixed.
+///
+/// A WORLD STATES SETS, not answers by name - see `GameWorld::set_fixed` - so a test meaning
+/// "whatever thought is asked about, it is fixed" has to name them. Listed here rather than in
+/// each test, since the list belongs to the effects table beside it and would otherwise be
+/// copied into every fixture that wants it.
+pub const EVERY_THOUGHT: [&str; 10] = [
+    "art_cop",
+    "kras_mazov",
+    "moralist",
+    "return_on_investment",
+    "revacholian_nationhood",
+    "sorry_cop",
+    "superstar_cop",
+    "the_destroyer",
+    "trant_heidelstam",
+    "ultraliberal",
+];
+
 /// Whether `world` holds `thought` fixed; Unknown reads as not.
 pub fn is_fixed(world: &dyn ILookAheadWorld, thought: &str) -> bool {
     let answer = world.query(IS_FIXED, &[GuardValue::from_text(thought.to_string())]);

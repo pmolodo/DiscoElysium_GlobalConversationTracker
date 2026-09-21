@@ -30,7 +30,7 @@
 use std::collections::HashSet;
 
 use lookahead_engine::bridge::{
-    LookAheadAnswer, LookAheadRequest, NodeRef, WireValue, WorldSnapshot, answer, questions_for,
+    LookAheadAnswer, LookAheadRequest, NodeRef, WireValue, WorldRawData, answer, questions_for,
 };
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::service::Service;
@@ -81,7 +81,7 @@ fn a_kept_manager_answers_what_a_fresh_one_answers() {
                 .filter(|node| !unread.contains(node))
                 .collect();
 
-            let world = WorldSnapshot {
+            let world = WorldRawData {
                 day_minutes: 720,
                 day_counter: 1,
                 seen: seen.iter().copied().collect(),
@@ -172,7 +172,7 @@ fn a_world_answering_the_wrong_questions_is_refused_through_a_workspace() {
             .map(|_| WireValue::Unknown)
             .collect();
 
-        let world = WorldSnapshot {
+        let world = WorldRawData {
             day_minutes: 720,
             day_counter: 1,
             variable_values: short,
@@ -254,7 +254,7 @@ fn a_workspace_replaced_by_another_group_still_answers_the_first() {
                         .filter(|node| !unread.contains(node))
                         .collect()
                 },
-                world: WorldSnapshot {
+                world: WorldRawData {
                     day_minutes: 720,
                     day_counter: 1,
                     ..Default::default()

@@ -64,7 +64,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use lookahead_engine::bridge::SnapshotWorld;
+use lookahead_engine::bridge::GameWorld;
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{Index, discover_group, read_index};
@@ -335,7 +335,7 @@ fn main() {
         // unreachable. Naming a save taken from a real playthrough asks the same question of a
         // world a player was actually in.
         let save = asked.save.clone();
-        let world = SnapshotWorld::declaring(
+        let world = GameWorld::declaring(
             save_world::of_save(&graph, conversation, &shipped, &save),
             save_world::declared(),
         );

@@ -37,7 +37,7 @@
 //! The one exception is a DIALOGUE VARIABLE the database declares, because such a variable
 //! is not unanswerable - a variable nobody has written is at the value the database gives
 //! it. Where the variable table has been deployed, that value is the fallback; see
-//! [`SnapshotWorld`].
+//! [`GameWorld`].
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -129,7 +129,7 @@ const RUN_SEPARATOR: &str = "-";
 /// something else. These carry their own ids.
 ///
 /// That trade goes the other way for the ANSWERS, where the constant part is most of the
-/// request - see [`WorldSnapshot::variable_values`].
+/// request - see [`WorldRawData::variable_values`].
 ///
 /// ## What it looks like
 ///
@@ -151,6 +151,14 @@ impl NodeSet {
 
     pub fn insert(&mut self, node: NodeRef) -> bool {
         self.nodes.insert(node)
+    }
+
+    /// Takes `node` out, reporting whether it was in.
+    ///
+    /// For a caller STATING a world rather than reading one, where saying a node is not in the
+    /// set has to undo an earlier say that it was. Nothing on the wire removes.
+    pub fn remove(&mut self, node: &NodeRef) -> bool {
+        self.nodes.remove(node)
     }
 
     pub fn len(&self) -> usize {
@@ -283,6 +291,12 @@ pub enum WireValue {
     Unknown,
 }
 
+/// The world a request's snapshot describes, which now lives beside the other world code.
+///
+/// Re-exported here because a caller that has a [`WorldRawData`] wants the thing that answers
+/// as a world in the same breath, and every such caller reaches for this module first.
+pub use crate::world::GameWorld;
+
 impl From<&WireValue> for GuardValue {
     fn from(value: &WireValue) -> Self {
         match value {
@@ -294,9 +308,27 @@ impl From<&WireValue> for GuardValue {
     }
 }
 
+impl From<&GuardValue> for WireValue {
+    /// The same four kinds the other way, for a caller stating a world rather than reading one.
+    fn from(value: &GuardValue) -> Self {
+        match value.kind() {
+            GuardValueKind::Boolean => WireValue::Bool {
+                value: value.boolean(),
+            },
+            GuardValueKind::Number => WireValue::Number {
+                value: value.number(),
+            },
+            GuardValueKind::Text => WireValue::Text {
+                value: value.text().to_string(),
+            },
+            GuardValueKind::Unknown => WireValue::Unknown,
+        }
+    }
+}
+
 /// The player's situation, as the plugin sees it, for one look-ahead.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct WorldSnapshot {
+pub struct WorldRawData {
     pub money: i32,
     pub day_minutes: i32,
     pub day_counter: i32,
@@ -304,7 +336,7 @@ pub struct WorldSnapshot {
     /// Dialogue variables, by name.
     ///
     /// For a caller that wants to say what it means: a fixture, a test, a tool. The plugin
-    /// uses [`WorldSnapshot::variable_values`] instead, and where both name the same
+    /// uses [`WorldRawData::variable_values`] instead, and where both name the same
     /// variable this one wins, because naming it is the more specific statement.
     #[serde(default)]
     pub variables: HashMap<String, WireValue>,
@@ -384,7 +416,7 @@ pub struct CheckMargin {
     pub margin: i32,
 }
 
-impl WorldSnapshot {
+impl WorldRawData {
     /// Moves the positional answers onto the names the engine asked under.
     ///
     /// Must run before the snapshot is asked anything. A positional list that is present
@@ -600,97 +632,12 @@ fn place(
     Ok(())
 }
 
-/// A [`WorldSnapshot`], answering as a world.
-///
-/// ## The variable table behind it
-///
-/// A snapshot answers what the plugin could read. What it could not read reads Unknown,
-/// which is permissive and correct for a genuinely unanswerable question - but a dialogue
-/// variable nobody has written is not unanswerable, it is at the value the database
-/// declares. Answering Unknown for it makes every guard over it undecidable; answering
-/// boolean false for it makes every ordering comparison over a COUNTER undecidable, which
-/// is the bug de-sze.5.4 exists about.
-///
-/// So a variable the snapshot could not answer falls back to its declared initial value,
-/// which carries the right KIND as well as the right value. THERE IS ALWAYS A TABLE -
-/// `variables.jsonl`, deployed beside the index - because an engine opened without one is
-/// refused; see [`crate::service::Service::open`].
-pub struct SnapshotWorld {
-    snapshot: WorldSnapshot,
-    /// What a variable reads where the snapshot could not answer it.
-    declared: Arc<dyn crate::world::IVariableTable>,
-}
-
-impl SnapshotWorld {
-    /// A world whose table declares nothing at all.
-    ///
-    /// NAMED FOR WHAT IT LACKS, so that a test about something else says out loud that it
-    /// is measuring a world where no variable has a declared kind - a variable the snapshot
-    /// cannot answer reads as the game's false here, where a declared one would answer with
-    /// what the database says it starts as. The table itself is never absent: see
-    /// [`crate::index::VariableTable::empty`].
-    pub fn declaring_nothing(snapshot: WorldSnapshot) -> Self {
-        Self {
-            snapshot,
-            declared: Arc::new(crate::index::VariableTable::empty()),
-        }
-    }
-
-    /// The same, falling back to the database's declared variables.
-    pub fn declaring(
-        snapshot: WorldSnapshot,
-        declared: Arc<dyn crate::world::IVariableTable>,
-    ) -> Self {
-        Self { snapshot, declared }
-    }
-
-    /// Whether `subject` is in the set `kind` answered with.
-    ///
-    /// `None` where nothing answered that request at all, which stays Unknown rather than
-    /// reading as "not in the set": a set nobody sent is not an empty set.
-    fn in_set(&self, kind: DataKind, subject: &str) -> Option<bool> {
-        let answer = self.snapshot.data.get(&DataRequest::set(kind))?;
-        // NOT READ IS NOT EMPTY. A plugin that could not reach the cabinet sends an answer
-        // saying so, and treating that as an empty set would answer "not in it" for
-        // everything - which closes routes rather than opening them.
-        if !answer.read {
-            return None;
-        }
-
-        Some(answer.names.iter().any(|name| name == subject))
-    }
-
-    /// The item one equipment slot holds - empty for an empty slot - or `None` where the
-    /// slot was not read.
-    fn in_slot(&self, slot: &str) -> Option<&str> {
-        let answer = self
-            .snapshot
-            .data
-            .get(&DataRequest::about(DataKind::EquippedInSlot, slot))?;
-        if !answer.read {
-            return None;
-        }
-
-        match &answer.value {
-            WireValue::Text { value } => Some(value),
-            _ => None,
-        }
-    }
-
-    /// The names a per-subject, set-valued request answered with, or `None` where it was
-    /// not read.
-    fn names_about(&self, kind: DataKind, subject: &str) -> Option<Vec<String>> {
-        let answer = self.snapshot.data.get(&DataRequest::about(kind, subject))?;
-        answer.read.then(|| answer.names.clone())
-    }
-}
-
 /// The sets a cabinet question is answered from, or `None` for anything else.
 ///
 /// `IsTHCCookingOrFixed` is two sets because that is what it is - cooking with a fallthrough
 /// to fixed - and keeping it as a pair here is what stops it being confused with
 /// `IsTHCPresent`, which is the BROADER question and has burnt this code once already.
-fn thought_state_kinds(name: &str) -> Option<&'static [DataKind]> {
+pub(crate) fn thought_state_kinds(name: &str) -> Option<&'static [DataKind]> {
     match name {
         "IsTHCCooking" => Some(&[DataKind::ThoughtsCooking]),
         "IsTHCFixed" => Some(&[DataKind::ThoughtsFixed]),
@@ -699,196 +646,10 @@ fn thought_state_kinds(name: &str) -> Option<&'static [DataKind]> {
     }
 }
 
-impl ILookAheadWorld for SnapshotWorld {
-    fn money(&self) -> i32 {
-        self.snapshot.money
-    }
-
-    fn day_minutes(&self) -> i32 {
-        self.snapshot.day_minutes
-    }
-
-    fn day_counter(&self) -> i32 {
-        self.snapshot.day_counter
-    }
-
-    fn is_clock_locked(&self) -> bool {
-        self.snapshot.clock_locked
-    }
-
-    fn get_variable(&self, variable: VariableRef<'_>) -> GuardValue {
-        let name = variable.name();
-        let answered = self.snapshot.variables.get(name).map(GuardValue::from);
-        if let Some(value) = answered
-            && value.kind() != GuardValueKind::Unknown
-        {
-            return value;
-        }
-
-        // The plugin could not read it, so the table answers - which it does for EVERY name,
-        // so there is no case left here to get wrong. What it says an unwritten variable
-        // starts as is a better answer than "no idea", and is the only one that gets a
-        // counter's KIND right. See `IVariableTable`.
-        self.declared.unset(name)
-    }
-
-    fn initially_has_item(&self, name: &str) -> bool {
-        self.snapshot.items.contains(name)
-    }
-
-    fn initially_has_thought(&self, name: &str) -> bool {
-        self.snapshot.thoughts.contains(name)
-    }
-
-    fn initial_damage(&self, skill: &str) -> Option<f64> {
-        let answer = self
-            .snapshot
-            .data
-            .get(&DataRequest::about(DataKind::SkillDamage, skill))?;
-        if !answer.read {
-            return None;
-        }
-        GuardValue::from(&answer.value).try_as_number()
-    }
-
-    fn item_in_slot(&self, slot: &str) -> Option<String> {
-        self.in_slot(slot).map(str::to_string)
-    }
-
-    fn items_in_group(&self, group: &str) -> Option<Vec<String>> {
-        self.names_about(DataKind::ItemsInGroup, group)
-    }
-
-    fn initially_held_in_group(&self, group: &str) -> Option<Vec<String>> {
-        self.names_about(DataKind::HeldItemsInGroup, group)
-    }
-
-    fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue {
-        // WHETHER A TAB HOLDS ANYTHING, and whether the scene is outdoors, as the plugin read
-        // them. No query key behind either.
-        let read_value = |request: DataRequest| match self.snapshot.data.get(&request) {
-            Some(answer) if answer.read => GuardValue::from(&answer.value),
-            _ => GuardValue::unknown(),
-        };
-        if let Some(tab) = inventory_tabs::tab_read_by(name) {
-            return read_value(DataRequest::about(DataKind::TabHoldsItems, tab));
-        }
-        if name == crate::core::scene::IS_EXTERIOR {
-            return read_value(DataRequest::set(DataKind::SceneIsOutside));
-        }
-        if name == crate::core::game_mode::WAS_GAME_BEATEN_IN_HARDCORE_MODE {
-            return read_value(DataRequest::set(DataKind::HardcorePlaythroughCompleted));
-        }
-        // WHO IS WITH THE PLAYER, from the party flags the plugin read.
-        let party_flag = |flag: &str| {
-            let value = read_value(DataRequest::about(DataKind::PartyFlag, flag));
-            (value.kind() == GuardValueKind::Boolean).then(|| value.boolean())
-        };
-        if let Some(here) = crate::core::party::answer(name, party_flag) {
-            return here.map_or_else(GuardValue::unknown, GuardValue::from_boolean);
-        }
-        if name == crate::core::game_mode::IS_HARDCORE_MODE_ACTIVE {
-            let mode = read_value(DataRequest::set(DataKind::GameMode));
-            return if mode.kind() == GuardValueKind::Text {
-                GuardValue::from_boolean(mode.text() == crate::core::game_mode::HARDCORE)
-            } else {
-                GuardValue::unknown()
-            };
-        }
-        if let Some(skill) = crate::core::damage::skill_read_by(name) {
-            let damage = read_value(DataRequest::about(DataKind::SkillDamage, skill));
-            return damage
-                .try_as_number()
-                .map_or_else(GuardValue::unknown, |value| {
-                    GuardValue::from_boolean(crate::core::damage::is_damaged(value))
-                });
-        }
-
-        // THE CABINET'S NARROW QUESTIONS, answered from the sets the plugin enumerated.
-        // Nothing asks it to evaluate these any more - see `collect` - so there is no query
-        // key to fall back to, and a set nobody sent leaves the question Unknown.
-        if let Some(kinds) = thought_state_kinds(name) {
-            let Some(subject) = arguments
-                .first()
-                .filter(|value| value.kind() == GuardValueKind::Text)
-                .map(|value| value.text())
-            else {
-                return GuardValue::unknown();
-            };
-
-            let mut answered = false;
-            for kind in kinds.iter().copied() {
-                match self.in_set(kind, subject) {
-                    // IN ANY OF THEM IS ENOUGH, which is what cooking-or-fixed means and is
-                    // the only case for the other two.
-                    Some(true) => return GuardValue::from_boolean(true),
-                    Some(false) => answered = true,
-                    None => {}
-                }
-            }
-
-            return if answered {
-                GuardValue::from_boolean(false)
-            } else {
-                GuardValue::unknown()
-            };
-        }
-
-        // WHAT IS WORN, answered from the slots the plugin read. Like the cabinet, there is
-        // no query key behind it to fall back to.
-        let argument = match arguments {
-            [value] if value.kind() == GuardValueKind::Text => Some(value.text()),
-            _ => None,
-        };
-        if let Some(worn) = equipment::answer(
-            name,
-            argument,
-            |slot| self.in_slot(slot),
-            |group| self.items_in_group(group),
-        ) {
-            return worn.map_or_else(GuardValue::unknown, GuardValue::from_boolean);
-        }
-
-        self.snapshot
-            .queries
-            .get(&query_key(name, arguments))
-            .map(GuardValue::from)
-            .unwrap_or_else(GuardValue::unknown)
-    }
-
-    fn check_passes(&self, node: DialogueNodeId) -> Ternary {
-        let node = NodeRef::from(node);
-        if self.snapshot.checks_pass.contains(&node) {
-            Ternary::True
-        } else if self.snapshot.checks_fail.contains(&node) {
-            Ternary::False
-        } else {
-            Ternary::Unknown
-        }
-    }
-
-    fn is_seen(&self, node: DialogueNodeId) -> bool {
-        self.snapshot.seen.contains(&NodeRef::from(node))
-    }
-
-    fn red_check_may_pass(&self, _node: DialogueNodeId) -> bool {
-        !self.snapshot.red_checks_fail
-    }
-
-    fn check_margin(&self, node: DialogueNodeId) -> Option<(String, i32)> {
-        let node = NodeRef::from(node);
-        self.snapshot
-            .check_margins
-            .iter()
-            .find(|margin| margin.node == node)
-            .map(|margin| (margin.skill.clone(), margin.margin))
-    }
-}
-
 /// The key a world query's answer is carried under.
 ///
 /// Written once and used from both ends - [`questions_for`] hands these out and
-/// [`SnapshotWorld::query`] looks them up - so the two cannot disagree about what a
+/// [`GameWorld::query`] looks them up - so the two cannot disagree about what a
 /// question is called. That is the whole reason the engine names its own keys.
 pub fn query_key(name: &str, arguments: &[GuardValue]) -> String {
     let rendered: Vec<String> = arguments.iter().map(|value| value.to_string()).collect();
@@ -1172,7 +933,7 @@ pub struct LookAheadRequest {
     #[serde(default)]
     pub encountered: Vec<NodeRef>,
 
-    pub world: WorldSnapshot,
+    pub world: WorldRawData,
 }
 
 impl LookAheadRequest {
@@ -1456,7 +1217,7 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
 
     // SORTED, and that is load-bearing rather than tidy. The plugin caches this list
     // against a conversation and answers it POSITIONALLY - see
-    // `WorldSnapshot::variable_values` - so the order is the agreement between the two
+    // `WorldRawData::variable_values` - so the order is the agreement between the two
     // sides, and a list that reordered itself between two calls would silently move every
     // answer onto the wrong question.
     // WHAT THE GRAPH IS FITTED TO, which no guard need name - see `LookAheadGraph::fit`: the
@@ -1750,7 +1511,7 @@ pub fn answer(
         return LookAheadResponse::failed(reason);
     }
 
-    let world = SnapshotWorld::declaring(snapshot, declared);
+    let world = GameWorld::declaring(snapshot, declared);
     graph.fit(&crate::graph::Fitting::read(&graph, &world));
     // THE ONE RULE, asked of the world and of what the global tracking holds - see
     // `world::seen_state`.
@@ -2441,7 +2202,7 @@ where
 mod branch_wire_tests {
     use super::*;
     use crate::test_graph::{Entry, GraphBuilder, node};
-    use crate::world::test_world::TestWorld;
+    use crate::world::GameWorld;
 
     /// One outcome of one start, asked through the path the game asks through.
     ///
@@ -2454,7 +2215,7 @@ mod branch_wire_tests {
     /// to express. A test whose subject IS the competition must offer a real menu.
     fn score_one<F>(
         graph: &LookAheadGraph,
-        world: &TestWorld,
+        world: &GameWorld,
         start: DialogueNodeId,
         branch: StartBranch,
         seen_state: F,
@@ -2472,7 +2233,7 @@ mod branch_wire_tests {
     /// group reads it - so a price is refused as the product refuses it.
     fn answer_menu<F>(
         graph: &LookAheadGraph,
-        world: &TestWorld,
+        world: &GameWorld,
         starts: &[DialogueNodeId],
         seen_state: F,
     ) -> Vec<LookAheadAnswer>
@@ -2541,7 +2302,7 @@ mod branch_wire_tests {
     #[test]
     fn a_refused_option_still_lets_each_outcome_ask_for_itself() {
         let graph = check_landing_on_something_read();
-        let world = TestWorld::declaring_nothing();
+        let world = GameWorld::blank();
 
         // 1 is read; everything else is unseen this game. Nothing is unseen anywhere.
         let seen_state = |id: DialogueNodeId| {
@@ -2781,7 +2542,7 @@ mod branch_wire_tests {
         let index = crate::index::Index::new();
         let _ = index;
 
-        let world = TestWorld::declaring_nothing();
+        let world = GameWorld::blank();
         let seen_state = |_: DialogueNodeId| SeenState::UnseenThisGame;
 
         let outcomes: Vec<LookAheadAnswer> = [StartBranch::Pass, StartBranch::Fail]
@@ -2822,7 +2583,7 @@ mod branch_wire_tests {
             .add(Entry::new(0).cost(PRICE).links(&[2]))
             .add(Entry::new(2))
             .build();
-        let world = TestWorld::declaring_nothing().with_money(PRICE - 1);
+        let world = GameWorld::blank().with_money(PRICE - 1);
 
         let answer = score_one(
             &graph,
@@ -2849,7 +2610,7 @@ mod branch_wire_tests {
             .add(Entry::new(1).links(&[2]))
             .add(Entry::new(2))
             .build();
-        let world = TestWorld::declaring_nothing().with_money(PRICE - 1);
+        let world = GameWorld::blank().with_money(PRICE - 1);
 
         let answers = answer_menu(&graph, &world, &[node(0), node(1)], only_two_is_unread);
         let best_of = |id: DialogueNodeId| {
@@ -2885,7 +2646,7 @@ mod branch_wire_tests {
             .add(Entry::new(2))
             .add(Entry::new(3))
             .build();
-        let world = TestWorld::declaring_nothing().with_money(PRICE - 1);
+        let world = GameWorld::blank().with_money(PRICE - 1);
         let two_and_three_are_unread = |id: DialogueNodeId| {
             if id == node(2) || id == node(3) {
                 SeenState::UnseenAnyGame
@@ -2970,7 +2731,7 @@ mod branch_wire_tests {
             .add(Entry::new(2).guard(r#"Variable["roll"] == false"#))
             .add(Entry::new(3).links(&[0]))
             .build();
-        let world = TestWorld::declaring_nothing().with_red_checks_failing(true);
+        let world = GameWorld::blank().with_red_checks_failing(true);
         let only_one_is_unread = |id: DialogueNodeId| {
             if id == node(1) {
                 SeenState::UnseenAnyGame
@@ -3046,13 +2807,12 @@ mod tests {
         assert!(found.data.contains(&request), "{:?}", found.data);
         assert_eq!(found.thoughts, vec!["ultraliberal".to_string()]);
 
-        let mut snapshot = WorldSnapshot::default();
+        let mut snapshot = WorldRawData::default();
         snapshot.data.insert(
             request,
             DataAnswer::of_names(vec!["ultraliberal".to_string()]),
         );
-        let fitting =
-            crate::graph::Fitting::read(&graph, &SnapshotWorld::declaring_nothing(snapshot));
+        let fitting = crate::graph::Fitting::read(&graph, &GameWorld::declaring_nothing(snapshot));
         assert!(fitting.fixed.contains("ultraliberal"));
 
         graph.fit(&fitting);
@@ -3194,14 +2954,14 @@ mod tests {
         assert_eq!(found.data, vec![request.clone()]);
 
         let in_mode = |mode: &str| {
-            let mut snapshot = WorldSnapshot::default();
+            let mut snapshot = WorldRawData::default();
             snapshot.data.insert(
                 request.clone(),
                 DataAnswer::of_value(WireValue::Text {
                     value: mode.to_string(),
                 }),
             );
-            SnapshotWorld::declaring_nothing(snapshot)
+            GameWorld::declaring_nothing(snapshot)
                 .query("IsHardcoreModeActive", &[])
                 .boolean()
         };
@@ -3233,12 +2993,12 @@ mod tests {
         assert_eq!(found.data, vec![request.clone()]);
 
         let damaged = |damage: f64| {
-            let mut snapshot = WorldSnapshot::default();
+            let mut snapshot = WorldRawData::default();
             snapshot.data.insert(
                 request.clone(),
                 DataAnswer::of_value(WireValue::Number { value: damage }),
             );
-            SnapshotWorld::declaring_nothing(snapshot)
+            GameWorld::declaring_nothing(snapshot)
                 .query("HasVolitionDamage", &[])
                 .boolean()
         };
@@ -3325,11 +3085,11 @@ mod tests {
         let found = asked(r#"UnportedQuery("a", 2)"#);
         let key = &found.queries[0];
 
-        let mut world = WorldSnapshot::default();
+        let mut world = WorldRawData::default();
         world
             .queries
             .insert(key.clone(), WireValue::Bool { value: true });
-        let world = SnapshotWorld::declaring_nothing(world);
+        let world = GameWorld::declaring_nothing(world);
 
         let answer = world.query(
             "UnportedQuery",
@@ -3388,12 +3148,18 @@ mod tests {
         assert_eq!(slots, vec!["HAT", "PANTS", "SHIRT", "SHOES"]);
     }
 
-    /// The slots answer `CheckEquipped`, and a slot nobody read leaves a missing item Unknown.
+    /// The slots answer `CheckEquipped`, and a slot nobody read counts as empty.
+    ///
+    /// EMPTY RATHER THAN UNDECIDED, which is the call de-m11s asks for: the plugin is asked
+    /// about the slots a group's guards name, so one it did not answer is one the game had
+    /// nothing in. Unknown here unsettles a price nothing was ever going to move - see
+    /// `Fitting::read`, which reads an unread slot as possibly holding the item about to be
+    /// lost.
     #[test]
     fn check_equipped_is_answered_from_the_slots() {
         let found = asked(r#"CheckEquipped("neck_tie")"#);
         let world_with = |neck: Option<&str>| {
-            let mut snapshot = WorldSnapshot::default();
+            let mut snapshot = WorldRawData::default();
             for request in &found.data {
                 let answer = match (request.subject.as_str(), neck) {
                     ("NECK", None) => DataAnswer::default(),
@@ -3406,7 +3172,7 @@ mod tests {
                 };
                 snapshot.data.insert(request.clone(), answer);
             }
-            SnapshotWorld::declaring_nothing(snapshot)
+            GameWorld::declaring_nothing(snapshot)
         };
         let tie = [GuardValue::from_text("neck_tie".to_string())];
 
@@ -3419,7 +3185,8 @@ mod tests {
         assert!(!bare.boolean());
 
         let unread = world_with(None).query("CheckEquipped", &tie);
-        assert_eq!(unread.kind(), GuardValueKind::Unknown);
+        assert_eq!(unread.kind(), GuardValueKind::Boolean);
+        assert!(!unread.boolean(), "a slot nobody read holds nothing");
     }
 
     /// A variable the plugin could not read falls back to what the database declares.
@@ -3441,7 +3208,7 @@ mod tests {
             initial: "False".to_string(),
         });
 
-        let mut snapshot = WorldSnapshot::default();
+        let mut snapshot = WorldRawData::default();
         // What the plugin sends for a variable Lua would not answer.
         snapshot
             .variables
@@ -3452,7 +3219,7 @@ mod tests {
             WireValue::Number { value: 4.0 },
         );
 
-        let world = SnapshotWorld::declaring(snapshot, Arc::new(table));
+        let world = GameWorld::declaring(snapshot, Arc::new(table));
 
         assert_eq!(
             read(&world, "jam.lorrymans_questioned").try_as_number(),
@@ -3487,7 +3254,7 @@ mod tests {
         });
         let table = Arc::new(table);
 
-        let world = SnapshotWorld::declaring(WorldSnapshot::default(), table.clone());
+        let world = GameWorld::declaring(WorldRawData::default(), table.clone());
         let undefined = read(&world, "undefined.pinball_asked_about_the_goats");
         assert_eq!(
             undefined.kind(),
@@ -3500,7 +3267,7 @@ mod tests {
         // so it reads false by the same rule and says nothing about it. See
         // `undeclared_variable_warning`.
         let failed = format!("church.soona_pale_wc{}", crate::index::FAILED_FLAG_SUFFIX);
-        let world = SnapshotWorld::declaring(WorldSnapshot::default(), table);
+        let world = GameWorld::declaring(WorldRawData::default(), table);
         let slot = read(&world, &failed);
         assert_eq!(slot.kind(), GuardValueKind::Boolean);
         assert!(!slot.boolean());
@@ -3518,7 +3285,7 @@ mod tests {
 
         // Nothing about it in the snapshot at all, which is what a group whose variable
         // the plugin never saw looks like.
-        let world = SnapshotWorld::declaring(WorldSnapshot::default(), Arc::new(table));
+        let world = GameWorld::declaring(WorldRawData::default(), Arc::new(table));
         assert_eq!(
             read(&world, "pier.reporting_counter").try_as_number(),
             Some(0.0)
@@ -3528,7 +3295,7 @@ mod tests {
         // same name reads as the game's false - correct for the many variables that are
         // flags, and the whole of the bug where the one being compared is a counter, since
         // an ordering guard over a boolean decides nothing.
-        let bare = SnapshotWorld::declaring_nothing(WorldSnapshot::default());
+        let bare = GameWorld::declaring_nothing(WorldRawData::default());
         assert_eq!(
             read(&bare, "pier.reporting_counter").kind(),
             GuardValueKind::Boolean
@@ -3545,7 +3312,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut snapshot = WorldSnapshot {
+        let mut snapshot = WorldRawData {
             variable_values: vec![
                 WireValue::Number { value: 4.0 },
                 WireValue::Bool { value: true },
@@ -3557,7 +3324,7 @@ mod tests {
             .resolve(&questions)
             .expect("the lists are the same length");
 
-        let world = SnapshotWorld::declaring_nothing(snapshot);
+        let world = GameWorld::declaring_nothing(snapshot);
         assert_eq!(read(&world, "a.first").try_as_number(), Some(4.0));
         assert!(read(&world, "b.second").boolean());
         assert!(world.query("UnportedQuery", &[]).boolean());
@@ -3571,7 +3338,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut snapshot = WorldSnapshot {
+        let mut snapshot = WorldRawData {
             variable_values: vec![WireValue::Number { value: 4.0 }],
             ..Default::default()
         };
@@ -3583,7 +3350,7 @@ mod tests {
             .expect("the lists are the same length");
 
         assert_eq!(
-            read(&SnapshotWorld::declaring_nothing(snapshot), "a.first").try_as_number(),
+            read(&GameWorld::declaring_nothing(snapshot), "a.first").try_as_number(),
             Some(9.0),
         );
     }
@@ -3600,7 +3367,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut snapshot = WorldSnapshot {
+        let mut snapshot = WorldRawData {
             variable_values: vec![WireValue::Bool { value: true }],
             ..Default::default()
         };
@@ -3622,7 +3389,7 @@ mod tests {
     /// and the table says what it is.
     #[test]
     fn an_unanswered_question_is_unknown_rather_than_false() {
-        let world = SnapshotWorld::declaring_nothing(WorldSnapshot::default());
+        let world = GameWorld::declaring_nothing(WorldRawData::default());
 
         assert_eq!(
             world.query("IsKimHere", &[]).kind(),
@@ -3637,7 +3404,7 @@ mod tests {
     /// All three check outcomes come across, and the third one is silence.
     #[test]
     fn a_check_answer_carries_all_three_outcomes() {
-        let world = SnapshotWorld::declaring_nothing(WorldSnapshot {
+        let world = GameWorld::declaring_nothing(WorldRawData {
             checks_pass: NodeSet::from_iter([NodeRef {
                 conversation: 1,
                 entry: 1,
@@ -3662,7 +3429,7 @@ mod tests {
 
     #[test]
     fn seen_entries_are_carried_across() {
-        let world = SnapshotWorld::declaring_nothing(WorldSnapshot {
+        let world = GameWorld::declaring_nothing(WorldRawData {
             seen: NodeSet::from_iter([NodeRef {
                 conversation: 7,
                 entry: 3,
@@ -3781,7 +3548,7 @@ mod tests {
     /// form either of them ever travels in.
     #[test]
     fn a_request_survives_json() {
-        let mut world = WorldSnapshot {
+        let mut world = WorldRawData {
             money: 250,
             day_minutes: 720,
             ..Default::default()
@@ -3857,7 +3624,7 @@ mod tests {
             menu_time_budget_ms: 0,
             memory_budget_mb: 64,
             encountered: Vec::new(),
-            world: WorldSnapshot::default(),
+            world: WorldRawData::default(),
         };
 
         assert_eq!(request.diagram_budget().memory(), 64 * 1024 * 1024);
@@ -3880,7 +3647,7 @@ mod tests {
             menu_time_budget_ms: 0,
             memory_budget_mb: 0,
             encountered: Vec::new(),
-            world: WorldSnapshot::default(),
+            world: WorldRawData::default(),
         };
 
         assert_eq!(
@@ -3909,7 +3676,7 @@ mod tests {
             menu_time_budget_ms: 0,
             memory_budget_mb: 0,
             encountered: Vec::new(),
-            world: WorldSnapshot::default(),
+            world: WorldRawData::default(),
         };
 
         let budget = request.search_budget();
@@ -3937,7 +3704,7 @@ mod tests {
             menu_time_budget_ms: 0,
             memory_budget_mb: 0,
             encountered: Vec::new(),
-            world: WorldSnapshot::default(),
+            world: WorldRawData::default(),
         };
 
         assert_eq!(

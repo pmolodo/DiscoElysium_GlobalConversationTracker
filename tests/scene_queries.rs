@@ -38,7 +38,7 @@
 use std::collections::BTreeSet;
 
 use lookahead_engine::bridge::{
-    DataKind, DataRequest, Questions, SnapshotWorld, WireValue, WorldSnapshot,
+    DataKind, DataRequest, GameWorld, Questions, WireValue, WorldRawData,
 };
 use lookahead_engine::core::guard_value::GuardValueKind;
 use lookahead_engine::service::Service;
@@ -67,14 +67,14 @@ fn scene_answers(save: &str, asked: &Questions) -> [WireValue; 3] {
     let holdings = common::fixtures::holdings_in_save(save);
     let variables = common::fixtures::variables_sent(save, asked);
 
-    let mut snapshot = WorldSnapshot {
+    let mut snapshot = WorldRawData {
         data_values: holdings.data_for(&asked.data),
         ..Default::default()
     };
     snapshot
         .resolve(asked)
         .expect("the fixture answers the list it was asked");
-    let exterior = SnapshotWorld::declaring_nothing(snapshot).query("IsExterior", &[]);
+    let exterior = GameWorld::declaring_nothing(snapshot).query("IsExterior", &[]);
     let outdoors = if exterior.kind() == GuardValueKind::Boolean {
         WireValue::Bool {
             value: exterior.boolean(),

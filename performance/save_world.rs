@@ -3,7 +3,7 @@
 //!
 //! ## Why a measurement would want this
 //!
-//! A `WorldSnapshot::default()` answers nothing: no skill check, no item, no variable, no
+//! A `WorldRawData::default()` answers nothing: no skill check, no item, no variable, no
 //! equipment query. That is fine for a measurement whose search only has to be given SOMETHING
 //! to chew, and fatal for one that walks, because `walkthrough` refuses rather than guesses
 //! wherever it cannot decide what the game would show. Measured on 537, a default world walks
@@ -22,7 +22,7 @@
 //!
 //! A SNAPSHOT'S DATA ANSWERS ARRIVE POSITIONALLY and a request resolves them against the
 //! questions that asked for them. A world built directly has no request to do that, so without
-//! [`WorldSnapshot::resolve`] every query stays Unknown - which stopped 761 one step past its
+//! [`WorldRawData::resolve`] every query stays Unknown - which stopped 761 one step past its
 //! start, at `CheckEquipped("jacket_carabineer")` on 761:87.
 
 #![allow(dead_code)]
@@ -30,7 +30,7 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-use lookahead_engine::bridge::{NodeRef, WorldSnapshot};
+use lookahead_engine::bridge::{NodeRef, WorldRawData};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::discover_group;
 
@@ -68,7 +68,7 @@ use crate::prepared::{Caching, Shipped};
 ///
 /// It does NOT survive the process, and the measurement driver runs one process per group, so
 /// this does nothing for a whole-game run on its own. That is what the disk cache is for.
-type Built = HashMap<(i32, String, usize), WorldSnapshot>;
+type Built = HashMap<(i32, String, usize), WorldRawData>;
 
 fn memo() -> &'static Mutex<Built> {
     static MEMO: OnceLock<Mutex<Built>> = OnceLock::new();
@@ -95,7 +95,7 @@ pub fn of_save(
     conversation: i32,
     shipped: &Shipped,
     save: &str,
-) -> WorldSnapshot {
+) -> WorldRawData {
     let key = (conversation, save.to_string(), graph.count());
     // NOT WHILE VERIFYING, because the memo is what the disk cache would otherwise never be
     // asked past: a run that asked for the same world twice would check the first answer and
@@ -168,10 +168,10 @@ fn kept_at(
 /// it calls seen, and which checks pass. A world stale for either reason the key guards against
 /// - another index, another build of the engine - differs in exactly those.
 fn verified(
-    held: WorldSnapshot,
-    fresh: impl FnOnce() -> WorldSnapshot,
+    held: WorldRawData,
+    fresh: impl FnOnce() -> WorldRawData,
     caching: Caching,
-) -> WorldSnapshot {
+) -> WorldRawData {
     if !caching.verifying_reads() {
         return held;
     }
@@ -190,7 +190,7 @@ fn verified(
 /// compare: `NodeSet` has no equality of its own, and a `HashMap`'s rendering depends on its
 /// iteration order - so the variables go through a `BTreeMap` first and the sets through their
 /// own serializer, which writes them as runs in conversation order.
-fn answers(world: &WorldSnapshot) -> String {
+fn answers(world: &WorldRawData) -> String {
     let variables: std::collections::BTreeMap<_, _> = world.variables.iter().collect();
     serde_json::to_string(&(
         &variables,
@@ -205,7 +205,7 @@ fn answers(world: &WorldSnapshot) -> String {
 ///
 /// ## Why it is not just the world
 ///
-/// `WorldSnapshot::data` is keyed by a `DataRequest`, a struct - and a JSON object's keys must
+/// `WorldRawData::data` is keyed by a `DataRequest`, a struct - and a JSON object's keys must
 /// be strings, so `serde_json` refuses the whole world with "key must be a string". The binary
 /// formats this crate already has do not help either: `bincode` is not self-describing, and a
 /// world holds a `WireValue`, whose deserializer asks what the next value IS. So the map is
@@ -216,7 +216,7 @@ fn answers(world: &WorldSnapshot) -> String {
 /// costs - see [`Built`].
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Kept {
-    world: WorldSnapshot,
+    world: WorldRawData,
     data: Vec<(
         lookahead_engine::bridge::DataRequest,
         lookahead_engine::bridge::DataAnswer,
@@ -225,7 +225,7 @@ struct Kept {
 
 /// A kept world, or `None` for anything at all going wrong - see `kept`, which says why a file
 /// that does not read back is ignored rather than failed on.
-fn read_kept(path: &std::path::Path) -> Option<WorldSnapshot> {
+fn read_kept(path: &std::path::Path) -> Option<WorldRawData> {
     let held: Kept = kept::read_json(path)?;
     let mut world = held.world;
     world.data = held.data.into_iter().collect();
@@ -233,7 +233,7 @@ fn read_kept(path: &std::path::Path) -> Option<WorldSnapshot> {
 }
 
 /// Keeps a world, with its data map carried beside it - see [`Kept`].
-fn write_kept(path: &std::path::Path, world: &WorldSnapshot) {
+fn write_kept(path: &std::path::Path, world: &WorldRawData) {
     let mut without = world.clone();
     let data = std::mem::take(&mut without.data).into_iter().collect();
     kept::write_json(
@@ -250,7 +250,7 @@ fn build_of_save(
     conversation: i32,
     shipped: &Shipped,
     save: &str,
-) -> WorldSnapshot {
+) -> WorldRawData {
     let group: Vec<i32> = discover_group(shipped.index(), conversation)
         .into_iter()
         .collect();
@@ -259,7 +259,7 @@ fn build_of_save(
     let checks = common::fixtures::checks_in_save(save, &group)
         .expect("the actor table and the full index are both present");
 
-    let mut snapshot = WorldSnapshot {
+    let mut snapshot = WorldRawData {
         money: holdings.money,
         day_minutes: holdings.day_minutes,
         day_counter: holdings.day_counter,
@@ -300,7 +300,7 @@ fn build_of_save(
 /// this changes almost no answer. What it changes is the handful it cannot answer, where
 /// the difference is between a value and a shrug. It is also the only way to tell a name
 /// the save merely lacks from a name NOTHING declares: without the table every unanswered
-/// variable looks alike, and `SnapshotWorld::get_variable` will not call one undeclared on
+/// variable looks alike, and `GameWorld::get_variable` will not call one undeclared on
 /// that evidence.
 pub fn declared() -> std::sync::Arc<lookahead_engine::index::VariableTable> {
     common::declared()

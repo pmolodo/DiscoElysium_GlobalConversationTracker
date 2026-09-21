@@ -13,8 +13,8 @@ use lookahead_engine::symbolic::search::Search;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::symbolic::{menu, seen_state_search};
 use lookahead_engine::test_graph::{Entry, GraphBuilder, node};
+use lookahead_engine::world::GameWorld;
 use lookahead_engine::world::ILookAheadWorld;
-use lookahead_engine::world::test_world::TestWorld;
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 mod common;
@@ -182,7 +182,7 @@ fn cyclic_menus_agree_for_every_assignment_of_novelty() {
         compare(
             &graph,
             &[node(1), node(2), node(3)],
-            &TestWorld::declaring_nothing(),
+            &GameWorld::blank(),
             &seen_state,
         );
     }

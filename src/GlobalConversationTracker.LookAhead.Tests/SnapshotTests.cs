@@ -121,7 +121,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
             Assert.Equal(4, Assert.Single(sent.Starts).Entry);
             Assert.Equal("631: 9-9", Runs(sent.SeenAnyGame));
 
-            Wire.WorldSnapshot snapshot = sent.World;
+            Wire.WorldRawData snapshot = sent.World;
             Assert.Equal(250, snapshot.Money);
             Assert.Equal(720, snapshot.DayMinutes);
             Assert.False(snapshot.ClockLocked);

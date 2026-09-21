@@ -38,7 +38,7 @@
 use std::collections::HashSet;
 
 use lookahead_engine::bridge::{
-    LookAheadRequest, NodeRef, NodeSet, WireValue, WorldSnapshot, questions_for,
+    LookAheadRequest, NodeRef, NodeSet, WireValue, WorldRawData, questions_for,
 };
 use lookahead_engine::index::read_index;
 
@@ -109,7 +109,7 @@ fn a_request_is_measured_and_the_entry_sets_have_a_shape() {
 
     // And the whole request, as it actually travels: every question answered, and the
     // seen state of every entry decided.
-    let mut world = WorldSnapshot {
+    let mut world = WorldRawData {
         money: 250,
         day_minutes: 12 * 60,
         day_counter: 1,

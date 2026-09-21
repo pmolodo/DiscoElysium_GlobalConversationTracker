@@ -175,7 +175,7 @@ message DataAnswer {
 // ---------------------------------------------------------------------------
 
 // The player's situation, as the plugin sees it, for one look-ahead.
-message WorldSnapshot {
+message WorldRawData {
   int32 money = 1;
   int32 day_minutes = 2;
   int32 day_counter = 3;
@@ -292,7 +292,7 @@ message LookAheadRequest {
   // configuration file, and 256 is a figure a person can hold in their head.
   uint64 memory_budget_mb = 8;
 
-  WorldSnapshot world = 9;
+  WorldRawData world = 9;
 
   // Every entry this conversation has stepped through since it started, oldest first: the
   // lines displayed, the options chosen, and the entries the game passed over without

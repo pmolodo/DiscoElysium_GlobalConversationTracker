@@ -184,7 +184,7 @@
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
-use lookahead_engine::bridge::{SnapshotWorld, WorldSnapshot};
+use lookahead_engine::bridge::{GameWorld, WorldRawData};
 use lookahead_engine::core::types::{DialogueNodeId, SeenState, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
@@ -281,8 +281,8 @@ fn ask(
     asked: &Options,
 ) {
     let symbols = graph.symbols().clone();
-    let world = SnapshotWorld::declaring(
-        WorldSnapshot {
+    let world = GameWorld::declaring(
+        WorldRawData {
             day_minutes: 720,
             day_counter: 1,
             ..Default::default()

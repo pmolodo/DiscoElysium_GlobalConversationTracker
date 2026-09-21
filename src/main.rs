@@ -3,11 +3,11 @@ use clap::Parser;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use lookahead_engine::bridge::{LookAheadAnswer, LookAheadRequest, NodeRef, WorldSnapshot, answer};
+use lookahead_engine::bridge::{LookAheadAnswer, LookAheadRequest, NodeRef, WorldRawData, answer};
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::core::types::StartBranch;
 use lookahead_engine::index::{build_group_graph, read_index};
-use lookahead_engine::world::test_world::TestWorld;
+use lookahead_engine::world::GameWorld;
 
 #[derive(Parser, Debug)]
 #[command(name = "lookahead-offline")]
@@ -142,7 +142,7 @@ fn half(branch: &LookAheadAnswer) -> String {
 /// computes the same set for its baseline and does not need to hand it out.
 fn branch_destinations(
     graph: &lookahead_engine::graph::LookAheadGraph,
-    world: &TestWorld,
+    world: &GameWorld,
     start: DialogueNodeId,
     branch: StartBranch,
 ) -> Vec<DialogueNodeId> {
@@ -199,7 +199,7 @@ fn main() -> anyhow::Result<()> {
     );
 
     // Create world
-    let world = TestWorld::declaring_nothing()
+    let world = GameWorld::blank()
         .with_money(args.money)
         .with_day_minutes(args.day_minutes)
         .with_day_counter(args.day_counter)
@@ -243,7 +243,7 @@ fn main() -> anyhow::Result<()> {
             memory_budget_mb: args.memory_budget_mb,
             time_budget_ms: args.time_budget_ms,
             menu_time_budget_ms: args.menu_time_budget_ms,
-            world: WorldSnapshot {
+            world: WorldRawData {
                 day_minutes: args.day_minutes,
                 day_counter: args.day_counter,
                 // WHAT THIS SAVE HAS READ IS THE WORLD'S, because it is the game's own per-save
@@ -325,7 +325,7 @@ fn main() -> anyhow::Result<()> {
             menu_time_budget_ms: args.menu_time_budget_ms,
             memory_budget_mb: args.memory_budget_mb,
             encountered: Vec::new(),
-            world: WorldSnapshot::default(),
+            world: WorldRawData::default(),
         },
     );
 

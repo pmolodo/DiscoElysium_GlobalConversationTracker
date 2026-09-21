@@ -20,7 +20,7 @@
 mod common;
 
 use lookahead_engine::bridge::{
-    DataAnswer, DataKind, DataRequest, LookAheadRequest, NodeRef, WireValue, WorldSnapshot, answer,
+    DataAnswer, DataKind, DataRequest, LookAheadRequest, NodeRef, WireValue, WorldRawData, answer,
 };
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{Index, build_group_graph, read_index};
@@ -81,7 +81,7 @@ fn request(
     })
     .collect();
 
-    let mut world = WorldSnapshot {
+    let mut world = WorldRawData {
         variables,
         clock_locked: true,
         ..Default::default()

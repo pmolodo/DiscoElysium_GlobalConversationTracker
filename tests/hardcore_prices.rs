@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 
 use lookahead_engine::bridge::{
-    LookAheadRequest, LookAheadResponse, NodeRef, WorldSnapshot, answer,
+    LookAheadRequest, LookAheadResponse, NodeRef, WorldRawData, answer,
 };
 use lookahead_engine::index::{Index, build_group_graph, read_index};
 use lookahead_engine::service::Service;
@@ -75,7 +75,7 @@ fn request_in(index: &Index, save: &str) -> LookAheadRequest {
             .map(|node| NodeRef::from(node.id))
             .filter(|node| *node != MAGNESIUM_HANDED_OVER)
             .collect(),
-        world: WorldSnapshot {
+        world: WorldRawData {
             money: MONEY,
             day_minutes: holdings.day_minutes,
             day_counter: holdings.day_counter,

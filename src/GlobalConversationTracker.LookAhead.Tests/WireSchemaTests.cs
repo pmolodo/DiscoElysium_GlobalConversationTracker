@@ -53,9 +53,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
         }
 
         /// <summary>A snapshot with nothing left at its default.</summary>
-        private static WorldSnapshot FullSnapshot()
+        private static WorldRawData FullSnapshot()
         {
-            var snapshot = new WorldSnapshot
+            var snapshot = new WorldRawData
             {
                 Money = 5100,
                 DayMinutes = (7 * 60) + 42,
@@ -88,7 +88,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         [Fact]
         public void AWorldSnapshotSurvivesTheWire()
         {
-            RoundTrip(FullSnapshot(), WorldSnapshot.Parser);
+            RoundTrip(FullSnapshot(), WorldRawData.Parser);
         }
 
         [Fact]

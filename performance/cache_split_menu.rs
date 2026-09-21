@@ -89,9 +89,7 @@
 
 use std::time::{Duration, Instant};
 
-use lookahead_engine::bridge::{
-    LookAheadRequest, NodeRef, SnapshotWorld, WorldSnapshot, answer_starts,
-};
+use lookahead_engine::bridge::{GameWorld, LookAheadRequest, NodeRef, WorldRawData, answer_starts};
 use lookahead_engine::core::types::{DialogueNodeId, SeenState};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
@@ -252,8 +250,8 @@ where
 {
     isolated::on_its_own_thread(|| {
         let symbols = graph.symbols().clone();
-        let world = SnapshotWorld::declaring(
-            WorldSnapshot {
+        let world = GameWorld::declaring(
+            WorldRawData {
                 day_minutes: 720,
                 day_counter: 1,
                 ..Default::default()

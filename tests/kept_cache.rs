@@ -27,7 +27,7 @@
 
 use std::path::PathBuf;
 
-use lookahead_engine::bridge::SnapshotWorld;
+use lookahead_engine::bridge::GameWorld;
 
 mod common;
 
@@ -114,7 +114,7 @@ fn what_is_kept_agrees_with_what_this_build_derives() {
             !world.variables.is_empty(),
             "conversation {group}: a checked world answers no variables"
         );
-        let _ = SnapshotWorld::declaring(world, save_world::declared());
+        let _ = GameWorld::declaring(world, save_world::declared());
     }
     assert!(
         checked.took() > std::time::Duration::ZERO,

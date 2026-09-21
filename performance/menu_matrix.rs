@@ -208,7 +208,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use lookahead_engine::bridge::{NodeRef, SnapshotWorld, WorldSnapshot};
+use lookahead_engine::bridge::{GameWorld, NodeRef, WorldRawData};
 use lookahead_engine::core::types::{DialogueNodeId, SeenState, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::symbolic::arms::Arms;
@@ -579,7 +579,7 @@ fn main() {
         // DECLARED FOR THE WALK, which cannot decide a variable nothing declares and would stop
         // short without the table - see de-qy5t. The measured world is built from the same
         // snapshot below, as a request builds it.
-        let base = SnapshotWorld::declaring(snapshot.clone(), save_world::declared());
+        let base = GameWorld::declaring(snapshot.clone(), save_world::declared());
         let Some(unseen) = (match asked.targets {
             Targets::LinkDeepest => Some(menu_profile::link_deepest_unseen(
                 &graph,
@@ -730,8 +730,8 @@ fn main() {
 ///
 /// THE SAME WORLD `menu` MEASURES IN, wrapped the same way, because it has to be: a graph fitted
 /// to one world and measured in another describes neither.
-fn fitted_to(graph: &mut LookAheadGraph, world: &WorldSnapshot) {
-    let world = SnapshotWorld::declaring(world.clone(), common::declared());
+fn fitted_to(graph: &mut LookAheadGraph, world: &WorldRawData) {
+    let world = GameWorld::declaring(world.clone(), common::declared());
     graph.fit(&lookahead_engine::graph::Fitting::read(graph, &world));
 }
 
@@ -741,7 +741,7 @@ fn menu<F>(
     starts: &[DialogueNodeId],
     seen_any_game: &F,
     budget: DiagramBudget,
-    snapshot: &WorldSnapshot,
+    snapshot: &WorldRawData,
     walk: &[DialogueNodeId],
     asked: &Options,
 ) -> Option<Menu>
@@ -768,7 +768,7 @@ where
         // the seen-any-game set and the profile's to say.
         //
         // THE SAME WORLD `main` FITTED THE GRAPH TO, which it must be - see `fitted_to`.
-        let world = SnapshotWorld::declaring(snapshot.clone(), common::declared());
+        let world = GameWorld::declaring(snapshot.clone(), common::declared());
         let layout = DataLayout::for_group(graph, &world, COUNTER_CAP);
         // WHAT THE LAYOUT ALONE COST, so that "the cost is in building the layout" is a number
         // rather than the only unmeasured thing left in setup. See de-mau4.

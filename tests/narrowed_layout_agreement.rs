@@ -24,8 +24,8 @@
 use std::collections::HashSet;
 
 use lookahead_engine::bridge::{
-    COUNTER_CAP, LookAheadAnswer, LookAheadRequest, NodeRef, SnapshotWorld, WireValue,
-    WorldSnapshot, answer_starts, entered_at_of, questions_for,
+    COUNTER_CAP, GameWorld, LookAheadAnswer, LookAheadRequest, NodeRef, WireValue, WorldRawData,
+    answer_starts, entered_at_of, questions_for,
 };
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::graph::LookAheadGraph;
@@ -99,7 +99,7 @@ fn a_narrowed_layout_answers_what_the_whole_group_answers() {
             .filter(|node| !unread.contains(node))
             .collect();
 
-        let world = WorldSnapshot {
+        let world = WorldRawData {
             day_minutes: 720,
             day_counter: 1,
             variables: questions
@@ -200,8 +200,8 @@ fn a_narrowed_layout_answers_what_the_whole_group_answers() {
 }
 
 /// The request's world, as a world.
-fn declaring(request: &LookAheadRequest) -> SnapshotWorld {
-    SnapshotWorld::declaring(request.world.clone(), common::declared())
+fn declaring(request: &LookAheadRequest) -> GameWorld {
+    GameWorld::declaring(request.world.clone(), common::declared())
 }
 
 /// The answers one layout produces, or `None` where no manager could be had for it.

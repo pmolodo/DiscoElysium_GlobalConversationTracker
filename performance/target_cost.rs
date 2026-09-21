@@ -54,7 +54,7 @@
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
-use lookahead_engine::bridge::SnapshotWorld;
+use lookahead_engine::bridge::GameWorld;
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::build_group_graph;
@@ -177,7 +177,7 @@ fn ask(
     let symbols = graph.symbols().clone();
     // A WORLD THAT ANSWERS, which is the whole point: a default world decides nothing, so every
     // guard is passable and no target is ever proved unreachable - the case this is not about.
-    let world = SnapshotWorld::declaring(
+    let world = GameWorld::declaring(
         save_world::of_save(graph, conversation, shipped, save),
         save_world::declared(),
     );

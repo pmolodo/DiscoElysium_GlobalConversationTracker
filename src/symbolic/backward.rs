@@ -1287,7 +1287,7 @@ mod tests {
     use crate::symbolic::data_layout::DataLayout;
     use crate::symbolic::reachability::seed_of;
     use crate::test_graph::{Entry, GraphBuilder, node};
-    use crate::world::test_world::TestWorld;
+    use crate::world::GameWorld;
 
     const CAP: i32 = 16;
 
@@ -1298,7 +1298,7 @@ mod tests {
     /// doing it, so the expectation is written out by hand per shape rather than taken from
     /// another search that could be wrong in the same direction. The shapes are small
     /// enough to read the right answer off by eye.
-    fn reaches(entries: Vec<Entry>, world: &TestWorld, target: i32) -> bool {
+    fn reaches(entries: Vec<Entry>, world: &GameWorld, target: i32) -> bool {
         let mut builder = GraphBuilder::new();
         for entry in entries {
             builder = builder.add(entry);
@@ -1344,7 +1344,7 @@ mod tests {
     /// pre-image lost states. A yes where the answer is no is the over-approximation
     /// working as designed everywhere else, but not on shapes this small, where every guard
     /// is decidable and the answer is exact.
-    fn agree(entries: Vec<Entry>, world: &TestWorld, target: i32, expected: bool) {
+    fn agree(entries: Vec<Entry>, world: &GameWorld, target: i32, expected: bool) {
         let answer = reaches(entries, world, target);
         assert_eq!(
             answer, expected,
@@ -1365,8 +1365,7 @@ mod tests {
                 Entry::new(2).guard(r#"Variable["raised"] >= 1"#),
             ]
         };
-        let counter =
-            || TestWorld::declaring_nothing().set_variable("raised", GuardValue::from_number(0.0));
+        let counter = || GameWorld::blank().set_variable("raised", GuardValue::from_number(0.0));
 
         agree(shape(), &counter(), 2, true);
         agree(shape(), &counter().set_seen(node(1), true), 2, false);
@@ -1390,7 +1389,7 @@ mod tests {
             ]
         };
         let failing = || {
-            TestWorld::declaring_nothing()
+            GameWorld::blank()
                 .set_variable("fired", GuardValue::from_boolean(false))
                 .set_check_result(node(2), Ternary::False)
         };
@@ -1420,7 +1419,7 @@ mod tests {
             ]
         };
         let short_by = |shortfall: i32| {
-            TestWorld::declaring_nothing()
+            GameWorld::blank()
                 .set_variable("fired", GuardValue::from_boolean(false))
                 .set_damage("VOLITION", -3.0)
                 .set_check_result(node(2), Ternary::False)
@@ -1435,8 +1434,8 @@ mod tests {
     /// reference walk's.
     #[test]
     fn a_fixed_thought_pays_out_on_a_check_result() {
-        let fixed = |world: TestWorld| world.set_query_bool("IsTHCFixed", true);
-        let purse = || TestWorld::declaring_nothing().with_money(100);
+        let fixed = |world: GameWorld| world.set_fixed(crate::core::thought_effects::EVERY_THOUGHT);
+        let purse = || GameWorld::blank().with_money(100);
 
         let failed_logic = || {
             vec![
@@ -1479,15 +1478,15 @@ mod tests {
                 reader,
             ]
         };
-        let fixed = |world: TestWorld| world.set_query_bool("IsTHCFixed", true);
+        let fixed = |world: GameWorld| world.set_fixed(crate::core::thought_effects::EVERY_THOUGHT);
 
         let priced = || Entry::new(2).cost(150);
-        let purse = || TestWorld::declaring_nothing().with_money(100);
+        let purse = || GameWorld::blank().with_money(100);
         agree(shape("ultraliberal", priced()), &purse(), 2, false);
         agree(shape("ultraliberal", priced()), &fixed(purse()), 2, true);
 
         let hurt = || Entry::new(2).guard("HasVolitionDamage()");
-        let whole = || TestWorld::declaring_nothing().set_damage("VOLITION", 0.0);
+        let whole = || GameWorld::blank().set_damage("VOLITION", 0.0);
         agree(shape("revacholian_nationhood", hurt()), &whole(), 2, false);
         agree(
             shape("revacholian_nationhood", hurt()),
@@ -1507,7 +1506,7 @@ mod tests {
                 Entry::new(2).guard("HasVolitionDamage()"),
             ]
         };
-        let whole = TestWorld::declaring_nothing().set_damage("VOLITION", 0.0);
+        let whole = GameWorld::blank().set_damage("VOLITION", 0.0);
 
         agree(shape("DamageVolition(1)"), &whole, 2, true);
         agree(
@@ -1518,7 +1517,7 @@ mod tests {
         );
         agree(
             shape("HealVolition(2)"),
-            &TestWorld::declaring_nothing().set_damage("VOLITION", -3.0),
+            &GameWorld::blank().set_damage("VOLITION", -3.0),
             2,
             true,
         );
@@ -1534,7 +1533,7 @@ mod tests {
                 Entry::new(2).guard(guard),
             ]
         };
-        let with_kim = TestWorld::declaring_nothing()
+        let with_kim = GameWorld::blank()
             .set_query_bool("IsKimHere", true)
             .set_query_bool("IsKimInParty", true);
         let left = "RemoveKitsuragiWaitAtChurch()";
@@ -1554,7 +1553,7 @@ mod tests {
                 Entry::new(2).guard(guard),
             ]
         };
-        let dressed = TestWorld::declaring_nothing()
+        let dressed = GameWorld::blank()
             .set_equipped("SHIRT", "shirt_x")
             .set_query_bool("HasShirt", true)
             .set_query_bool("CheckEquipped", true);
@@ -1600,7 +1599,7 @@ mod tests {
                 Entry::new(2).guard(r#"TotalHourCount() >= Variable["deadline"]"#),
             ]
         };
-        let world = TestWorld::declaring_nothing()
+        let world = GameWorld::blank()
             .with_day_counter(2)
             .with_day_minutes(10 * 60)
             .set_variable("deadline", GuardValue::from_number(0.0));
@@ -1617,7 +1616,7 @@ mod tests {
                 Entry::new(1).links(&[2]),
                 Entry::new(2),
             ],
-            &TestWorld::declaring_nothing(),
+            &GameWorld::blank(),
             2,
             true,
         );
@@ -1631,7 +1630,7 @@ mod tests {
                 Entry::new(1).guard(r#"Variable["shut"]"#).links(&[2]),
                 Entry::new(2),
             ],
-            &TestWorld::declaring_nothing().set_variable("shut", GuardValue::from_boolean(false)),
+            &GameWorld::blank().set_variable("shut", GuardValue::from_boolean(false)),
             2,
             false,
         );
@@ -1654,7 +1653,7 @@ mod tests {
                 Entry::new(3).guard(r#"Variable["roll_failed"]"#),
             ]
         };
-        let world = TestWorld::declaring_nothing().with_red_checks_failing(true);
+        let world = GameWorld::blank().with_red_checks_failing(true);
 
         agree(entries(), &world, 2, false);
         agree(entries(), &world, 3, true);
@@ -1676,7 +1675,7 @@ mod tests {
                 Entry::new(2).guard(r#"Variable["opened"]"#).links(&[3]),
                 Entry::new(3),
             ],
-            &TestWorld::declaring_nothing(),
+            &GameWorld::blank(),
             3,
             true,
         );
@@ -1692,7 +1691,7 @@ mod tests {
                 Entry::new(2).guard(r#"Variable["opened"]"#).links(&[3]),
                 Entry::new(3),
             ],
-            &TestWorld::declaring_nothing().set_variable("opened", GuardValue::from_boolean(false)),
+            &GameWorld::blank().set_variable("opened", GuardValue::from_boolean(false)),
             3,
             false,
         );
@@ -1711,7 +1710,7 @@ mod tests {
                 Entry::new(2).guard(r#"Variable["count"] >= 3"#).links(&[3]),
                 Entry::new(3),
             ],
-            &TestWorld::declaring_nothing(),
+            &GameWorld::blank(),
             3,
             true,
         );
@@ -1738,7 +1737,7 @@ mod tests {
             ],
             // Declared numeric, so a comparison against the slot's bits is decidable - see
             // the note on `Reachability`'s guard compilation, which decides it the same way.
-            &TestWorld::declaring_nothing().set_variable("count", GuardValue::from_number(0.0)),
+            &GameWorld::blank().set_variable("count", GuardValue::from_number(0.0)),
             3,
             false,
         );
@@ -1764,7 +1763,7 @@ mod tests {
             .build();
         let symbols = graph.symbols().clone();
 
-        let world = TestWorld::declaring_nothing();
+        let world = GameWorld::blank();
         let layout = DataLayout::for_graph(&graph, CAP, None, false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
@@ -1810,7 +1809,7 @@ mod tests {
                 Entry::new(1).kind(DialogueCheckKind::Test).links(&[2]),
                 Entry::new(2),
             ],
-            &TestWorld::declaring_nothing(),
+            &GameWorld::blank(),
             2,
             false,
         );
@@ -1828,7 +1827,7 @@ mod tests {
                     .links(&[2]),
                 Entry::new(2),
             ],
-            &TestWorld::declaring_nothing(),
+            &GameWorld::blank(),
             2,
             true,
         );
@@ -1857,7 +1856,7 @@ mod tests {
                     .links(&[3]),
                 Entry::new(3),
             ],
-            &TestWorld::declaring_nothing(),
+            &GameWorld::blank(),
             3,
             true,
         );
@@ -1869,7 +1868,7 @@ mod tests {
     fn a_start_that_is_the_target_reaches_it() {
         agree(
             vec![Entry::new(0).links(&[1]), Entry::new(1)],
-            &TestWorld::declaring_nothing(),
+            &GameWorld::blank(),
             0,
             true,
         );
@@ -1880,7 +1879,7 @@ mod tests {
     fn an_orphan_entry_is_unreachable() {
         agree(
             vec![Entry::new(0).links(&[1]), Entry::new(1), Entry::new(2)],
-            &TestWorld::declaring_nothing(),
+            &GameWorld::blank(),
             2,
             false,
         );
@@ -1900,18 +1899,8 @@ mod tests {
             ]
         };
 
-        agree(
-            entries(),
-            &TestWorld::declaring_nothing().with_money(5),
-            2,
-            false,
-        );
-        agree(
-            entries(),
-            &TestWorld::declaring_nothing().with_money(10),
-            2,
-            true,
-        );
+        agree(entries(), &GameWorld::blank().with_money(5), 2, false);
+        agree(entries(), &GameWorld::blank().with_money(10), 2, true);
     }
 
     /// And what is spent is gone, which is the claim a price CHECK alone does not make.
@@ -1930,18 +1919,8 @@ mod tests {
             ]
         };
 
-        agree(
-            entries(),
-            &TestWorld::declaring_nothing().with_money(10),
-            3,
-            false,
-        );
-        agree(
-            entries(),
-            &TestWorld::declaring_nothing().with_money(12),
-            3,
-            true,
-        );
+        agree(entries(), &GameWorld::blank().with_money(10), 3, false);
+        agree(entries(), &GameWorld::blank().with_money(12), 3, true);
     }
 
     /// A price paid once is not charged again, but the purse must still cover it.
@@ -1968,7 +1947,7 @@ mod tests {
         };
 
         let purse = |money: i32| {
-            TestWorld::declaring_nothing()
+            GameWorld::blank()
                 .with_money(money)
                 .set_variable("rounds", GuardValue::from_number(0.0))
         };
@@ -2020,7 +1999,7 @@ mod tests {
         // bits and decides it. Without this line the two disagree about the fixture rather
         // than about the once slot, which is what this test is for. de-sze.5.4 is the real
         // fix: the index does not carry declared types yet.
-        let world = TestWorld::declaring_nothing()
+        let world = GameWorld::blank()
             .set_variable("locked", GuardValue::from_boolean(false))
             .set_variable("count", GuardValue::from_number(0.0));
 
@@ -2072,7 +2051,7 @@ mod tests {
             .build();
         let symbols = graph.symbols().clone();
 
-        let world = TestWorld::declaring_nothing();
+        let world = GameWorld::blank();
         let layout = DataLayout::for_graph(&graph, CAP, None, false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);

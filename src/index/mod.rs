@@ -354,7 +354,7 @@ impl VariableTable {
     ///
     /// THERE IS NO DEFAULT TABLE, deliberately. A table nobody asked for is how a crawl ends up
     /// answering Unknown for every variable the plugin could not read - see
-    /// [`crate::bridge::SnapshotWorld`], where a declared initial value is what stands in - so
+    /// [`crate::bridge::GameWorld`], where a declared initial value is what stands in - so
     /// the type refuses to appear by itself. A test or a fixture that really means "nothing
     /// declared yet" says so here.
     pub fn empty() -> Self {
@@ -977,7 +977,7 @@ mod tests {
         use crate::core::action::DialogueActionKind;
         use crate::core::guard_value::GuardValue;
         use crate::graph::Fitting;
-        use crate::world::test_world::TestWorld;
+        use crate::world::GameWorld;
 
         let mut task = conversation(7, Vec::new());
         task.fields = [
@@ -1010,7 +1010,7 @@ mod tests {
         assert_eq!(reveal.unset_variable(), Some("TASK.wall_cancelled"));
 
         let reaches = |cancelled: bool| {
-            let world = TestWorld::declaring_nothing()
+            let world = GameWorld::blank()
                 .set_variable("TASK.wall", GuardValue::from_boolean(false))
                 .set_variable("TASK.wall_cancelled", GuardValue::from_boolean(cancelled));
             let mut fitted = graph.clone();

@@ -69,7 +69,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use clap::ValueEnum;
-use lookahead_engine::bridge::{LookAheadRequest, NodeRef, SnapshotWorld, WorldSnapshot, answer};
+use lookahead_engine::bridge::{GameWorld, LookAheadRequest, NodeRef, WorldRawData, answer};
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
@@ -255,7 +255,7 @@ fn main() {
             .collect(),
         memory_budget_mb,
         time_budget_ms,
-        world: WorldSnapshot {
+        world: WorldRawData {
             day_minutes: 720,
             day_counter: 1,
             ..Default::default()
@@ -279,8 +279,8 @@ fn main() {
         let symbols = graph.symbols().clone();
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false)
             .keeping_only_read(&symbols, &DataLayout::read_by(&graph));
-        let world = SnapshotWorld::declaring(
-            WorldSnapshot {
+        let world = GameWorld::declaring(
+            WorldRawData {
                 day_minutes: 720,
                 day_counter: 1,
                 ..Default::default()

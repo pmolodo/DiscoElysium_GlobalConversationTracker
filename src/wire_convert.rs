@@ -29,7 +29,7 @@ use std::collections::HashMap;
 
 use crate::bridge::{
     DataAnswer, DataKind, FAIL, LookAheadAnswer, LookAheadRequest, LookAheadResponse, NodeRef,
-    NodeSet, PASS, Questions, WireValue, WorldSnapshot,
+    NodeSet, PASS, Questions, WireValue, WorldRawData,
 };
 use crate::wire;
 
@@ -132,12 +132,12 @@ fn read_named(values: HashMap<String, wire::WireValue>) -> HashMap<String, WireV
 }
 
 /// Reads a snapshot, or says what about it could not be read.
-pub fn read_snapshot(snapshot: Option<wire::WorldSnapshot>) -> Result<WorldSnapshot, WireError> {
+pub fn read_snapshot(snapshot: Option<wire::WorldRawData>) -> Result<WorldRawData, WireError> {
     let Some(snapshot) = snapshot else {
-        return Ok(WorldSnapshot::default());
+        return Ok(WorldRawData::default());
     };
 
-    Ok(WorldSnapshot {
+    Ok(WorldRawData {
         money: snapshot.money,
         day_minutes: snapshot.day_minutes,
         day_counter: snapshot.day_counter,
@@ -157,7 +157,7 @@ pub fn read_snapshot(snapshot: Option<wire::WorldSnapshot>) -> Result<WorldSnaps
         seen: read_node_set(snapshot.seen)?,
         red_checks_fail: snapshot.red_checks_fail,
         // NAMED IS LEFT EMPTY and the positional list carries everything, because a wire
-        // caller answers the engine's own request list in order. `WorldSnapshot::resolve`
+        // caller answers the engine's own request list in order. `WorldRawData::resolve`
         // moves these onto their requests and refuses a list of the wrong length.
         data: HashMap::new(),
         data_values: read_data(snapshot.data_values),

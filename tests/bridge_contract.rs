@@ -15,7 +15,7 @@
 use std::collections::HashSet;
 
 use lookahead_engine::bridge::{
-    LookAheadRequest, NodeRef, SnapshotWorld, WireValue, WorldSnapshot, answer, questions_for,
+    GameWorld, LookAheadRequest, NodeRef, WireValue, WorldRawData, answer, questions_for,
 };
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{build_group_graph, read_index};
@@ -70,13 +70,13 @@ fn the_engine_names_questions_the_snapshot_can_answer() {
 
         // Every query key must be one the snapshot looks up under the same name. Answer
         // them all true and none may come back unknown.
-        let mut world = WorldSnapshot::default();
+        let mut world = WorldRawData::default();
         for key in &questions.queries {
             world
                 .queries
                 .insert(key.clone(), WireValue::Bool { value: true });
         }
-        let filled = SnapshotWorld::declaring_nothing(world);
+        let filled = GameWorld::declaring_nothing(world);
 
         // Asked through the graph's own guards rather than by re-rendering the keys here,
         // which would just be this test agreeing with itself.
@@ -115,7 +115,7 @@ fn the_engine_names_questions_the_snapshot_can_answer() {
 /// `bridge::collect` can no longer quietly leave this behind.
 fn answered_queries(
     guard: &lookahead_engine::core::guard::Guard,
-    world: &SnapshotWorld,
+    world: &GameWorld,
     handed_out: &HashSet<&str>,
 ) -> usize {
     use lookahead_engine::bridge::query_key;
@@ -181,7 +181,7 @@ fn an_answer_survives_the_crossing() {
             .filter(|node| node.entry % 7 != 3)
             .collect();
 
-        let mut snapshot = WorldSnapshot {
+        let mut snapshot = WorldRawData {
             money: 500,
             day_minutes: 12 * 60,
             day_counter: 1,
@@ -297,7 +297,7 @@ fn a_menu_that_runs_out_of_its_wall_still_answers_every_option() {
         menu_time_budget_ms: 1,
         memory_budget_mb: 0,
         encountered: Vec::new(),
-        world: WorldSnapshot {
+        world: WorldRawData {
             money: 500,
             day_minutes: 12 * 60,
             day_counter: 1,
