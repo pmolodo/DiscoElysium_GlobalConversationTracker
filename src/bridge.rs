@@ -25,7 +25,7 @@
 //!
 //! ## The world crosses as a snapshot
 //!
-//! Not as callbacks. The C# already treats it that way - `GameLookAheadWorld` is built
+//! Not as callbacks. The C# already treats it that way - `GameWorld` is built
 //! per response menu and caches each query for the life of the search - so nothing is lost,
 //! and what is gained is that no Rust frame ever calls back into managed code.
 //!

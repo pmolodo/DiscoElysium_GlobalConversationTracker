@@ -103,7 +103,7 @@ Every guard is compiled or evaluated against a `BoundContext` (`src/world/mod.rs
    answer and from the world's starting value where it cannot: the clock, flags, money, the
    two slot-backed sets, reputation, item groups, weather and substances. The journal's
    `IsTaskActive` never reaches it: the index rewrites it into variables first.
-2. **Answered in `SnapshotWorld::query`** (`src/bridge.rs`), from a `DataKind` the plugin
+2. **Answered in `GameWorld::query`** (`src/world/game_world.rs`), from a `DataKind` the plugin
    read: party, equipment and clothing, cabinet states, damage, game mode, scene, inventory
    tabs.
 
@@ -117,8 +117,8 @@ keys**: nothing reaches the plugin as a call to evaluate. Two tests hold that in
   world through JSON and requires the same answers without it, skipping only calls the engine
   never handed out as keys.
 
-The plugin services each data kind in `GameWorldSnapshot.Serviced`
-(`src/GlobalConversationTracker.Plugin/GameWorldSnapshot.cs`); the offline fixture services the
+The plugin services each data kind in `LookAheadRequestBuilder.Serviced`
+(`src/GlobalConversationTracker.Plugin/LookAheadRequestBuilder.cs`); the offline fixture services the
 same kinds from a save in `Holdings::data_for` (`tests/common/fixtures.rs`).
 
 The GUARD COMPILER (`src/symbolic/guard_formula.rs`) decides guards on its own path, so a
@@ -215,7 +215,7 @@ Answered in `BoundContext::query` through `tracked_or_world`: a subject the grou
 move has an `item:` or `thought:` slot and is read from search state; any other subject is
 answered from the world's starting set (`initially_has_item`, `initially_has_thought`).
 
-The plugin fills the starting sets in `GameWorldSnapshot.FillMembers` by calling the game's own
+The plugin fills the starting sets in `LookAheadRequestBuilder.FillMembers` by calling the game's own
 predicate once per named subject - a pure read, kept as Lua because re-implementing
 `CharacterItems.IsItemGained` in C# would be a second copy that can drift (de-m7t2). The
 fixture reads them from the save.
@@ -259,7 +259,7 @@ the game answers. See `docs/actions.md` for the writes.
 
 `IsTHCCooking` and `IsTHCFixed` read collections that only the cabinet screen fills
 (`cookingEffects`, `fixedEffects`), so no dialogue action moves them. Answered in
-`SnapshotWorld::query` from `DataKind::ThoughtsCooking` and `ThoughtsFixed`, each a set over the
+`GameWorld::query` from `DataKind::ThoughtsCooking` and `ThoughtsFixed`, each a set over the
 group's named thoughts. The plugin builds each set by asking the game's predicate per thought
 (`ThoughtsWhere`), because those dictionaries do not project through Il2CppInterop; the fixture
 reads the save's cabinet states.
@@ -646,7 +646,7 @@ forever.
    readable at all.
 2. `src/symbolic/data_layout.rs` spends a slot on it.
 3. `src/bridge.rs` `collect` keeps it out of what the plugin is asked, or asks for its data.
-4. `src/world/mod.rs` `BoundContext::query` (or `SnapshotWorld::query`) answers it.
+4. `src/world/mod.rs` `BoundContext::query` (or `GameWorld::query`) answers it.
 5. `src/symbolic/guard_formula.rs` - both the compile arm and `search_can_change` - decides it,
    because the compiler runs on its own path, and a compiler less decisive than the engine
    leaves branches open that the search closes.
@@ -656,5 +656,5 @@ at every site - that is what makes the five findable with one search. Quote the 
 definition beside the emulation and name where it came from. Then:
 
 - give the data a `DataKind` if it is not a variable, serviced by a READ in
-  `GameWorldSnapshot.Serviced` and by the save in `Holdings::data_for`;
+  `LookAheadRequestBuilder.Serviced` and by the save in `Holdings::data_for`;
 - run `tools/survey-guard-functions.py` and update the tables here.
