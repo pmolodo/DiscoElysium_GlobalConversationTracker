@@ -247,6 +247,42 @@ impl Guard {
     ///
     /// A caller that needs the structure - which side of a comparison is the literal, what
     /// a conjunction's halves are - starts at [`Self::as_ref`] instead.
+    /// The same guard with every variable `settled` answers for replaced by that value, or
+    /// `None` where it answers for none of them.
+    ///
+    /// ## Why this can be a map rather than a rebuild
+    ///
+    /// The table is FLAT and a node's children are indices into it, so replacing a leaf with
+    /// another leaf leaves every index exactly where it was. Nothing is restructured, nothing
+    /// is renumbered, and a guard of any shape substitutes in one pass. A rebuild that walked
+    /// the tree would have to reproduce the numbering to stay equivalent, which is work and a
+    /// chance to be wrong for no gain.
+    ///
+    /// `None` RATHER THAN A COPY THAT CHANGED NOTHING, so a caller can tell whether it is worth
+    /// keeping a second guard at all - most guards mention no settled variable.
+    pub fn substituting(&self, settled: impl Fn(&str) -> Option<GuardValue>) -> Option<Self> {
+        let mut replaced = false;
+        let nodes: Vec<Node> = self
+            .nodes
+            .iter()
+            .map(|node| match node {
+                Node::Variable(name) => match settled(name) {
+                    Some(value) => {
+                        replaced = true;
+                        Node::Literal(value)
+                    }
+                    None => node.clone(),
+                },
+                other => other.clone(),
+            })
+            .collect();
+
+        replaced.then(|| Self {
+            nodes,
+            arguments: self.arguments.clone(),
+        })
+    }
+
     pub fn nodes(&self) -> impl Iterator<Item = GuardRef<'_>> + '_ {
         (0..self.nodes.len() as NodeId).map(move |node| GuardRef { guard: self, node })
     }
@@ -710,5 +746,60 @@ mod tests {
             guard.to_string(),
             "((Variable[\"a\"] and Variable[\"b\"]) or IsKimHere())",
         );
+    }
+
+    /// A settled variable becomes the value it settled at, and the rest of the guard stands.
+    #[test]
+    fn substituting_replaces_only_what_is_settled() {
+        let guard = Guard::or(
+            Guard::and(Guard::variable("a"), Guard::variable("b")),
+            Guard::call("IsKimHere", vec![]),
+        );
+
+        let settled = guard
+            .substituting(|name| (name == "a").then(|| GuardValue::from_number(1.0)))
+            .expect("a was settled");
+
+        assert_eq!(
+            settled.to_string(),
+            "((1 and Variable[\"b\"]) or IsKimHere())"
+        );
+    }
+
+    /// A guard mentioning nothing settled is left alone, and says so.
+    #[test]
+    fn substituting_nothing_answers_nothing() {
+        let guard = Guard::and(Guard::variable("a"), Guard::variable("b"));
+        assert!(guard.substituting(|_| None).is_none());
+    }
+
+    /// Substituting keeps a guard's ANSWER, which is the whole point: the value put in is the
+    /// value the variable was going to read as.
+    #[test]
+    fn a_substituted_guard_answers_as_the_world_would_have() {
+        struct Holds;
+        impl IGuardContext for Holds {
+            fn get_variable(&self, name: &str) -> GuardValue {
+                match name {
+                    "a" => GuardValue::from_number(3.0),
+                    _ => GuardValue::from_boolean(true),
+                }
+            }
+            fn query(&self, _: &str, _: &[GuardValue]) -> GuardValue {
+                GuardValue::from_boolean(true)
+            }
+        }
+
+        let guard = Guard::comparison(
+            "<",
+            Guard::variable("a"),
+            Guard::literal(GuardValue::from_number(5.0)),
+        );
+        let settled = guard
+            .substituting(|name| (name == "a").then(|| GuardValue::from_number(3.0)))
+            .expect("a was settled");
+
+        assert_eq!(guard.test(&Holds), settled.test(&Holds));
+        assert_eq!(settled.test(&Holds), Ternary::True);
     }
 }

@@ -50,6 +50,10 @@ use crate::index::{FORMAT_VERSION, Index};
 pub struct GroupFacts {
     /// See [`LookAheadGraph::inert_slots`]. Sorted, so the file is stable across runs.
     pub inert_slots: Vec<usize>,
+    /// See [`LookAheadGraph::settled_candidates`], which is a dominator tree over the whole
+    /// group and the more expensive of the two.
+    #[serde(default)]
+    pub settled: crate::graph::settled::Candidates,
 }
 
 /// A stored answer, with the key it was worked out from.
@@ -129,6 +133,7 @@ impl FactStore {
             && stored.content == content
         {
             graph.remember_inert_slots(stored.facts.inert_slots.into_iter().collect());
+            graph.remember_settled_candidates(stored.facts.settled);
             return;
         }
 
@@ -142,7 +147,10 @@ impl FactStore {
             &Stored {
                 format: FORMAT_VERSION,
                 content: content.to_string(),
-                facts: GroupFacts { inert_slots },
+                facts: GroupFacts {
+                    inert_slots,
+                    settled: graph.settled_candidates().clone(),
+                },
             },
         );
     }

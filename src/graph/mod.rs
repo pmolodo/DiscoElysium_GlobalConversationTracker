@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 
 pub mod node;
+pub mod settled;
 
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::sync::OnceLock;
 
@@ -29,6 +30,9 @@ pub struct Fitting {
     /// The variables the world holds set, among those a settled conditional write tests - see
     /// [`crate::core::action::DialogueAction::settled_by_world`].
     pub set_variables: BTreeSet<String>,
+    /// What a slot holds at every read of it, for the slots whose writes settle it - see
+    /// [`settled`] for which slots those are and [`Fitting::read`] for how a world settles them.
+    pub settled: BTreeMap<usize, i32>,
 }
 
 impl Fitting {
@@ -64,7 +68,63 @@ impl Fitting {
                 })
                 .map(str::to_string)
                 .collect(),
+            settled: Self::settled_by(graph, world),
         }
+    }
+
+    /// What each candidate slot holds at every read of it, for this world.
+    ///
+    /// A candidate's writes lie on every route to its reads - see [`settled`] - so the only
+    /// question left is whether they FIRE, and that is the world's to answer:
+    ///
+    /// - AN ACTION CAN BE TURNED OFF for a world, and one that is off writes nothing.
+    /// - A CHECK'S SUCCESS ACTIONS FIRE ON SUCCESS. `world::passive_outcome` says which way a
+    ///   settled check went, and refuses to say for one the group can still move - and a check
+    ///   that FAILS leaves the slot holding whatever the world brought, which is not this value.
+    ///
+    /// EVERY WRITE MUST FIRE AND ALL MUST AGREE. One that does not fire leaves a route to the
+    /// read that wrote nothing, and the value there is the world's rather than the literal -
+    /// so the slot is not settled and is left alone.
+    fn settled_by(
+        graph: &LookAheadGraph,
+        world: &dyn crate::world::ILookAheadWorld,
+    ) -> BTreeMap<usize, i32> {
+        let mut settled = BTreeMap::new();
+        for candidate in graph.settled_candidates() {
+            let mut agreed: Option<i32> = None;
+            let fires = candidate.written_at.iter().all(|id| {
+                let Some(node) = graph.get(*id) else {
+                    return false;
+                };
+                // A CHECK'S SUCCESS ACTIONS FIRE ON SUCCESS, and the world is what says whether
+                // it succeeds. Unknown is the common answer rather than the exotic one - the
+                // snapshot carries an outcome only for the checks the plugin evaluated - and
+                // Unknown means the slot is not settled.
+                if node.kind != DialogueCheckKind::None
+                    && crate::world::passive_outcome(node, world)
+                        != crate::core::types::Ternary::True
+                {
+                    return false;
+                }
+                node.actions.iter().any(|action| {
+                    if !action.is_enabled() || usize::try_from(action.slot()) != Ok(candidate.slot)
+                    {
+                        return false;
+                    }
+                    match agreed {
+                        Some(value) => value == action.value(),
+                        None => {
+                            agreed = Some(action.value());
+                            true
+                        }
+                    }
+                })
+            });
+            if let (true, Some(value)) = (fires, agreed) {
+                settled.insert(candidate.slot, value);
+            }
+        }
+        settled
     }
 }
 
@@ -101,6 +161,12 @@ pub struct LookAheadGraph {
     /// arrives over the wire works it out again on demand rather than carrying it.
     #[serde(skip)]
     inert: OnceLock<HashSet<usize>>,
+    /// The answer [`Self::settled_candidates`] gives, worked out the first time anything asks.
+    ///
+    /// NOT SERIALISED, for the reason `inert` is not: it is derived from the rest of this
+    /// struct, and a graph that arrives over the wire works it out again on demand.
+    #[serde(skip)]
+    candidates: OnceLock<settled::Candidates>,
 }
 
 impl LookAheadGraph {
@@ -225,6 +291,7 @@ impl LookAheadGraph {
             order,
             symbols,
             inert: OnceLock::new(),
+            candidates: OnceLock::new(),
         })
     }
 
@@ -270,6 +337,20 @@ impl LookAheadGraph {
     /// race that cannot change a value.
     pub fn remember_inert_slots(&self, slots: HashSet<usize>) {
         let _ = self.inert.set(slots);
+    }
+
+    /// The slots whose writes lie on every route to their reads - see [`settled`].
+    ///
+    /// A FACT ABOUT THE LINKS, so it is worked out once and kept, like [`Self::inert_slots`]:
+    /// the dominator tree it rests on is the expensive half, and which way a world sends a
+    /// check is the cheap half, asked where the graph is fitted.
+    pub fn settled_candidates(&self) -> &settled::Candidates {
+        self.candidates.get_or_init(|| settled::candidates(self))
+    }
+
+    /// Takes candidates somebody else already has - see [`Self::remember_inert_slots`].
+    pub fn remember_settled_candidates(&self, found: settled::Candidates) {
+        let _ = self.candidates.set(found);
     }
 
     /// Works [`Self::inert_slots`] out.
@@ -592,6 +673,50 @@ impl LookAheadGraph {
                         !fitting.set_variables.contains(variable)
                     }
                 });
+            }
+        }
+        self.settle_guards(fitting);
+    }
+
+    /// Puts a settled slot's value into every guard that reads it - see [`settled`].
+    ///
+    /// ## Why it happens HERE and not in the compiler
+    ///
+    /// Because everything downstream then agrees without being told. The layout's `read_by`
+    /// and the guard compiler read the same guards, so a variable replaced by its value is
+    /// invisible to both in the same way: the slot loses its last reader and
+    /// [`crate::symbolic::data_layout::DataLayout::keeping_only_read`] drops it by the rule it
+    /// already has. Telling the compiler a slot's value while the layout still carried it -
+    /// or worse, the other way round - is two sources of one truth.
+    ///
+    /// ## What is restored first, and why there is a source guard at all
+    ///
+    /// A GRAPH CAN BE FITTED TO ONE WORLD AND THEN ANOTHER, which is what the rest of `fit`
+    /// rests on: every derived field is recomputed from data that is never overwritten. A
+    /// guard is the first derived thing that replaces its own source, so the source is kept
+    /// beside it and put back before this runs again.
+    fn settle_guards(&mut self, fitting: &Fitting) {
+        for node in self.nodes.values_mut() {
+            if let Some(source) = node.guard_before_fitting.take() {
+                node.guard = source;
+            }
+        }
+        if fitting.settled.is_empty() {
+            return;
+        }
+
+        let settled: HashMap<&str, i32> = fitting
+            .settled
+            .iter()
+            .filter_map(|(slot, value)| Some((self.symbols.name_of(*slot)?, *value)))
+            .collect();
+        for node in self.nodes.values_mut() {
+            if let Some(put) = node.guard.substituting(|name| {
+                settled
+                    .get(name)
+                    .map(|value| crate::core::guard_value::GuardValue::from_number(*value as f64))
+            }) {
+                node.guard_before_fitting = Some(std::mem::replace(&mut node.guard, put));
             }
         }
     }

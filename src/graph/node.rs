@@ -25,6 +25,21 @@ pub struct LookAheadNode {
     pub holds_the_screen: bool,
     pub kind: DialogueCheckKind,
     pub guard: Guard,
+    /// What [`guard`](Self::guard) was before a fitting put a settled slot's value into it, and
+    /// `None` where no fitting has changed it.
+    ///
+    /// EVERY DERIVED FIELD HERE IS RECOMPUTED FROM DATA THAT SURVIVES IT - a price from the
+    /// click cost, an action's `enabled` from its condition - which is what lets a graph be
+    /// fitted to one world and then another. A guard is the one derived thing that replaces its
+    /// own source, so the source is kept here and put back before the next fitting. See
+    /// `LookAheadGraph::settle_guards`.
+    ///
+    /// NO `skip_serializing_if`, however tempting for a field that is almost always `None`: a
+    /// kept graph is packed with bincode, which is not self-describing, so a writer that omits
+    /// a field and a reader that still expects one do not agree and the whole pack fails to
+    /// read. `tests/kept_cache.rs` catches it, as a graph that could not be read back.
+    #[serde(default)]
+    pub guard_before_fitting: Option<Guard>,
     pub actions: Vec<DialogueAction>,
     /// What a rolled or fake check's FAILING branch does beyond recording the failure, applied
     /// after the failure flag - see [`crate::core::thought_effects`]. Empty for anything else.
@@ -82,6 +97,7 @@ impl LookAheadNode {
             holds_the_screen: false,
             kind: DialogueCheckKind::None,
             guard: Guard::always_true(),
+            guard_before_fitting: None,
             actions: Vec::new(),
             failure_actions: Vec::new(),
             skill_moves: SkillMoves::default(),
