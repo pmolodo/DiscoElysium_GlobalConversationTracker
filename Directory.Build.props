@@ -18,6 +18,16 @@
   </PropertyGroup>
 
   <!--
+    What `dotnet test` puts in the test host's environment, so that a bare `dotnet test`
+    carries it and no command line has to. See test.runsettings for what is in there and
+    why. Set for every project rather than for the test ones: a project that runs no tests
+    reads no run settings, so naming them would be a list to keep in step for nothing.
+  -->
+  <PropertyGroup>
+    <RunSettingsFilePath>$(MSBuildThisFileDirectory)test.runsettings</RunSettingsFilePath>
+  </PropertyGroup>
+
+  <!--
     Where the build reads its BepInEx and Il2CppInterop reference assemblies
     from. Three projects need them - Persistence, Session and the Plugin - and
     resolving it here rather than in each csproj means one order, one cache and

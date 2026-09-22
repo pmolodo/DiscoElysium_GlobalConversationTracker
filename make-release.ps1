@@ -19,9 +19,9 @@
 
     The mod's own layers (Core, Persistence, Session, Engine) are compiled into
     the plugin assembly, so they are one DLL, and the .pdb is left out. Beside it
-    travel the look-ahead engine, the conversation index, the variable table, the
-    engine's build stamp - all named GlobalConversationTracker-something so that
-    nothing here has to be told they exist - and Google.Protobuf, which cannot be
+    travel the look-ahead engine, the conversation index and the variable table -
+    all named GlobalConversationTracker-something so that nothing here has to be
+    told they exist - and Google.Protobuf, which cannot be
     renamed because .NET resolves an assembly by its identity rather than by its
     filename. What is staged comes from Get-PluginPayloadFile either way.
 

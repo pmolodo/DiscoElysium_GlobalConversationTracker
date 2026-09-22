@@ -150,55 +150,97 @@ pub fn at_data(kind: &str, about: &str) -> Option<PathBuf> {
 ///
 /// ## What it covers
 ///
-/// THE ENGINE, through the stamp `build.rs` writes beside the build output: a hash of every
-/// library source, so it moves when the library does and not when it is merely relinked.
+/// EVERY SOURCE A DECISION COULD HAVE COME FROM, by length and modification time. The decisions
+/// kept here are not all the library's - whether a group has a menu is `menu_profile`'s and
+/// `menu_matrix`'s - and a list of the few files that happen to decide today is a list that rots
+/// silently the first time one moves. Whole directories cannot.
 ///
-/// AND EVERY MEASUREMENT SOURCE, by length and modification time. The decisions kept here are
-/// not all the library's - whether a group has a menu is `menu_profile`'s and `menu_matrix`'s -
-/// and a list of the few files that happen to decide today is a list that rots silently the
-/// first time one moves. Whole directories cannot.
+/// The directories are [`DECIDING`]: the engine's, and this crate's, since a measurement's
+/// sources sit in both. Watching one and not the other is the rot this is written to avoid - it
+/// happened, and the symptom was a kept value derived by code that had moved out from under it.
 ///
-/// TWO OF THEM, since a measurement's sources sit in two places: the drivers, this crate's
-/// `examples/`, and the modules they share, its `src/`. Watching one and not the other is the
-/// rot this is written to avoid - it happened, and the symptom was a kept value derived by code
-/// that had moved out from under it.
+/// NOT THIS EXECUTABLE'S OWN MTIME, which would be the obvious key and is the wrong one twice
+/// over: every relink moves it although nothing a decision rests on changed, and a fact one
+/// command works out for another - see above - would be keyed differently by each of them.
 ///
-/// IT OVER-INVALIDATES ON PURPOSE. Touching any measurement source throws away everything kept,
+/// IT OVER-INVALIDATES ON PURPOSE. Touching any of those sources throws away everything kept,
 /// which costs one pass at full price - the same price the rebuild it implies costs anyway - and
 /// the alternative is a kept value from code that no longer exists.
 fn code() -> Option<String> {
-    let mut key = std::fs::read_to_string(engine_stamp()?).ok()?;
-    let here = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root = crate::common::repo_root();
     let mut sources: Vec<PathBuf> = Vec::new();
-    for directory in [here.join("examples"), here.join("src")] {
-        sources.extend(
-            std::fs::read_dir(&directory)
-                .ok()?
-                .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-                .filter(|path| path.extension().is_some_and(|kind| kind == "rs")),
-        );
+    for deciding in DECIDING {
+        walk(&root.join(deciding), &mut sources);
     }
 
-    // BY NAME, so the key does not depend on which directory a file was found in - one moving
-    // between them is a change to the file, which its stamp already carries.
+    // NOTHING FOUND IS NOT AN EMPTY KEY. A checkout this cannot read is one where every run
+    // would agree on the same key and read back each other's values - the one failure that
+    // matters here - so it keys nothing at all instead, and every run derives.
+    if sources.is_empty() {
+        return None;
+    }
+
+    // BY PATH FROM THE REPOSITORY ROOT, since a recursive walk meets a dozen files called
+    // `mod.rs` and a key that named them all the same would miss a change to all but one.
     sources.sort();
+    let mut key = String::new();
     for source in sources {
         key.push('\u{1}');
-        key.push_str(source.file_name()?.to_str()?);
+        key.push_str(source.strip_prefix(&root).ok()?.to_str()?);
         key.push_str(&stamp(&source)?);
     }
     Some(key)
 }
 
-/// Where the engine's own build stamp is: beside the build output, written by `build.rs`.
+/// Where a decision kept here could have come from, relative to the repository root.
 ///
-/// FOUND FROM THIS EXECUTABLE rather than from `CARGO_TARGET_DIR`, since an example sits in
-/// `<target>/<profile>/examples/` and a test in `<target>/<profile>/deps/`, and the stamp is
-/// one directory above either.
-fn engine_stamp() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let stamp = exe.parent()?.parent()?.join("lookahead_engine.built.json");
-    stamp.is_file().then_some(stamp)
+/// The engine's own sources and this crate's, which is every file either side of the boundary
+/// that a kept value passes through. A directory rather than a file list, so that a module
+/// added tomorrow is covered by having been written.
+const DECIDING: [&str; 7] = [
+    "src",
+    "proto",
+    "build.rs",
+    "Cargo.toml",
+    "Cargo.lock",
+    "crates/gct-measure/examples",
+    "crates/gct-measure/src",
+];
+
+/// What `src/` holds besides the Rust crate: eight C# projects, all named this way.
+///
+/// SKIPPED, and it is the difference between a cache that survives an afternoon and one that
+/// does not. Nothing a kept value holds can depend on a C# file, and those are edited constantly
+/// - counting them would throw the whole cache away several times a day for no change to any
+/// answer in it.
+const NOT_THE_ENGINE: &str = "GlobalConversationTracker.";
+
+/// Every file under `at`, or `at` itself where it is one.
+///
+/// SILENT ABOUT WHAT IT CANNOT READ. A directory that is not there contributes nothing, which is
+/// what a checkout without one should do - and the alternative, refusing to key anything, turns a
+/// missing directory into a cache that is silently off rather than one that is honestly narrow.
+fn walk(at: &Path, into: &mut Vec<PathBuf>) {
+    if at.is_file() {
+        into.push(at.to_path_buf());
+        return;
+    }
+
+    let Ok(entries) = std::fs::read_dir(at) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(NOT_THE_ENGINE))
+        {
+            continue;
+        }
+
+        walk(&path, into);
+    }
 }
 
 /// What says whether a file is the same file: its length and when it was last written.

@@ -129,22 +129,14 @@
             DestinationFiles="$(OutDir)GlobalConversationTracker.Native.exe"
             SkipUnchangedFiles="true" />
         <!--
-        And the stamp beside it, saying which source the engine was built from. Copied
-        as a pair, and never one without the other: a run compares the stamp against the
-        tree it is running from and refuses when they differ, so a stamp left behind from
-        an older engine would be worse than none. See build.rs, which writes one stamp
-        per profile directory covering everything built from that tree - so it is named
-        for the crate rather than for either artefact.
+        And the build stamp an earlier build copied beside it, swept up. Whether the
+        deployed engine is the one this tree built is answered from the two files'
+        modification times (see tools/GameAutomation/DeployedEngine.cs), so nothing reads
+        this and nothing writes it - but a file in an output folder is a file somebody will
+        wonder about, and it costs a line to be sure there is none. Same reason as the .dll
+        below.
       -->
-        <PropertyGroup>
-            <NativeLookAheadStamp>$(NativeLookAheadDir)lookahead_engine.built.json</NativeLookAheadStamp>
-        </PropertyGroup>
-        <Copy Condition="'$(NativeLookAheadDir)' != '' And Exists('$(NativeLookAheadStamp)')"
-            SourceFiles="$(NativeLookAheadStamp)"
-            DestinationFiles="$(OutDir)GlobalConversationTracker.Native.built.json"
-            SkipUnchangedFiles="true" />
-        <Delete Condition="'$(NativeLookAheadDir)' != '' And !Exists('$(NativeLookAheadStamp)')"
-            Files="$(OutDir)GlobalConversationTracker.Native.built.json" />
+        <Delete Files="$(OutDir)GlobalConversationTracker.Native.built.json" />
         <Message Condition="'$(NativeLookAheadDir)' == ''" Importance="high"
             Text="No Rust look-ahead engine found; the plugin will report the bridge as unavailable. Run: cargo build --release" />
         <!--

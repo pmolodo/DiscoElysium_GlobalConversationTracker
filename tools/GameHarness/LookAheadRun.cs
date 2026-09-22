@@ -159,21 +159,21 @@ namespace GlobalConversationTracker.Harness
                     + "Marker expectations may no longer hold.");
             }
 
-            // THE ENGINE THIS RUN WOULD TEST, before a minute is spent testing it. A
-            // library built from other sources passes or fails on behalf of code that is
-            // not here, and there is no way to tell from the result - see de-8hh2.8, where
-            // a run reported 66 of 66 against an engine from the previous day. Refused
+            // THE ENGINE THIS RUN WOULD TEST, before a minute is spent testing it. An engine
+            // older than the one this tree built passes or fails on behalf of code that is
+            // not deployed, and there is no way to tell from the result - see de-8hh2.8,
+            // where a run reported 66 of 66 against an engine from the previous day. Refused
             // rather than warned: the whole value of an in-game suite is saying what the
             // current code does in the game, and a run that cannot say that is not worth
             // the display it takes over.
-            NativeEngineStamp.Result stamp = NativeEngineStamp.Check(
+            DeployedEngine.Result engine = DeployedEngine.Check(
                 ProbeDeployment.PluginsFolder(game) + Path.DirectorySeparatorChar
                     + "GlobalConversationTracker");
-            Console.WriteLine($"engine:    {stamp.What}");
-            if (stamp.Freshness == NativeEngineStamp.Freshness.Stale)
+            Console.WriteLine($"engine:    {engine.What}");
+            if (engine.Freshness == DeployedEngine.Freshness.Stale)
             {
                 Console.Error.WriteLine();
-                Console.Error.WriteLine("FAILED: " + stamp.What);
+                Console.Error.WriteLine("FAILED: " + engine.What);
                 return 1;
             }
 

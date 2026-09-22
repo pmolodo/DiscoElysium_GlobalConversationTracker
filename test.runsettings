@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What `dotnet test` puts in the test host's environment.
+
+  DEGCT_CHECK_DEPLOY turns on the check that refuses an in-game run against a look-ahead
+  engine older than the one this tree has built. See tools/GameAutomation/DeployedEngine.cs
+  for what it compares and why it is a variable rather than a flag.
+
+  SET HERE SO NOBODY HAS TO REMEMBER IT, for the half of the in-game runs that go through
+  `dotnet test`. The other half is GameHarness, run by `dotnet run`, which this file cannot
+  reach: that one needs the variable in the shell, and DEVELOPING.md says how to put it
+  there once.
+
+  Outside a development machine the check finds no deployed engine and reports that it
+  cannot say, so turning it on for every test run costs two file times and refuses nothing.
+
+  Directory.Build.props points `dotnet test` at this file, so no command line mentions it.
+
+  No pair of hyphens anywhere in here: XML forbids one inside a comment, and a settings
+  file that will not parse stops every test run with a message about line numbers.
+-->
+<RunSettings>
+  <RunConfiguration>
+    <EnvironmentVariables>
+      <DEGCT_CHECK_DEPLOY>1</DEGCT_CHECK_DEPLOY>
+    </EnvironmentVariables>
+  </RunConfiguration>
+</RunSettings>

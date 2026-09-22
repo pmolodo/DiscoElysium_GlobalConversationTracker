@@ -186,16 +186,12 @@ $PluginFolderName = $AssemblyName
 # the same predicate as the assemblies, so deploy, release packaging and the uninstaller
 # all handle it without being told it exists, which is the same trick the look-ahead engine
 # uses by being named GlobalConversationTracker.Native.exe.
-# .json is here for the engine's build stamp - GlobalConversationTracker.Native.built.json,
-# written by build.rs - which has to travel with the engine it describes. Same trick as the
-# two above: named to match, so nothing has to be told about it. Nothing else the plugin
-# ships is a .json.
 # .exe is here for the look-ahead engine itself, which since de-bnjy.1 is a CHILD PROCESS
 # the plugin spawns rather than a library it loads: a library cannot fail alone, and every
 # way the engine could die was a way the player's game could die. The deployed payload
 # therefore contains an executable, which it never did before - and it is the only one, so
 # a .exe beside the plugin is this and nothing else.
-$PluginPayloadExtensions = @(".dll", ".exe", ".json", ".jsonl")
+$PluginPayloadExtensions = @(".dll", ".exe", ".jsonl")
 # The shipped files NOT named for this project, by exact name.
 #
 # Everything else in the payload is called $AssemblyName-something, which is what lets one

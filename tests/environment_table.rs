@@ -57,17 +57,18 @@ const TABLE: &str = "docs/environment.md";
 /// A file whose subject is the list cannot also be evidence for it: every name it uses to explain
 /// itself would become a row, and a name it stopped explaining would silently leave one.
 ///
-/// FIVE OF THEM. This file and `tools/survey-env.py` look for variables and name them as patterns
-/// to look for. The three DOORS - one per language that has one - take a name as a parameter and
+/// SIX OF THEM. This file and `tools/survey-env.py` look for variables and name them as patterns
+/// to look for. The four DOORS - one per language that has one - take a name as a parameter and
 /// read nothing of their own, so every name in them is showing how the door works. Five rows
 /// survived in the table on the strength of an example in one of those headers, after nothing
 /// read the variables any more.
-const ABOUT: [&str; 5] = [
+const ABOUT: [&str; 6] = [
     "tests/environment_table.rs",
     "tools/survey-env.py",
     "src/core/env.rs",
     "tools/degct-env.sh",
     "tools/DegctEnv.psm1",
+    "tools/GameAutomation/DegctEnv.cs",
 ];
 
 /// What a file has to end in to be worth reading: the languages that have a helper, plus the
@@ -82,10 +83,13 @@ const PREFIX: &str = "DEGCT_";
 /// Not `std::env::var`, which reads somebody else's name under its own spelling - the `env::`
 /// entries below are matched only where `std::` does not precede them.
 ///
-/// NO C# SHAPE HERE, and `.cs` is still read. No C# file asks for one of ours through a helper,
-/// so there is no call shape to look for; a raw `GetEnvironmentVariable("DEGCT_X")` would still
-/// be caught, by the spelled-out name. A helper and the shape that finds it arrive together.
-const QUOTED: [&str; 14] = [
+/// The C# shapes carry their type's name, unlike the others. `Get(` and `IsSet(` on their own
+/// are words a C# file uses for a hundred other things, and a pattern that matched them would
+/// put a row in the table for every one.
+const QUOTED: [&str; 17] = [
+    "DegctEnv.Get(",
+    "DegctEnv.IsSet(",
+    "DegctEnv.Qualified(",
     "env::var(",
     "env::is_set(",
     "env::number(",

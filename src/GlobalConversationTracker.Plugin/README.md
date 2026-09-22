@@ -116,8 +116,8 @@ build you just made. That DLL is all of the mod's own code: the layers (Core, Pe
 Session, Engine) are compiled into it rather than referenced as projects. The projects still
 build and are tested on their own; the plugin csproj says why it takes them as source.
 
-Beside it travel the look-ahead engine, the conversation index, the variable table, the
-engine's build stamp, and `Google.Protobuf.dll`. The first four are named
+Beside it travel the look-ahead engine, the conversation index, the variable table and
+`Google.Protobuf.dll`. The first three are named
 `GlobalConversationTracker`-something so that deploy, packaging and the uninstaller handle
 them without being told they exist; protobuf keeps its own name, because .NET resolves an
 assembly by its identity rather than by its filename, so `Get-PluginPayloadFile` names it

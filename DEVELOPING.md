@@ -514,6 +514,30 @@ Only the game itself can confirm the plugin loads.
 If the plugin never appears, check `LogOutput.log` for a load error and confirm the DLL was
 built against the same BepInEx build as the one installed in that game copy.
 
+### Set `DEGCT_CHECK_DEPLOY` once, and an in-game run cannot test yesterday's engine
+
+An in-game run against a look-ahead engine older than the one this tree has built passes or
+fails on behalf of code that is not deployed, and the result does not say so. It happened on
+2026-09-04: 66 of 66 green against an engine from the previous day, found only when an
+offline test disagreed with a run that had just passed.
+
+With this set, a run compares the deployed engine's modification time against the newest one
+under `target\` and refuses where the deployed one is older. Without it the check says it was
+not asked and carries on, which is what anywhere that is not a development machine should do -
+there is no repository there to compare a game against.
+
+**`dotnet test` already carries it**, from `test.runsettings`, which `Directory.Build.props`
+points it at. GameHarness run directly does not: nothing in the repository can put a variable
+in your shell, so that one is yours to set, once, per machine:
+
+```powershell
+[Environment]::SetEnvironmentVariable("DEGCT_CHECK_DEPLOY", "1", "User")
+```
+
+Open a new terminal afterwards - a running one keeps the environment it started with. To
+check it took, `$env:DEGCT_CHECK_DEPLOY` prints `1`, and a `look-ahead` run's `engine:` line
+says which of the two answers it gave.
+
 ## Design notes
 
 ### References are read from the game directory, not vendored

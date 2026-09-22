@@ -4,7 +4,7 @@ Every environment variable this project defines is prefixed **`DEGCT_`**, and a 
 script in a session scratchpad uses **`DEGCTT_`**. The rule and the reasoning are in
 `CLAUDE.md`; this is the list.
 
-**There are five, and each one says at its own definition why it is not a CLI argument.** An
+**There are six, and each one says at its own definition why it is not a CLI argument.** An
 option belongs on a command line, where it carries its own name, its own help and its own
 default, and where `--help` is never stale - so a driver's options are flags and a variable is
 what is left when a flag genuinely cannot do the job. See de-3dx9, which moved forty-five of
@@ -28,10 +28,11 @@ whether it is set, set one, and read a FOREIGN one under its own name.
 | Python | `tools/measurement_common.py` - `env`, `env_is_set`, `env_int`, `env_list`, `env_for_child` |
 | bash | `tools/degct-env.sh` - `degct_env`, `degct_env_is_set`, `degct_env_set`, `degct_env_foreign` |
 | PowerShell | `tools/DegctEnv.psm1` - `Get-DegctEnv`, `Test-DegctEnv`, `Set-DegctEnv` |
+| C# | `tools/GameAutomation/DegctEnv.cs` - `DegctEnv.Get`, `DegctEnv.IsSet`, `DegctEnv.Qualified`, `DegctEnv.Foreign` |
 
-**C# has no helper, because no C# file reads one of ours.** The rule still covers it: a C# file
-that needs one gets a helper of its own, and `tests/environment_table.rs` gets the call shape to
-find it in the same change. Until then there is nothing for a door to open.
+**The C# shapes carry their type's name and the others do not**, because `Get(` and `IsSet(` on
+their own are words a C# file uses for a hundred other things, and a pattern matching them would
+put a row here for every one.
 
 Every one of them takes the **bare** name: `env("RUN_KIND")` reads `DEGCT_RUN_KIND`. They are all
 idempotent about an already-qualified name, because callers build names from both halves and a
@@ -67,7 +68,7 @@ Checked against the code rather than trusted, by `tests/environment_table.rs`: i
 tracked file for a variable spelled out in full or asked for by bare name through the helper for
 its language, compares what it finds with the rows below and with the count in this sentence,
 and fails with the block to paste. So a stale table is a failing test rather than a reader
-looking for a variable that has been renamed. 5 variables.
+looking for a variable that has been renamed. 6 variables.
 
 **What each one is, and why it is not a flag.** The full argument lives at each definition; this
 is the shape of it.
@@ -80,6 +81,11 @@ is the shape of it.
 - **ALL_COMMITTED_SAVES** forces the slow exhaustive pass over every committed save. Cargo owns
   a test binary's command line, and this WIDENS three tests rather than selecting any, so
   `#[ignore]` and `--ignored` do not fit either.
+- **CHECK_DEPLOY** turns on the check that refuses an in-game run against a look-ahead engine
+  older than the one this tree has built. Not a flag because the thing that has to carry it is
+  not a command line anybody types: a run is started by the harness, by `dotnet test`, and by
+  whatever a session reaches for that afternoon, and the check has to be on for all of them or
+  it protects only the paths somebody remembered.
 - **MARKING** is not an option at all any more. Nothing sets it and no run can be asked for it:
   it is the name a value was written under in the run records already in `performance/logs`,
   read so that a later measurement can still be compared against them.
@@ -87,6 +93,7 @@ is the shape of it.
 The rows below are generated and pasted; the list above is the one to read.
 
 | `DEGCT_ALL_COMMITTED_SAVES` | `crates/gct-measure/src/common/mod.rs` |
+| `DEGCT_CHECK_DEPLOY` | `DEVELOPING.md`, `tools/GameAutomation/DeployedEngine.cs` |
 | `DEGCT_MARKING` | `tools/measurement_common.py` |
 | `DEGCT_RUN_KIND` | `AGENTS.md`, `CLAUDE.md`, `tools/measure-menus.py`, `tools/measurement_common.py`, `tools/run-logged.sh` |
 | `DEGCT_RUN_LOG` | `tools/measurement_common.py`, `tools/run-logged.sh` |
