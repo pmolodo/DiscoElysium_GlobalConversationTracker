@@ -91,10 +91,34 @@ world although a dialogue action can change them.
 | gap                                                                                                                                                                                                                     | errs                  | where                                                                        | in content                                                                                                         | tracked |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------- |
 | A passive check is decided once per request, by the plugin. Where the group can change what is worn, or its damage or healing can cross the check's margin, the check is Unknown - item bonuses are not in the database | permissive            | plugin `PassiveCheckRule`; `core::skill_movers`; `Fitting::damage_unsettled` | groups that lose a worn item, gain an autoequip item, or damage or heal Volition or Endurance near a passive check |         |
-| A failed white check stays closed. The game reopens one when its skill rank rises or a modifier expression lowers the target                                                                                            | restrictive           | `FlagName_failed` slot, never cleared                                        | any failed white check with modifiers or a raisable skill                                                          | de-vdy9 |
+| A failed white check stays closed. The game reopens one when its skill rank rises or a modifier expression lowers the target                                                                                            | restrictive           | `FlagName_failed` slot, never cleared                                        | 70 of the game's 126 white checks; see below                                                                       | de-vdy9 |
 | A fake check's `FlagName` and `FlagName_failed` are not read, though the game hides the option once either is set                                                                                                       | permissive            | fake check handling in the graph builder                                     | three fake checks; nothing writes their `_failed` flags                                                            |         |
 | `RemoveWhiteCheck` is not applied, so a check it retires mid-conversation stays offered                                                                                                                                 | permissive            | `core::modelling`                                                            | not reached: all four call sites pass a variable's value rather than a check's flag name                           |         |
 | A rolled check's odds (hardcore difficulty, situational modifiers, crit range) are not read. Both outcomes are taken whatever they are                                                                                  | none for reachability | by design                                                                    | every rolled check. Exact for "can this be reached"; says nothing about how likely it is                           |         |
+
+### A reopened white check is the widest gap here, and it was measured
+
+**The skill-rank half is dead inside one conversation** - nothing in a dialogue levels a
+skill - so what reopens a check during a crawl is the modifier half:
+`difficulty + the bonuses of whichever variable1..variable10 expressions are true` falling
+below what it was when the check failed.
+
+**Every one of the game's 126 white checks carries at least one such expression**, and what
+they read is items and equipment (`CheckItem`, `CheckEquipped`, 83 of them), thoughts
+(`IsTHCPresent` and the fixed forms, 38), Kim, the clock, and named variables. All of those
+are things a dialogue action writes.
+
+**70 of the 126 sit on a walk that can fail the check, write what one of its modifiers reads,
+and come back to the check** - 68 of those with a negative bonus among them, which is the
+direction that lowers the target. 54 have nothing downstream that writes what their modifiers
+read, and 2 have such a write downstream with no way back.
+
+Measured over the link graph with guards ignored, the way [actions.md](actions.md) defines
+downstream, so it OVER-approximates what a crawl can walk. It also does not ask whether the
+write moves the expression from the value it had when the check failed, nor whether the
+check's own precondition still holds - both of which the game requires. What it settles is
+the question that was open: this is not rare, so the approximation does not stand on
+frequency. See de-vdy9, which carries the numbers and what modelling it would take.
 
 ## Actions not applied, or applied in part
 
