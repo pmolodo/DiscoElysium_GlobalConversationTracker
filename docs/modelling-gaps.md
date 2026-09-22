@@ -27,10 +27,25 @@ row stays exact only while the content stays as it is.
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------- |
 | Until the clock hook has fired for the first time, a crawl is told the clock is locked                                                                                                 | restrictive | plugin `ClockLockPatch`                                                     | a crawl in the seconds before the game's first clock tick or save load                | de-gh1o   |
 | The game's own clock is understood to advance about a minute per unseen line, which nothing models                                                                                     | either | not modelled                                                                      | every conversation; unmeasured                                                        | de-sze.10 |
-| Passing time bakes cooking thoughts into fixed ones and wears substances off; the clock moves without them, so `IsTHCFixed`, `IsTHCCooking` and `IsTHCCookingOrFixed` hold their starting answer however late it gets | either | `core::thought_effects`; cabinet states in `world::GameWorld`                | the same 72 live `PassTime` sites; cabinet questions: 110 entries                     | de-m11s.3.3, de-m11s.3.4 |
+| A thought part-way through internalising never finishes during a conversation, so `IsTHCFixed`, `IsTHCCooking` and `IsTHCCookingOrFixed` hold their starting answer however late it gets - and the passive checks a newly fixed thought would move keep the world's answer. DECIDED, not pending: see below | either | `core::thought_effects`; cabinet states in `world::GameWorld`                | the same 72 live `PassTime` sites; cabinet questions: 110 entries                     |           |
+| Passing time wears a running substance off, stripping the skill buffs it was giving, which can flip a passive check either way                                                                        | either | not modelled                                                                      | 3,566 passive checks sit in a group that can pass time, but only while something is running - no committed save has one | de-m11s.3.3 |
 | The clock is read to the hour, not the minute                                                                                                                                          | either | plugin `GameFacts.ReadClock`                                                      | not reached: no guard asks about minutes                                              |           |
 | `AssignClock` writes the reading at the WORLD's hour, so a deadline stored after a `PassTime` is stored a quarter-hour early                                                           | either | `symbolic::action_image::clock_write`                                             | not reached: of 1,315 groups, 35 pass time and 2 write a reading, and no group does both (2026-09-21) |           |
 | A clock reading compared against a variable is undecided where the clock moves, since nothing here compares two registers                                                              | permissive | `GuardCompiler::variable_against_query`                                       | not reached: no group that passes time holds a guard naming `HourCount` or `TotalHourCount` at all (2026-09-21) |           |
+
+### A thought never finishes internalising mid-conversation, and that is a decision
+
+**Not a gap waiting to be filled.** A thought part-way through the cabinet finishes after so
+many hours, and passing time in a conversation could in principle cross that line - but
+modelling it means every passive check a newly fixed thought moves becomes unsettled, and the
+thought's effects are what `core::thought_effects` reads to decide those checks in the first
+place. That is a large cost in markers and in diagram work for a circumstance that has to line
+up three ways at once: a thought part-way through, a conversation that passes enough time to
+finish it, and a check close enough to its threshold for the thought's effect to flip it.
+
+It is treated the way the game's own per-entry minute is treated - ignored deliberately, and
+written down here so the next person meets the decision rather than the surprise. The
+[Time](#time) row above is the entry; this is why it carries no issue id.
 
 ## Counters and amounts
 

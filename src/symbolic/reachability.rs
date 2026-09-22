@@ -927,12 +927,13 @@ mod branch_tests {
         assert!(!seed.and(&at(3 * 60)).expect("room").satisfiable());
     }
 
-    /// The layout carries a clock only where a `PassTime` can move an unlocked one.
+    /// A clock is carried only where a `PassTime` can move an unlocked one AND something can
+    /// read what it says.
     #[test]
-    fn a_locked_clock_is_carried_by_nothing() {
+    fn a_clock_is_carried_only_where_it_moves_and_is_read() {
         let graph = GraphBuilder::new()
             .add(Entry::new(0).script("PassTime()").links(&[1]))
-            .add(Entry::new(1))
+            .add(Entry::new(1).guard("IsHour(3)"))
             .build();
 
         let unlocked = GameWorld::blank().with_clock_locked(false);
@@ -944,7 +945,28 @@ mod branch_tests {
             "a PassTime on a locked clock moves nothing, so holding the clock is exact",
         );
 
-        let still = GraphBuilder::new().add(Entry::new(0)).build();
+        let still = GraphBuilder::new()
+            .add(Entry::new(0).guard("IsHour(3)"))
+            .build();
         assert!(!DataLayout::clock_can_move(&still, &unlocked));
+
+        // AND THE READ SIDE, which is what most time-passing groups fail: 27 of the 35 ask
+        // the hour nowhere, and a register they cannot look at is pure cost.
+        let unread = GraphBuilder::new()
+            .add(Entry::new(0).script("PassTime()").links(&[1]))
+            .add(Entry::new(1))
+            .build();
+        assert!(
+            !DataLayout::clock_can_move(&unread, &unlocked),
+            "nothing here can tell what the clock says, so there is nothing to carry",
+        );
+
+        // A DAY QUESTION IS NOT A READER. Only the story moves the day counter, so no
+        // PassTime can change what this answers.
+        let day_only = GraphBuilder::new()
+            .add(Entry::new(0).script("PassTime()").links(&[1]))
+            .add(Entry::new(1).guard("IsDayFrom(2)"))
+            .build();
+        assert!(!DataLayout::clock_can_move(&day_only, &unlocked));
     }
 }

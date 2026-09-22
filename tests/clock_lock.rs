@@ -135,4 +135,22 @@ fn a_shipped_group_that_passes_time_carries_a_clock() {
             .is_none(),
         "a group with no PassTime spends no bits restating a constant",
     );
+
+    // AND THE READ SIDE against real content. 1467 passes time and asks the hour nowhere,
+    // which is the common case: 27 of the 35 time-passing groups are like this.
+    let (unread, _) = build_group_graph(&index, 1467).expect("1467 builds a group");
+    assert!(
+        DataLayout::group_passes_time(&unread),
+        "1467 is one of the groups that moves the clock",
+    );
+    assert!(
+        !DataLayout::group_reads_the_clock(&unread),
+        "and nothing in it can tell what the clock says",
+    );
+    assert!(
+        DataLayout::for_group(&unread, &world, COUNTER_CAP)
+            .clock()
+            .is_none(),
+        "so it carries none, however much time a walk over it passes",
+    );
 }

@@ -1261,21 +1261,60 @@ impl DataLayout {
     /// Whether a search over this group can move the clock, which is when carrying it in
     /// eleven variables buys anything.
     ///
-    /// TWO THINGS HAVE TO BE TRUE, and either alone leaves the clock a constant that a
-    /// register would spend bits restating. Some action in the group has to be a `PassTime`,
-    /// which is rare. And the world's clock has to be unlocked, since `PassTime` on a locked
-    /// clock moves nothing - `core::action` skips it - so holding the clock still is EXACT
-    /// there rather than an approximation.
+    /// THREE THINGS HAVE TO BE TRUE, and any one missing leaves a register with nothing to
+    /// say.
     ///
-    /// The second half is not hypothetical, and it is not the common case either: the lock is
-    /// the game's must-sleep mechanic, set once the player has stayed up past midnight, so an
-    /// ordinary world's clock runs and a group with a `PassTime` in it carries one. A world
-    /// that cannot say reports locked, which is the conservative answer. See de-gh1o.
+    /// Some action in the group has to be a `PassTime`, which is rare - 35 groups of 1,315.
+    ///
+    /// The world's clock has to be unlocked, since `PassTime` on a locked clock moves nothing
+    /// - `core::action` skips it - so holding the clock still is EXACT there rather than an
+    /// approximation. Not the common case: the lock is the game's must-sleep mechanic, so an
+    /// ordinary world's clock runs. A world that cannot say reports locked, which is the
+    /// conservative answer. See de-gh1o.
+    ///
+    /// AND SOMETHING HAS TO BE ABLE TO READ IT, which is the same principle
+    /// [`Self::keeping_only_read`] applies to slots: a register nothing looks at is pure cost.
+    /// Only 8 of those 35 groups ask the hour anywhere in them, so the other 27 would be
+    /// spending bits on a value they cannot observe. Sound by construction - where no guard
+    /// asks the hour there is nothing for a register to answer, and `GuardCompiler`'s
+    /// world-answered path gives the identical result.
+    ///
+    /// WHAT WOULD ADD A FOURTH READER is a substance wearing off, which moves a skill a
+    /// passive check compares - so such a group would need the clock with no time guard in it
+    /// at all (de-m11s.3.3). A thought finishing its internalisation would do the same, and
+    /// modelling it is DECIDED AGAINST rather than pending: see `docs/modelling-gaps.md`.
     pub fn clock_can_move(
         graph: &LookAheadGraph,
         world: &dyn crate::world::ILookAheadWorld,
     ) -> bool {
-        Self::group_passes_time(graph) && !world.is_clock_locked()
+        Self::group_passes_time(graph)
+            && !world.is_clock_locked()
+            && Self::group_reads_the_clock(graph)
+    }
+
+    /// Whether anything in the group can tell what the clock says.
+    ///
+    /// Two ways, and the second is the one that is easy to forget. A guard can ask the hour
+    /// outright - every question [`crate::core::clock::ClockTime::owns`] covers is one about
+    /// the hour, which is why that is the list asked. And an `AssignClock` takes a reading and
+    /// puts it in a slot, where a guard reads it later; no group in the shipped database does
+    /// that while also passing time (de-m11s.3.2.3), but the rule should not depend on that
+    /// staying true.
+    ///
+    /// The day questions are NOT readers. `owns_day` covers `DayCount` and its two siblings,
+    /// which are built from the day counter alone, and no `PassTime` moves that.
+    pub fn group_reads_the_clock(graph: &LookAheadGraph) -> bool {
+        graph.nodes().any(|node| {
+            node.all_actions()
+                .any(|action| action.kind() == DialogueActionKind::AssignClock)
+                || node.guard.nodes().any(|part| {
+                    matches!(
+                        part.expression(),
+                        crate::core::guard::GuardExpression::Call(name, _)
+                            if crate::core::clock::ClockTime::owns(name)
+                    )
+                })
+        })
     }
 
     /// Whether any action in the group advances the clock.
