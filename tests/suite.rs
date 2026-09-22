@@ -49,6 +49,9 @@ mod check_branches;
 #[path = "clock_lock.rs"]
 mod clock_lock;
 
+#[path = "clock_oracle.rs"]
+mod clock_oracle;
+
 #[path = "committed_diffs.rs"]
 mod committed_diffs;
 
