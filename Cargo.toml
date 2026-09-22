@@ -8,6 +8,13 @@
 [workspace]
 members = ["crates/*"]
 
+# Optimized correctness checks reuse compiler work after an edit. This is a test profile:
+# shipped engine builds and performance measurements still use `--release`, whose smaller
+# codegen-unit count is the artefact we ship and measure.
+[profile.release-incremental]
+inherits = "release"
+incremental = true
+
 [package]
 name = "lookahead_engine"
 version = "0.1.0"

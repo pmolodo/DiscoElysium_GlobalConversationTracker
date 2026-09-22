@@ -438,11 +438,15 @@ both and fails if they disagree.
 
 ## Two ways to run the tests
 
-**Before committing, the whole suite, and that has not changed:**
+**Before committing, the whole suite:**
 
 ```bash
-tools/run-logged.sh --kind testing cargo full-suite -- cargo test --release
+tools/run-logged.sh --kind testing cargo full-suite -- cargo test --profile release-incremental
 ```
+
+`release-incremental` keeps release's optimized correctness behavior and reuses compiler
+work between edits. It is not a production artefact or a performance-measurement profile;
+those stay `--release`.
 
 **While iterating, every unit test and only those:**
 

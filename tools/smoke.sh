@@ -2,7 +2,7 @@
 # Every unit test and only those, in the debug profile: the loop to run WHILE ITERATING.
 #
 # THE FULL SUITE IS STILL THE GATE. Run `tools/run-logged.sh --kind testing cargo full-suite --
-# cargo test --release` before committing, every time. This does not change what "the tests
+# cargo test --profile release-incremental` before committing, every time. This does not change what "the tests
 # pass" means; it adds a second, weaker question that can be answered in seconds.
 #
 # WHAT IT COSTS, measured 2026-09-19 by touching a library source and asking for a verdict:

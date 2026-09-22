@@ -22,7 +22,7 @@
 //! read, which would mean the capture itself is broken.
 //!
 //! ```text
-//! cargo test --release --test request_agreement -- --nocapture
+//! cargo test --profile release-incremental --test request_agreement -- --nocapture
 //! ```
 
 use std::path::PathBuf;
