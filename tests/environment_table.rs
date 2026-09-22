@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: MIT
-//! Does `docs/environment.md` still list the variables the code actually asks for?
+//! Does `docs/environment.md` still list the variables the code actually asks for - and is
+//! every variable the code reads one of ours or one somebody else owns?
+//!
+//! TWO QUESTIONS, ONE FILE, because they are two halves of the same claim and they share how a
+//! name is found in a file. The table answers "what can be set"; the second test answers
+//! "is this ours", which nothing asked until six variables under a prefix of their own turned
+//! out to be invisible to the first - see [`every_name_the_code_reads_is_ours_or_somebody_elses`].
 //!
 //! ## Why this is a test and not a generator
 //!
@@ -86,6 +92,46 @@ const SUFFIXES: [&str; 9] = [
 /// The prefix on every variable this project defines.
 const PREFIX: &str = "DEGCT_";
 
+/// Names somebody ELSE owns, which a raw read may spell out because they are not ours to name.
+///
+/// The list is short on purpose and every entry is a name that exists whether this project does
+/// or not: the shell's and the OS's, cargo's, and the one dotnet's test host sets. A name that
+/// is not here and is not prefixed is a variable somebody invented, which is what
+/// [`every_name_the_code_reads_is_ours_or_somebody_elses`] is for.
+const FOREIGN: [&str; 7] = [
+    "DOTNET_HOST_PATH",
+    "HOME",
+    "LOCALAPPDATA",
+    "OUT_DIR",
+    "PATH",
+    "SystemRoot",
+    "USERPROFILE",
+];
+
+/// A namespace somebody else owns, rather than a name: everything cargo sets a build or a test
+/// binary up with. `CARGO_MANIFEST_DIR`, `CARGO_PKG_VERSION` and one `CARGO_BIN_EXE_` per
+/// binary are read here, and listing a family whose membership cargo decides would be a list
+/// that goes short every time a test asks for another binary.
+const FOREIGN_NAMESPACE: &str = "CARGO_";
+
+/// The ways of reading the environment that apply NO prefix, with what follows each one.
+///
+/// Our doors are not here: they take a bare name and put the prefix on, which is the whole
+/// difference. `std::env::var` is here and `env::var` is not, for that reason.
+const RAW: [&str; 8] = [
+    "$env:",
+    "Environment.GetEnvironmentVariable(",
+    "Environment.SetEnvironmentVariable(",
+    "std::env::var(",
+    "std::env::var_os(",
+    "env!(",
+    "os.environ[",
+    "os.environ.get(",
+];
+
+/// How C# holds the name of a variable: a constant whose own name ends in this.
+const HOLDER: &str = "Variable = \"";
+
 /// Calls that take a BARE name as a quoted first argument.
 ///
 /// Not `std::env::var`, which reads somebody else's name under its own spelling - the `env::`
@@ -169,8 +215,144 @@ fn the_environment_doc_lists_what_the_code_asks_for() {
     );
 }
 
-/// Every name the tracked files ask for, as the table's rows, or `None` where git cannot say.
-fn rows(root: &Path) -> Option<Vec<String>> {
+/// Is every name a raw read spells out either ours or somebody else's?
+///
+/// ## What this asks that the table does not
+///
+/// The table enforces one direction: every `DEGCT_` name the code asks for has a row. Nothing
+/// asked the other - whether a name the code asks for is ONE OF OURS AT ALL - so a variable
+/// invented under a prefix of its own was invisible to it, and six of them were, for as long as
+/// the rule had existed. See de-ej10 for the six and de-dnqe for this.
+///
+/// ## What it can see, and what it cannot
+///
+/// A name is visible where it is WRITTEN DOWN: at a raw read, or as the literal a C# constant
+/// holds. Where a name is computed, this says nothing, and MSBuild is out of reach altogether -
+/// `$(NAME)` is a property reference and an environment read at once, with nothing to tell them
+/// apart.
+///
+/// A CONSTANT MAY HOLD A BARE NAME, which is the shape to prefer: the door puts the prefix on,
+/// so the file holds `"NO_RUN_LOG"` and reads `DEGCT_NO_RUN_LOG`. That is why a holder is
+/// accepted when the file passes it to a door, and challenged when nothing does - a bare name
+/// nothing prefixes is read bare, and a full name under some other prefix looks exactly the
+/// same from here.
+#[test]
+fn every_name_the_code_reads_is_ours_or_somebody_elses() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let Some(files) = tracked(&root) else {
+        return;
+    };
+
+    let mut wrong: Vec<String> = Vec::new();
+    for path in files {
+        let Ok(text) = std::fs::read_to_string(root.join(&path)) else {
+            continue;
+        };
+
+        for (name, how) in raw_reads(&text) {
+            if is_ours_or_foreign(&name) {
+                continue;
+            }
+            wrong.push(format!(
+                "{path}: {how} reads '{name}', which is neither one of ours nor a name \
+                 somebody else owns - prefix it {PREFIX} through the door for this language, \
+                 or add it to FOREIGN with what owns it"
+            ));
+        }
+
+        for (name, holder) in holders(&text) {
+            if is_ours_or_foreign(&name) || goes_through_the_door(&text, &holder) {
+                continue;
+            }
+            wrong.push(format!(
+                "{path}: {holder} holds '{name}', which nothing here passes to a door - so it \
+                 is read exactly as written, and a name read as written has to carry {PREFIX}"
+            ));
+        }
+    }
+
+    assert!(wrong.is_empty(), "\n{}", wrong.join("\n"));
+}
+
+/// Whether a name is prefixed as ours or listed as somebody else's.
+fn is_ours_or_foreign(name: &str) -> bool {
+    name.starts_with(PREFIX) || name.starts_with(FOREIGN_NAMESPACE) || FOREIGN.contains(&name)
+}
+
+/// The names a text reads WITHOUT a prefix being applied, each with the shape that read it.
+///
+/// Only where the name is written at the call: an identifier is held somewhere else and is
+/// [`holders`]' business.
+fn raw_reads(text: &str) -> Vec<(String, &'static str)> {
+    let bytes = text.as_bytes();
+    let mut found = Vec::new();
+    for shape in RAW {
+        for at in matches(text, shape) {
+            if at > 0 && is_word(bytes[at - 1]) {
+                continue;
+            }
+            let mut i = skip_spaces(bytes, at + shape.len());
+            // Everything but PowerShell's `$env:NAME` quotes the name.
+            if shape != "$env:" {
+                if bytes.get(i) != Some(&b'"') {
+                    continue;
+                }
+                i += 1;
+            }
+            let Some(name) = literal_at(bytes, i) else {
+                continue;
+            };
+            found.push((name, shape));
+        }
+    }
+    found
+}
+
+/// The names C# constants hold, each with the constant's own name.
+fn holders(text: &str) -> Vec<(String, String)> {
+    let bytes = text.as_bytes();
+    let mut found = Vec::new();
+    for at in matches(text, HOLDER) {
+        let Some(name) = literal_at(bytes, at + HOLDER.len()) else {
+            continue;
+        };
+        // The constant's own name, back from the `Variable` this matched on.
+        let mut from = at + "Variable".len();
+        while from > 0 && is_word(bytes[from - 1]) {
+            from -= 1;
+        }
+        found.push((
+            name,
+            String::from_utf8_lossy(&bytes[from..at + "Variable".len()]).into_owned(),
+        ));
+    }
+    found
+}
+
+/// Whether this text hands `holder` to the C# door, which is what puts the prefix on.
+fn goes_through_the_door(text: &str, holder: &str) -> bool {
+    matches(text, "DegctEnv.").iter().any(|at| {
+        let rest = &text[*at..];
+        let until = rest.find(')').unwrap_or(rest.len());
+        rest[..until].contains(holder)
+    })
+}
+
+/// The quoted name starting at `from`: what an environment variable may be called, in any case,
+/// since a foreign one need not shout.
+fn literal_at(bytes: &[u8], from: usize) -> Option<String> {
+    if !(bytes.get(from)?.is_ascii_alphabetic() || bytes[from] == b'_') {
+        return None;
+    }
+    let mut end = from;
+    while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
+        end += 1;
+    }
+    (end - from >= 2).then(|| String::from_utf8_lossy(&bytes[from..end]).into_owned())
+}
+
+/// The tracked files worth reading, or `None` where git cannot say.
+fn tracked(root: &Path) -> Option<Vec<String>> {
     let listed = Command::new("git")
         .arg("ls-files")
         .current_dir(root)
@@ -180,17 +362,25 @@ fn rows(root: &Path) -> Option<Vec<String>> {
         return None;
     }
 
+    Some(
+        String::from_utf8_lossy(&listed.stdout)
+            .lines()
+            .filter(|path| *path != TABLE && !ABOUT.contains(path))
+            .filter(|path| {
+                SUFFIXES
+                    .iter()
+                    .any(|suffix| path.ends_with(&format!(".{suffix}")))
+            })
+            .map(str::to_string)
+            .collect(),
+    )
+}
+
+/// Every name the tracked files ask for, as the table's rows, or `None` where git cannot say.
+fn rows(root: &Path) -> Option<Vec<String>> {
     let mut readers: BTreeMap<String, BTreeSet<(String, bool)>> = BTreeMap::new();
-    for path in String::from_utf8_lossy(&listed.stdout).lines() {
-        if path == TABLE || ABOUT.contains(&path) {
-            continue;
-        }
-        if !SUFFIXES
-            .iter()
-            .any(|suffix| path.ends_with(&format!(".{suffix}")))
-        {
-            continue;
-        }
+    for path in tracked(root)? {
+        let path = path.as_str();
         let Ok(text) = std::fs::read_to_string(root.join(path)) else {
             continue;
         };

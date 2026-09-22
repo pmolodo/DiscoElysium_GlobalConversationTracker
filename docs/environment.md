@@ -51,6 +51,25 @@ so a call site says which of the two it means:
 `PATH`, `CARGO_TARGET_DIR`, `NUMBER_OF_PROCESSORS`, and cargo's own `OUT_DIR` and `PROFILE`
 inside `build.rs`.
 
+**A name read without a door has to be one or the other**, and
+`every_name_the_code_reads_is_ours_or_somebody_elses` in `tests/environment_table.rs` fails
+where it is neither. What counts as reading without a door is `$env:NAME`,
+`Environment.GetEnvironmentVariable("NAME")`, `std::env::var("NAME")`, `env!("NAME")`,
+`os.environ["NAME"]` and the rest of that family - everything that takes the name exactly as
+written. The foreign ones it allows are `PATH`, `HOME`, `USERPROFILE`, `LOCALAPPDATA`,
+`SystemRoot`, `OUT_DIR`, `DOTNET_HOST_PATH` and anything cargo sets under `CARGO_`, whose
+membership cargo decides - there is a `CARGO_BIN_EXE_` per binary a test asks for.
+
+**A C# constant may hold a BARE name**, which is the shape to prefer: `"NO_RUN_LOG"` in the
+file, `DEGCT_NO_RUN_LOG` in the environment, because the door puts the prefix on. The same test
+challenges a `...Variable` constant that nothing passes to a door, since a bare name nothing
+prefixes is read bare - and that is indistinguishable, from the outside, from a full name under
+some other prefix, which is exactly what six of these were.
+
+It sees a name where the name is WRITTEN DOWN. A name computed at runtime it cannot judge, and
+MSBuild is out of reach altogether: `$(NAME)` is a property reference and an environment read at
+once, with nothing to tell them apart.
+
 ## Why the prefix exists at all
 
 `GROUPS` is a bash **built-in array** holding the current user's numeric group ids. Assigning
