@@ -32,7 +32,7 @@
 #     cargo run --release -p gct_measure --example search_residue
 #   tools/run-logged.sh --kind testing cargo corpus -- cargo test --test suite corpus::
 #   tools/run-logged.sh --kind testing dotnet unit -- dotnet test
-#   DISCO_ELYSIUM_GCT_INGAME_TESTS=1 \
+#   DEGCT_INGAME_TESTS=1 \
 #     tools/run-logged.sh --kind testing dotnet in-game -- dotnet test tools/GameAutomation.Tests
 #
 # The name is <date>_<time>_<revision>_<tool>_<verb>, where the time is HH,MM,SS - commas

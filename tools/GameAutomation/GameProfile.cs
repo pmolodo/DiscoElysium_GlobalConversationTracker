@@ -45,17 +45,22 @@ namespace GlobalConversationTracker.Automation
     /// </remarks>
     public static class GameProfile
     {
+        /// <summary>
+        /// The bare name of the variable that redirects the profile folder:
+        /// <c>DEGCT_PROFILE_DIR</c>.
+        /// </summary>
+        public const string RedirectVariable = "PROFILE_DIR";
+
         /// <summary>The folder holding everything the game remembers.</summary>
         /// <remarks>
-        /// <c>DISCO_ELYSIUM_GCT_PROFILE_DIR</c> redirects it, which is how the tests run
-        /// against a scratch folder instead of a real installation.
+        /// <see cref="RedirectVariable"/> redirects it, which is how the tests run against a
+        /// scratch folder instead of a real installation.
         /// </remarks>
         public static string ProfilePath
         {
             get
             {
-                string? redirect = Environment.GetEnvironmentVariable(
-                    "DISCO_ELYSIUM_GCT_PROFILE_DIR");
+                string? redirect = DegctEnv.Get(RedirectVariable);
                 if (!string.IsNullOrWhiteSpace(redirect))
                 {
                     return redirect!;

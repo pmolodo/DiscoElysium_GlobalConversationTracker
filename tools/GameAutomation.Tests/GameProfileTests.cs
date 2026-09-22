@@ -9,14 +9,17 @@ namespace GlobalConversationTracker.Automation.Tests
     /// Moving the player's whole profile aside and putting it back.
     /// </summary>
     /// <remarks>
-    /// Every test runs against a scratch folder through DISCO_ELYSIUM_GCT_PROFILE_DIR,
-    /// never a real installation. This is the most destructive thing the harness does -
-    /// the folder is gigabytes of somebody's playthroughs and is Steam-Cloud-synced - so
-    /// most of these are about what happens when something goes wrong partway.
+    /// Every test runs against a scratch folder through the redirect
+    /// <see cref="GameProfile.RedirectVariable"/> names, never a real installation. This is
+    /// the most destructive thing the harness does - the folder is gigabytes of somebody's
+    /// playthroughs and is Steam-Cloud-synced - so most of these are about what happens when
+    /// something goes wrong partway.
     /// </remarks>
     public class GameProfileTests : IDisposable
     {
-        private const string RedirectVariable = "DISCO_ELYSIUM_GCT_PROFILE_DIR";
+        /// <summary>The redirect, qualified: this sets it, so it needs the full name.</summary>
+        private static readonly string RedirectVariable =
+            DegctEnv.Qualified(GameProfile.RedirectVariable);
 
         private readonly string _root;
         private readonly string _profile;

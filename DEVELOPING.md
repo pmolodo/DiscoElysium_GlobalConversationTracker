@@ -139,7 +139,7 @@ with one clear sentence instead of a wall of MSBuild errors.
 Resolution order:
 
 1. `-DiscoElysiumDir <path>`
-2. the `DISCO_ELYSIUM_DIR` environment variable
+2. the `DEGCT_GAME_DIR` environment variable
 3. the last resolved install, cached per-machine in
    `%LOCALAPPDATA%\GlobalConversationTracker\reference-game-dir.txt`
 4. **Steam auto-discovery**: registry `Valve\Steam` + `libraryfolders.vdf`, AppID **632470**
@@ -209,7 +209,7 @@ Build, then install into a **playable** copy of the game. The headline command.
 ```powershell
 .\deploy.ps1                              # auto-discovered Steam copy
 .\deploy.ps1 -GameDir "C:\Apps (x86)\Games\Steam\steamapps\common\Disco Elysium"
-$env:DISCO_ELYSIUM_DEPLOY_DIR = "C:\...\Disco Elysium"; .\deploy.ps1
+$env:DEGCT_DEPLOY_DIR = "C:\...\Disco Elysium"; .\deploy.ps1
 .\deploy.ps1 -DryRun                      # show the target, write nothing
 ```
 
@@ -228,7 +228,7 @@ What it does:
    optional hand-placed `articy_ids_final_cut.json` above all - survives a redeploy.
 5. prints the log path and the line to look for
 
-**Target resolution:** `-GameDir`, else `DISCO_ELYSIUM_DEPLOY_DIR`, else the
+**Target resolution:** `-GameDir`, else `DEGCT_DEPLOY_DIR`, else the
 auto-discovered Steam copy. It only stops and asks when all three come up empty, meaning
 no override was given *and* no Steam install was found.
 
@@ -359,7 +359,7 @@ an installed DLL with no commit stamp cannot tie the log to a source revision at
 an installed DLL written *after* the run's plugin-load stamp means a deploy happened
 between the run and the capture, so the folder listed is a later build's.
 
-**Which install it reads:** `-GameDir`, else `DISCO_ELYSIUM_DEPLOY_DIR`, else the
+**Which install it reads:** `-GameDir`, else `DEGCT_DEPLOY_DIR`, else the
 auto-discovered Steam copy - the same playable copy `deploy.ps1` writes to.
 
 **Renaming a capture:** do it through the script, not by hand.
@@ -417,7 +417,7 @@ calling `Program.Main`, with nothing to remember at the call site:
 dotnet run --project tools/GameHarness/GameHarness.csproj -- look-ahead
 ```
 
-`--no-log`, or `DISCO_ELYSIUM_GCT_NO_RUN_LOG=1`, turns it off.
+`--no-log`, or `DEGCT_NO_RUN_LOG=1`, turns it off.
 
 **Everything else goes through the wrapper**, which cargo and `dotnet test` need because
 neither is ours to modify:
@@ -425,7 +425,7 @@ neither is ours to modify:
 ```bash
 tools/run-logged.sh --kind testing cargo corpus -- cargo test --test suite corpus::
 tools/run-logged.sh --kind testing dotnet unit -- dotnet test
-DISCO_ELYSIUM_GCT_INGAME_TESTS=1 \
+DEGCT_INGAME_TESTS=1 \
   tools/run-logged.sh --kind testing dotnet in-game -- dotnet test tools/GameAutomation.Tests
 ```
 

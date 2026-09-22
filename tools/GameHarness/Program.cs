@@ -360,7 +360,7 @@ Options:
   --no-log            Do not keep a log of this run. Every verb otherwise writes
                       its whole output to testing/logs under a name carrying the
                       date, the commit it ran against, and the verb. Setting
-                      DISCO_ELYSIUM_GCT_NO_RUN_LOG does the same thing.");
+                      DEGCT_NO_RUN_LOG does the same thing.");
         }
 
         /// <summary>

@@ -25,7 +25,7 @@
     The install target comes from, in order:
 
       1. -GameDir <path>
-      2. the DISCO_ELYSIUM_DEPLOY_DIR environment variable
+      2. the DEGCT_DEPLOY_DIR environment variable
       3. the auto-discovered Steam copy (the everyday case, no flag needed)
 
     Only when all three come up empty does the script stop and ask for a target.
@@ -39,7 +39,7 @@
 
 .PARAMETER GameDir
     The playable game folder to install into, taking priority over
-    DISCO_ELYSIUM_DEPLOY_DIR and Steam auto-discovery. Must contain disco.exe and
+    DEGCT_DEPLOY_DIR and Steam auto-discovery. Must contain disco.exe and
     a BepInEx\core, and must not be one of the repo's reference copies unless
     -AllowReferenceCopy says otherwise.
 

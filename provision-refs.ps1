@@ -23,7 +23,7 @@
     Resolution order for that reference install:
 
       1. -DiscoElysiumDir
-      2. the DISCO_ELYSIUM_DIR environment variable
+      2. the DEGCT_GAME_DIR environment variable
       3. the last resolved install, cached per-machine in
          %LOCALAPPDATA%\GlobalConversationTracker\reference-game-dir.txt
       4. Steam auto-discovery (registry + libraryfolders.vdf, AppID 632470)

@@ -4,7 +4,7 @@ Every environment variable this project defines is prefixed **`DEGCT_`**, and a 
 script in a session scratchpad uses **`DEGCTT_`**. The rule and the reasoning are in
 `CLAUDE.md`; this is the list.
 
-**There are six, and each one says at its own definition why it is not a CLI argument.** An
+**There are twelve, and each one says at its own definition why it is not a CLI argument.** An
 option belongs on a command line, where it carries its own name, its own help and its own
 default, and where `--help` is never stale - so a driver's options are flags and a variable is
 what is left when a flag genuinely cannot do the job. See de-3dx9, which moved forty-five of
@@ -29,6 +29,11 @@ whether it is set, set one, and read a FOREIGN one under its own name.
 | bash | `tools/degct-env.sh` - `degct_env`, `degct_env_is_set`, `degct_env_set`, `degct_env_foreign` |
 | PowerShell | `tools/DegctEnv.psm1` - `Get-DegctEnv`, `Test-DegctEnv`, `Set-DegctEnv` |
 | C# | `tools/GameAutomation/DegctEnv.cs` - `DegctEnv.Get`, `DegctEnv.IsSet`, `DegctEnv.Qualified`, `DegctEnv.Foreign` |
+
+**MSBuild has no door, and the plugin's own assemblies cannot reach one.** A property file reads
+`$(DEGCT_GAME_DIR)` with the prefix typed out, because MSBuild has no function to put it there;
+`GlobalStatePath` does the same, because the C# helper lives beside the automation tools and
+that assembly ships inside the game. Both spell the name once, where it is defined.
 
 **The C# shapes carry their type's name and the others do not**, because `Get(` and `IsSet(` on
 their own are words a C# file uses for a hundred other things, and a pattern matching them would
@@ -68,7 +73,7 @@ Checked against the code rather than trusted, by `tests/environment_table.rs`: i
 tracked file for a variable spelled out in full or asked for by bare name through the helper for
 its language, compares what it finds with the rows below and with the count in this sentence,
 and fails with the block to paste. So a stale table is a failing test rather than a reader
-looking for a variable that has been renamed. 6 variables.
+looking for a variable that has been renamed. 12 variables.
 
 **What each one is, and why it is not a flag.** The full argument lives at each definition; this
 is the shape of it.
@@ -89,12 +94,35 @@ is the shape of it.
 - **MARKING** is not an option at all any more. Nothing sets it and no run can be asked for it:
   it is the name a value was written under in the run records already in `performance/logs`,
   read so that a later measurement can still be compared against them.
+- **GAME_DIR and DEPLOY_DIR** name a copy of the game: the one to BUILD against, which needs
+  BepInEx's interop assemblies in it, and the one to deploy INTO, which needs to be playable.
+  Both are one link in a resolution order that ends in Steam auto-discovery, and the scripts
+  that read them take a `-DiscoElysiumDir` or `-GameDir` parameter for the same thing - so what
+  a variable adds is a machine that answers without either, including for a bare `dotnet build`,
+  which has no command line of ours at all.
+- **NO_RUN_LOG** turns off the run log. `--no-log` does the same for the harness; the variable
+  covers what has no flag to take, since `dotnet test` and cargo own their own command lines.
+- **INGAME_TESTS** opts into the tests that need the game and a desktop. Not a flag because
+  cargo and `dotnet test` own the command line those run on, and the point is a default that
+  SKIPS: a suite that fails because somebody alt-tabbed teaches nobody anything.
+- **PROFILE_DIR** redirects the game's profile folder, which is how the harness's most
+  destructive path - moving that folder aside and putting it back - is tested against a scratch
+  copy rather than against gigabytes of somebody's playthroughs.
+- **GLOBAL_STATE_PATH** redirects the mod's own state file. It is read INSIDE the game, where
+  there is no command line to put a flag on, and it is what lets a test or a staged run keep its
+  state somewhere other than beside the player's saves.
 
 The rows below are generated and pasted; the list above is the one to read.
 
 | `DEGCT_ALL_COMMITTED_SAVES` | `crates/gct-measure/src/common/mod.rs` |
 | `DEGCT_CHECK_DEPLOY` | `DEVELOPING.md`, `tools/GameAutomation/DeployedEngine.cs` |
+| `DEGCT_DEPLOY_DIR` | `DEVELOPING.md`, `build-support.psm1`, `capture-log.ps1`, `deploy.ps1`, `src/GlobalConversationTracker.Plugin/README.md` |
+| `DEGCT_GAME_DIR` | `DEVELOPING.md`, `Directory.Build.props`, `Directory.Build.targets`, `build-support.psm1`, `build.ps1`, `make-release.ps1`, `provision-refs.ps1`, `src/GlobalConversationTracker.Plugin/README.md` |
+| `DEGCT_GLOBAL_STATE_PATH` | `src/GlobalConversationTracker.Persistence/GlobalStatePath.cs` |
+| `DEGCT_INGAME_TESTS` | `DEVELOPING.md`, `tools/GameAutomation.Tests/InGameFactAttribute.cs`, `tools/run-logged.sh` |
 | `DEGCT_MARKING` | `tools/measurement_common.py` |
+| `DEGCT_NO_RUN_LOG` | `DEVELOPING.md`, `tools/GameAutomation/RunLog.cs`, `tools/GameHarness/Program.cs` |
+| `DEGCT_PROFILE_DIR` | `tools/GameAutomation/GameProfile.cs` |
 | `DEGCT_RUN_KIND` | `AGENTS.md`, `CLAUDE.md`, `tools/measure-menus.py`, `tools/measurement_common.py`, `tools/run-logged.sh` |
 | `DEGCT_RUN_LOG` | `tools/measurement_common.py`, `tools/run-logged.sh` |
 | `DEGCT_RUN_LOG_DIR` | `tools/measure-symbolic.sh`, `tools/measurement_common.py`, `tools/run-logged.sh` |

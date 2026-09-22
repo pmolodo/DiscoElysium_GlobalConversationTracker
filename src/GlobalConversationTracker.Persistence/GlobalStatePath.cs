@@ -31,8 +31,13 @@ namespace GlobalConversationTracker.Persistence
         /// <c>test.json</c> lands beside the real file rather than in whatever directory
         /// the game happened to be launched from. A value ending in a directory
         /// separator names a directory, and the default file name is used inside it.
+        ///
+        /// <para>SPELLED IN FULL, where everything else of ours asks a helper for the prefix.
+        /// The helper lives beside the automation tools and this assembly ships inside the
+        /// game, which is a good enough reason not to pull it in for one constant - the
+        /// prefix is here, once, in the only place this assembly names a variable.</para>
         /// </remarks>
-        public const string OverrideVariable = "DISCO_ELYSIUM_GCT_GLOBAL_STATE_PATH";
+        public const string OverrideVariable = "DEGCT_GLOBAL_STATE_PATH";
 
         /// <summary>
         /// The full path of the global state file.

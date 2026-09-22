@@ -17,21 +17,26 @@ namespace GlobalConversationTracker.Automation.Tests
     ///
     /// <para>So they are off by default and turned on deliberately:</para>
     /// <code>
-    /// set DISCO_ELYSIUM_GCT_INGAME_TESTS=1
+    /// set DEGCT_INGAME_TESTS=1
     /// dotnet test tools/GameAutomation.Tests
     /// </code>
     /// </remarks>
     public sealed class InGameFactAttribute : FactAttribute
     {
-        /// <summary>The variable that opts in.</summary>
-        public const string OptInVariable = "DISCO_ELYSIUM_GCT_INGAME_TESTS";
+        /// <summary>
+        /// The bare name of the variable that opts in: <c>DEGCT_INGAME_TESTS</c>.
+        /// </summary>
+        public const string OptInVariable = "INGAME_TESTS";
 
         /// <summary>Creates the attribute, skipping unless opted in.</summary>
         public InGameFactAttribute()
         {
             if (!IsOptedIn)
             {
-                Skip = $"Needs a running game and a desktop. Set {OptInVariable}=1 to run.";
+                // QUALIFIED WHERE IT IS SAID, so the message cannot name a variable that has
+                // moved: the bare name is the only spelling anything here holds.
+                Skip = "Needs a running game and a desktop. Set "
+                    + $"{DegctEnv.Qualified(OptInVariable)}=1 to run.";
             }
         }
 
@@ -40,7 +45,7 @@ namespace GlobalConversationTracker.Automation.Tests
         {
             get
             {
-                string? value = Environment.GetEnvironmentVariable(OptInVariable);
+                string? value = DegctEnv.Get(OptInVariable);
                 return !string.IsNullOrWhiteSpace(value)
                     && !string.Equals(value, "0", StringComparison.Ordinal)
                     && !string.Equals(value, "false", StringComparison.OrdinalIgnoreCase);

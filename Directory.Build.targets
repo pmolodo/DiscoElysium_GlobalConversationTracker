@@ -67,7 +67,7 @@
     order instead of a wall of MSBuild reference errors.
   -->
   <PropertyGroup>
-    <BepInExReferenceHelp>The build looks for a Disco Elysium install in this order: -p:DiscoElysiumDir=&lt;path&gt;, the DISCO_ELYSIUM_DIR environment variable, then whatever '$(RefGameDirCacheFile)' names (written by .\provision-refs.ps1, which is also the only step that can find your Steam copy). Every candidate must actually contain BepInEx: a pristine copy from depot_download.ps1 is the game as Steam ships it and cannot supply these assemblies.</BepInExReferenceHelp>
+    <BepInExReferenceHelp>The build looks for a Disco Elysium install in this order: -p:DiscoElysiumDir=&lt;path&gt;, the DEGCT_GAME_DIR environment variable, then whatever '$(RefGameDirCacheFile)' names (written by .\provision-refs.ps1, which is also the only step that can find your Steam copy). Every candidate must actually contain BepInEx: a pristine copy from depot_download.ps1 is the game as Steam ships it and cannot supply these assemblies.</BepInExReferenceHelp>
   </PropertyGroup>
 
   <Target Name="ValidateBepInExReferenceDirs" BeforeTargets="BeforeBuild"

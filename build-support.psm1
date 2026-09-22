@@ -27,6 +27,10 @@ $ErrorActionPreference = "Stop"
 # overwrite, are never among the exports.
 $PreConfigVariableNames = @((Get-Variable -Scope Script).Name) + "PreConfigVariableNames"
 
+# The door to this project's environment variables, which supplies the DEGCT_ prefix so that
+# no name here has to spell it. See docs/environment.md.
+Import-Module (Join-Path $PSScriptRoot "tools\DegctEnv.psm1") -Force -DisableNameChecking
+
 # --- Shared project configuration --------------------------------------------
 # $PSScriptRoot is this module's folder, i.e. the repo root, which is also where
 # every script that imports it lives.
@@ -424,9 +428,9 @@ function Resolve-TargetGameDir {
         $target = $GameDir
         $source = "-GameDir"
     }
-    elseif ($env:DISCO_ELYSIUM_DEPLOY_DIR) {
-        $target = $env:DISCO_ELYSIUM_DEPLOY_DIR
-        $source = "`$env:DISCO_ELYSIUM_DEPLOY_DIR"
+    elseif (Test-DegctEnv DEPLOY_DIR) {
+        $target = Get-DegctEnv DEPLOY_DIR
+        $source = "`$env:$(ConvertTo-DegctEnvName DEPLOY_DIR)"
     }
     else {
         $target = Find-SteamGameDir
@@ -436,7 +440,7 @@ function Resolve-TargetGameDir {
 No game folder to act on: no Steam copy of Disco Elysium (AppID $DiscoElysiumAppId) was found, and no override was given.
 Name one explicitly:
   -GameDir "<path to game folder>"
-  `$env:DISCO_ELYSIUM_DEPLOY_DIR = "<path to game folder>"
+  `$env:$(ConvertTo-DegctEnvName DEPLOY_DIR) = "<path to game folder>"
 "@
         }
     }
@@ -479,7 +483,7 @@ function Save-ReferenceGameDir {
 function Resolve-ReferenceGameDir {
     # The game install the build reads its reference assemblies from.
     #
-    # Sources, in order: explicit parameter, DISCO_ELYSIUM_DIR, then the LIVE
+    # Sources, in order: explicit parameter, DEGCT_GAME_DIR, then the LIVE
     # STEAM INSTALL. The live install is the one that is patched, re-run and
     # regenerated as the game updates, so it is the one whose interop assemblies
     # match the game a developer is actually playing. Read-only use, so relying
@@ -512,12 +516,13 @@ function Resolve-ReferenceGameDir {
         Save-ReferenceGameDir -GameDir $DiscoElysiumDir
         return $DiscoElysiumDir
     }
-    if ($env:DISCO_ELYSIUM_DIR) {
-        if (-not (Test-ReferenceGameDir -Path $env:DISCO_ELYSIUM_DIR)) {
-            throw "DISCO_ELYSIUM_DIR='$($env:DISCO_ELYSIUM_DIR)' has no $BepInExCoreRelDir + $BepInExInteropRelDir. Point it at a Disco Elysium install that has been run once with BepInEx 6."
+    $named = Get-DegctEnv GAME_DIR
+    if ($named) {
+        if (-not (Test-ReferenceGameDir -Path $named)) {
+            throw "$(ConvertTo-DegctEnvName GAME_DIR)='$named' has no $BepInExCoreRelDir + $BepInExInteropRelDir. Point it at a Disco Elysium install that has been run once with BepInEx 6."
         }
-        Save-ReferenceGameDir -GameDir $env:DISCO_ELYSIUM_DIR
-        return $env:DISCO_ELYSIUM_DIR
+        Save-ReferenceGameDir -GameDir $named
+        return $named
     }
     $cachedGameDir = $null
     if (Test-Path -LiteralPath $RefDirCacheFile) {
@@ -547,7 +552,7 @@ function Resolve-ReferenceGameDir {
 Could not find a Disco Elysium install to build against.
 Tried, in order:
   1. -DiscoElysiumDir                      (not given)
-  2. `$env:DISCO_ELYSIUM_DIR               (not set)
+  2. `$env:$(ConvertTo-DegctEnvName GAME_DIR)                    (not set)
   3. $cacheNote
   4. Steam auto-discovery
 $steamNote
@@ -559,7 +564,7 @@ BepInEx in it. Downloading one is the first half of making a reference install,
 not the whole of it.
 
 So: install BepInEx 6 (IL2CPP) into a copy and launch the game once, then pass
--DiscoElysiumDir <path> or set DISCO_ELYSIUM_DIR.
+-DiscoElysiumDir <path> or set $(ConvertTo-DegctEnvName GAME_DIR).
 "@
 }
 

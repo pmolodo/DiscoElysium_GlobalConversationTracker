@@ -72,8 +72,16 @@ const ABOUT: [&str; 6] = [
 ];
 
 /// What a file has to end in to be worth reading: the languages that have a helper, plus the
-/// docs, which name variables in prose.
-const SUFFIXES: [&str; 6] = ["rs", "py", "sh", "psm1", "cs", "md"];
+/// docs, which name variables in prose, plus the build's own files.
+///
+/// THE BUILD FILES ARE HERE BECAUSE THEY WERE NOT. A variable naming the game to build against
+/// lived in `Directory.Build.props` and in the scripts at the root, in none of which this could
+/// look, so it stayed under a prefix of its own long after the rule - and the table said six
+/// while the code asked for twelve. A suffix that is cheap to read is cheap to include; what is
+/// expensive is a file nobody thought to look in. See de-ej10.
+const SUFFIXES: [&str; 9] = [
+    "rs", "py", "sh", "psm1", "ps1", "props", "targets", "cs", "md",
+];
 
 /// The prefix on every variable this project defines.
 const PREFIX: &str = "DEGCT_";
@@ -107,13 +115,14 @@ const QUOTED: [&str; 17] = [
 ];
 
 /// Calls that take a BARE name as an unquoted argument: bash and PowerShell.
-const BARE: [&str; 6] = [
+const BARE: [&str; 7] = [
     "degct_env_is_set ",
     "degct_env_set ",
     "degct_env ",
     "Get-DegctEnv ",
     "Test-DegctEnv ",
     "Set-DegctEnv ",
+    "ConvertTo-DegctEnvName ",
 ];
 
 #[test]
@@ -185,7 +194,15 @@ fn rows(root: &Path) -> Option<Vec<String>> {
         let Ok(text) = std::fs::read_to_string(root.join(path)) else {
             continue;
         };
-        let assigned = assignments_in(&text);
+        // ONLY A SHELL FILE CAN TALK TO ITSELF THIS WAY. `NAME=value` in a doc or a code
+        // sample is an instruction to a READER - here is what to set before running this -
+        // and reading it as a script's own local hid `DEGCT_INGAME_TESTS`, whose every
+        // mention is an example of setting it.
+        let assigned = if assigns_like_a_script(path) {
+            assignments_in(&text)
+        } else {
+            BTreeSet::new()
+        };
         for name in names_in(&text) {
             let mine = assigned.contains(&name);
             readers
@@ -230,9 +247,18 @@ fn is_a_script_local(files: &BTreeSet<(String, bool)>) -> bool {
     !files.is_empty() && files.iter().all(|(_, assigns)| *assigns)
 }
 
+/// Whether a file is one whose `NAME=value` is an assignment rather than an example.
+///
+/// The shells, and nothing else. Rust and Python do not assign into the environment this way at
+/// all, and in a doc or a comment the shape is how a reader is TOLD to set something.
+fn assigns_like_a_script(path: &str) -> bool {
+    [".sh", ".psm1", ".ps1"]
+        .iter()
+        .any(|suffix| path.ends_with(suffix))
+}
+
 /// Every bare name this text ASSIGNS, as a shell script assigns one: `DEGCT_NAME=` at the start
-/// of a word. Rust and Python do not assign into the environment this way, so only a shell file
-/// can produce one.
+/// of a word.
 fn assignments_in(text: &str) -> BTreeSet<String> {
     let bytes = text.as_bytes();
     let mut found = BTreeSet::new();

@@ -25,7 +25,7 @@
 
 .PARAMETER DiscoElysiumDir
     Game install to read reference assemblies from, taking priority over the rest
-    of provision-refs.ps1's resolution order (DISCO_ELYSIUM_DIR, the repo-local
+    of provision-refs.ps1's resolution order (DEGCT_GAME_DIR, the repo-local
     reference copy, the cached previous answer, Steam discovery). It must be an
     install already run once with BepInEx 6, since BepInEx\interop is generated
     on the machine and cannot be fetched; a path without BepInEx\core and

@@ -93,7 +93,7 @@ The project references assemblies from an existing BepInEx installation, so it n
 where the game lives. Resolution order:
 
 1. `-p:DiscoElysiumDir=<path>` on the command line
-2. the `DISCO_ELYSIUM_DIR` environment variable
+2. the `DEGCT_GAME_DIR` environment variable
 3. the machine-level cache `.\provision-refs.ps1` writes, which is also the only step that
    can find your Steam copy
 
@@ -165,7 +165,7 @@ without a loader, and the all-in-one archive above is how a copy that has none g
 
 The everyday target is the playable Steam copy, usually
 `steamapps\common\Disco Elysium`, which is what `deploy.ps1` resolves to on its own when
-neither `-GameDir` nor `DISCO_ELYSIUM_DEPLOY_DIR` names one.
+neither `-GameDir` nor `DEGCT_DEPLOY_DIR` names one.
 
 The read-only reference copies under `.game_reference_copies` are not deploy targets.
 `deploy.ps1` refuses any path under that folder unless `-AllowReferenceCopy` is given. A

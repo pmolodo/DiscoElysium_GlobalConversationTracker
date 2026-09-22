@@ -46,8 +46,11 @@ namespace GlobalConversationTracker.Automation
         /// </remarks>
         public const int RevisionLength = 7;
 
-        /// <summary>Set to opt out of logging entirely.</summary>
-        public const string OptOutVariable = "DISCO_ELYSIUM_GCT_NO_RUN_LOG";
+        /// <summary>
+        /// The bare name of the variable that opts out of logging entirely:
+        /// <c>DEGCT_NO_RUN_LOG</c>.
+        /// </summary>
+        public const string OptOutVariable = "NO_RUN_LOG";
 
         /// <summary>The date part's format, and the first thing a name sorts by.</summary>
         public const string DateFormat = "yyyy-MM-dd";
@@ -208,7 +211,7 @@ namespace GlobalConversationTracker.Automation
         {
             get
             {
-                string? value = Environment.GetEnvironmentVariable(OptOutVariable);
+                string? value = DegctEnv.Get(OptOutVariable);
                 return !string.IsNullOrWhiteSpace(value)
                     && !string.Equals(value, "0", StringComparison.Ordinal)
                     && !string.Equals(value, "false", StringComparison.OrdinalIgnoreCase);

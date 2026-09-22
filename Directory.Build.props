@@ -51,7 +51,7 @@
     Resolution order, first hit wins:
 
       1. -p:DiscoElysiumDir=<path>   (a command-line property beats anything set here)
-      2. the DISCO_ELYSIUM_DIR environment variable
+      2. the DEGCT_GAME_DIR environment variable
       3. the machine-level cache the PowerShell scripts write
 
     EVERY candidate is checked for BepInEx\core rather than merely for
@@ -80,7 +80,7 @@
 
   <PropertyGroup>
     <_CachedGameDir Condition="'$(RefGameDirCacheFile)' != '' and Exists('$(RefGameDirCacheFile)')">$([System.IO.File]::ReadAllText('$(RefGameDirCacheFile)').Trim())</_CachedGameDir>
-    <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and '$(DISCO_ELYSIUM_DIR)' != ''">$(DISCO_ELYSIUM_DIR)</DiscoElysiumDir>
+    <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and '$(DEGCT_GAME_DIR)' != ''">$(DEGCT_GAME_DIR)</DiscoElysiumDir>
     <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and '$(_CachedGameDir)' != '' and Exists('$(_CachedGameDir)\BepInEx\core')">$(_CachedGameDir)</DiscoElysiumDir>
   </PropertyGroup>
 

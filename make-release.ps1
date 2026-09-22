@@ -50,7 +50,7 @@
 
 .PARAMETER DiscoElysiumDir
     Game install to read the build's reference assemblies from, overriding
-    provision-refs.ps1's usual resolution order (DISCO_ELYSIUM_DIR, the
+    provision-refs.ps1's usual resolution order (DEGCT_GAME_DIR, the
     repo-local reference copy, the cached previous answer, Steam discovery). It
     must already have BepInEx\core and BepInEx\interop; a path that does not is
     an error rather than a reason to fall back. Nothing from that install is

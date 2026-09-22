@@ -62,7 +62,7 @@
 
 .PARAMETER GameDir
     The game folder to capture the log out of. Resolved exactly as deploy.ps1
-    resolves its target (this parameter, then DISCO_ELYSIUM_DEPLOY_DIR, then the
+    resolves its target (this parameter, then DEGCT_DEPLOY_DIR, then the
     Steam copy), so by default the log captured is the one written by the install
     deploy last wrote to. Read-only, like everything else this script does to the
     game folder.
