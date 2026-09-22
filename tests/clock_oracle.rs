@@ -21,6 +21,17 @@
 //! That is an arm rather than the default. The plugin sends whatever the game says and the
 //! corpus fixtures derive it from the save; a locked clock carries no register at all, so a
 //! locked world here would be testing nothing.
+//!
+//! ## What this sees that `menu_oracle` does not
+//!
+//! `menu_oracle` carries the same menu and reaches the same verdict, and the two are not
+//! redundant: they are sensitive to different halves of the image. The marking's answer comes
+//! through the BACKWARD pass, so a defect in the forward image alone leaves it correct - the
+//! pre-image still knows what a `PassTime` does. This intersects a FORWARD entry against those
+//! backward sets, so a forward-only defect shows up here and nowhere else.
+//!
+//! Measured, rather than assumed: breaking `ActionImage::pass_time` alone fails this and
+//! leaves `menu_oracle` green; breaking the `PassTime` arm of `pre_one` as well fails both.
 
 use lookahead_engine::core::types::{DialogueNodeId, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;

@@ -216,3 +216,52 @@ fn real_conversations_agree_with_the_greedy_walk() {
         println!("{conversation}: exact menu agreement");
     }
 }
+
+/// THE MOVING CLOCK, judged by the executor that moves it in concrete states.
+///
+/// Every other check of the carried clock compares the symbolic side against what a test
+/// expected of it. This compares it against `oracle`, which walks concrete states through
+/// `core::action` - and that advances `day_minutes` on its own. A disagreement here is the two
+/// executors answering the same menu differently, which is the one thing "one algorithm by
+/// default, everywhere it runs" forbids.
+///
+/// THE MENU IS TWO OPTIONS THAT DIFFER ONLY IN THE CLOCK. Both reach the same entry; one
+/// passes a quarter of an hour on the way and the other does not, and what lies past them
+/// opens at seven. From a quarter to seven that is the whole difference between an option that
+/// leads somewhere new and one that leads nowhere.
+///
+/// THE WORLD IS UNLOCKED ON PURPOSE, which is an arm rather than the default: the plugin sends
+/// whatever the game says and the corpus fixtures derive it, and a locked clock carries no
+/// register at all - so a locked world here would be testing nothing.
+#[test]
+fn a_menu_that_turns_the_hour_agrees_with_the_concrete_walk() {
+    let graph = GraphBuilder::new()
+        .add(Entry::new(0).links(&[1, 2]))
+        .add(Entry::new(1).player().script("PassTime()").links(&[3]))
+        .add(Entry::new(2).player().links(&[3]))
+        .add(Entry::new(3).guard("IsHour(7)").links(&[4]))
+        .add(Entry::new(4))
+        .build();
+
+    let world = GameWorld::blank()
+        .with_day_minutes(6 * 60 + 45)
+        .with_clock_locked(false);
+
+    assert!(
+        DataLayout::for_group(&graph, &world, 16).clock().is_some(),
+        "this menu is about a clock, so the layout has to be carrying one",
+    );
+
+    // Every way round of which entries are new, so the agreement is not one lucky assignment.
+    for assignment in 0usize..243 {
+        let seen_state = |id: DialogueNodeId| {
+            let digit = assignment / 3usize.pow(id.entry_id.clamp(0, 4) as u32) % 3;
+            [
+                SeenState::SeenThisGame,
+                SeenState::UnseenThisGame,
+                SeenState::UnseenAnyGame,
+            ][digit]
+        };
+        compare(&graph, &[node(1), node(2)], &world, &seen_state);
+    }
+}
