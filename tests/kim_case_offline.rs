@@ -322,7 +322,7 @@ fn report(
             drawn(own, reply),
         );
         println!(
-            "               own {own}, best {}, {}, witness {}, {} states over {} entries",
+            "               own {own}, best {}, {}, witness {}, {} pass(es)",
             reply.best,
             if reply.complete {
                 "finished"
@@ -333,7 +333,6 @@ fn report(
                 Some(node) => format!("{}:{}", node.conversation, node.entry),
                 None => "none".to_string(),
             },
-            reply.states_explored,
             reply.nodes_reached,
         );
     }

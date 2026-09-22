@@ -552,7 +552,7 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
                     if got != option.marker {
                         failures.push(format!(
                             "{}/{} ({}): {}:{} should be {} - {} - and the engine \
-                             draws {got}: own {own}, best {}, {}, {} states over {} entries \
+                             draws {got}: own {own}, best {}, {}, {} pass(es) \
                              - run it in game with --suite {}",
                             suite.suite,
                             scenario.save,
@@ -567,7 +567,6 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
                             } else {
                                 "gave up"
                             },
-                            reply.states_explored,
                             reply.nodes_reached,
                             suite.suite,
                         ));
@@ -751,17 +750,22 @@ fn every_offline_claim_holds_over_the_whole_group() {
                     response
                         .answers
                         .iter()
+                        // OR WALKED SOMETHING, so an option that was searched and found
+                        // nothing is reported too - that is the interesting half of a menu.
+                        // This asked `states_explored` until de-8b85, which is set to zero
+                        // and never written again, so the disjunct matched nothing and only
+                        // options that drew something were ever listed.
                         .filter(|reply| {
-                            reply.states_explored > 0
+                            reply.nodes_reached > 0
                                 || drawn(staged.seen_state_of(reply.start), reply) != "none"
                         })
                         .map(|reply| {
                             format!(
-                                "{}:{} drew {} over {} states",
+                                "{}:{} drew {} over {} pass(es)",
                                 reply.start.conversation,
                                 reply.start.entry,
                                 drawn(staged.seen_state_of(reply.start), reply),
-                                reply.states_explored,
+                                reply.nodes_reached,
                             )
                         })
                         .collect::<Vec<_>>()

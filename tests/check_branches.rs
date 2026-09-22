@@ -300,14 +300,17 @@ fn an_outcome_on_the_top_rung_is_not_searched() {
             rolled.entry,
         );
 
-        // PER OUTCOME NOW, and it says something it could not before. This used to read
-        // the combined answer's count, which was hard-coded to zero for a rolled check
-        // whatever its outcomes did - so the assertion held by construction rather than by
-        // measurement. Each outcome carries its own figures, so this is now a fact about
-        // the search.
+        // ON THE PASSES A SEARCH TOOK, which is the only counter here that can be zero.
+        // This asked `states_explored` until de-8b85, and that is set once - to zero, in
+        // `bridge::unanswered` - and written again by nothing, so the assertion held
+        // whatever the outcomes did. A node count cannot serve either: building the layout
+        // and compiling the guards allocates before any search is considered, so the figure
+        // is never zero for a menu that was answered at all.
+        //
+        // A BACKWARD PASS IS THE SEARCH ITSELF, and a refused one performs none.
         assert_eq!(
-            branch.states_explored, 0,
-            "{conversation}:{} {name} built search states for an outcome nothing can improve on",
+            branch.nodes_reached, 0,
+            "{conversation}:{} {name} walked something for an outcome nothing can improve on",
             rolled.entry,
         );
     }
