@@ -28,7 +28,7 @@ row stays exact only while the content stays as it is.
 | Until the clock hook has fired for the first time, a crawl is told the clock is locked                                                                                                 | restrictive | plugin `ClockLockPatch`                                                     | a crawl in the seconds before the game's first clock tick or save load                | de-gh1o   |
 | The game's own clock is understood to advance about a minute per unseen line, which nothing models                                                                                     | either | not modelled                                                                      | every conversation; unmeasured                                                        | de-sze.10 |
 | A thought part-way through internalising never finishes during a conversation, so `IsTHCFixed`, `IsTHCCooking` and `IsTHCCookingOrFixed` hold their starting answer however late it gets - and the passive checks a newly fixed thought would move keep the world's answer. DECIDED, not pending: see below | either | `core::thought_effects`; cabinet states in `world::GameWorld`                | the same 72 live `PassTime` sites; cabinet questions: 110 entries                     |           |
-| Passing time wears a running substance off, stripping the skill buffs it was giving, which can flip a passive check either way                                                                        | either | not modelled                                                                      | 3,566 passive checks sit in a group that can pass time, but only while something is running - no committed save has one | de-m11s.3.3 |
+| Passing time wears a running substance off, stripping the buffs it was giving - which move an ATTRIBUTE, so six skills at once - and that can flip a passive check either way. DEFERRED: see below | either | not modelled                                                                      | 3,566 passive checks sit in a group that can pass time, but only while something is running - no committed save has one | de-m11s.3.3 |
 | The clock is read to the hour, not the minute                                                                                                                                          | either | plugin `GameFacts.ReadClock`                                                      | not reached: no guard asks about minutes                                              |           |
 | `AssignClock` writes the reading at the WORLD's hour, so a deadline stored after a `PassTime` is stored a quarter-hour early                                                           | either | `symbolic::action_image::clock_write`                                             | not reached: of 1,315 groups, 35 pass time and 2 write a reading, and no group does both (2026-09-21) |           |
 | A clock reading compared against a variable is undecided where the clock moves, since nothing here compares two registers                                                              | permissive | `GuardCompiler::variable_against_query`                                       | not reached: no group that passes time holds a guard naming `HourCount` or `TotalHourCount` at all (2026-09-21) |           |
@@ -46,6 +46,23 @@ finish it, and a check close enough to its threshold for the thought's effect to
 It is treated the way the game's own per-entry minute is treated - ignored deliberately, and
 written down here so the next person meets the decision rather than the surprise. The
 [Time](#time) row above is the entry; this is why it carries no issue id.
+
+### A substance wearing off is deferred rather than decided against
+
+Same shape, stronger case, so it keeps its issue. Two things make it likelier to matter than a
+thought finishing:
+
+- **A substance lasts sixty minutes** and a crawl passes fifteen at a time, so four calls end a
+  fresh one and fewer end one taken a while ago. Internalising a thought takes hours, so the
+  window a crawl can cross is much smaller here.
+- **A substance buff moves an ATTRIBUTE.** `CharacterEffect` carries an `abilityType` as well
+  as a `skillType` and applies through `GetAbility(...).Add(modifier)`, so one wearing off
+  moves every skill under that attribute - six margins to cross instead of one.
+
+Still small in absolute terms: it needs a player who is on something, in one of the 34
+time-passing groups holding a passive check, with a check inside the buff's swing. What it
+would take to build is written out on de-m11s.3.3, including the one thing missing - a
+committed save with a substance actually running, since none of the 23 has one.
 
 ## Counters and amounts
 

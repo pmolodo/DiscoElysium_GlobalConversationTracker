@@ -1279,10 +1279,11 @@ impl DataLayout {
     /// asks the hour there is nothing for a register to answer, and `GuardCompiler`'s
     /// world-answered path gives the identical result.
     ///
-    /// WHAT WOULD ADD A FOURTH READER is a substance wearing off, which moves a skill a
-    /// passive check compares - so such a group would need the clock with no time guard in it
-    /// at all (de-m11s.3.3). A thought finishing its internalisation would do the same, and
-    /// modelling it is DECIDED AGAINST rather than pending: see `docs/modelling-gaps.md`.
+    /// NOTHING ELSE READS IT, and that is settled rather than pending. Passing time also bakes
+    /// thoughts and wears substances off, either of which moves a skill a passive check
+    /// compares - so such a group would need a clock with no time guard in it at all. Neither
+    /// is modelled, by decision: `docs/modelling-gaps.md` says why, and picking either up
+    /// again means adding its case here.
     pub fn clock_can_move(
         graph: &LookAheadGraph,
         world: &dyn crate::world::ILookAheadWorld,
