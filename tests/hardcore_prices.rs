@@ -79,7 +79,11 @@ fn request_in(index: &Index, save: &str) -> LookAheadRequest {
             money: MONEY,
             day_minutes: holdings.day_minutes,
             day_counter: holdings.day_counter,
-            clock_locked: true,
+            clock_locked: fixtures::clock_locked_in_save(
+                save,
+                holdings.day_minutes,
+                holdings.day_counter,
+            ),
             data_values: holdings.data_for(&asked.data),
             items: holdings.items,
             thoughts: holdings.thoughts,

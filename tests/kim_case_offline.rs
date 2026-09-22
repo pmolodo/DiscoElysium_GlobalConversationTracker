@@ -216,11 +216,15 @@ fn report(
             money: scenario.money.unwrap_or(holdings.money),
             day_minutes: scenario.day_minutes.unwrap_or(holdings.day_minutes),
             day_counter: holdings.day_counter,
-            // LOCKED, as the plugin sends it: nothing the game exposes to Lua says whether
-            // its clock is locked, so the mod reports locked and a crawl leaves the hour
-            // where it found it. A fixture that let time pass would be staging a world no
-            // run of the game is in. See de-3jec.
-            clock_locked: true,
+            // AS THE GAME WOULD HAVE IT AT THAT HOUR, derived the way the loader derives it -
+            // see `fixtures::clock_locked_in_save`. From the hour the scenario is STAGED at
+            // rather than the one the save holds, since the rule turns on the hour and a
+            // scenario may move it.
+            clock_locked: fixtures::clock_locked_in_save(
+                &scenario.save,
+                scenario.day_minutes.unwrap_or(holdings.day_minutes),
+                holdings.day_counter,
+            ),
             // WHAT THE ENGINE ASKED TO HAVE READ, positionally, as the plugin sends it.
             data_values: holdings.data_for(&asked.data),
             items: holdings.items,
