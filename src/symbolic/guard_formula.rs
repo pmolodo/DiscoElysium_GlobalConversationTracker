@@ -177,15 +177,6 @@ pub struct GuardCompiler<'a> {
     /// the second is a budget at its limit. Nothing could tell them apart before, because
     /// running out of room here did not produce a fallback at all - it aborted the process.
     out_of_memory: bool,
-    /// How deep inside a guard being built out of SEVERAL sub-comparisons this is.
-    ///
-    /// A guard about the moving clock is answered hour by hour - see
-    /// [`Self::variable_against_moving_reading`] - and each hour asks the ordinary
-    /// comparison path for its own term. Those twenty-four answers are parts of one guard,
-    /// not twenty-four guards, so while this is raised the verdict is not counted and the
-    /// caller records one for the whole. Running out of room is NOT a verdict and is
-    /// recorded whatever this says.
-    quiet: usize,
     reasons: HashMap<&'static str, usize>,
     subjects: Vec<(&'static str, String)>,
     /// Queries answered as constants that a DECLARED decision writes.
@@ -236,7 +227,6 @@ impl<'a> GuardCompiler<'a> {
             clock_approximated: false,
             fallbacks: 0,
             compiled: 0,
-            quiet: 0,
             reasons: HashMap::new(),
             subjects: Vec::new(),
             out_of_memory: false,
@@ -612,33 +602,13 @@ impl<'a> GuardCompiler<'a> {
 
     /// A guard that is undecided everywhere: the permissive answer.
     fn undecided(&mut self, reason: &'static str, subject: String) -> MayBe {
-        self.note_undecided(reason, subject);
+        self.fallbacks += 1;
+        *self.reasons.entry(reason).or_default() += 1;
+        self.subjects.push((reason, subject));
         MayBe {
             may_be_true: self.top(),
             may_be_false: self.top(),
         }
-    }
-
-    /// Records a guard as undecided WITHOUT building the permissive rails.
-    ///
-    /// For a caller that has a formula already and only wants the verdict counted: an hour
-    /// by hour answer is a real formula even when some of its hours are undecided, and
-    /// throwing it away for a pair of tops would lose every hour that did decide.
-    fn note_undecided(&mut self, reason: &'static str, subject: String) {
-        if self.quiet > 0 {
-            return;
-        }
-        self.fallbacks += 1;
-        *self.reasons.entry(reason).or_default() += 1;
-        self.subjects.push((reason, subject));
-    }
-
-    /// Runs `build` without counting the verdicts it reaches. See [`Self::quiet`].
-    fn quietly<T>(&mut self, build: impl FnOnce(&mut Self) -> T) -> T {
-        self.quiet += 1;
-        let made = build(self);
-        self.quiet -= 1;
-        made
     }
 
     /// A guard nothing could be built for, because the manager has no room left.
@@ -677,9 +647,7 @@ impl<'a> GuardCompiler<'a> {
             return self.no_room("negating a compiled guard".to_string());
         };
 
-        if self.quiet == 0 {
-            self.compiled += 1;
-        }
+        self.compiled += 1;
         MayBe {
             may_be_true: holds,
             may_be_false: fails,
@@ -2105,6 +2073,13 @@ impl<'a> GuardCompiler<'a> {
     /// The shape a stored deadline is read back in: `TotalHourCount() >=
     /// Variable["plaza.alice_serial_next_meeting_time"]`. With the query fixed it is an ordinary
     /// comparison of a slot against a constant.
+    ///
+    /// A CLOCK READING IS NOT ONE VALUE where the layout carries a clock, so such a guard is
+    /// undecided there rather than answered hour by hour. Not reached: surveyed 2026-09-21
+    /// over the whole index, no group that passes time holds a guard mentioning `HourCount`
+    /// or `TotalHourCount` at all - every hour question in one is a condition like
+    /// `IsMorning()` or `IsHourBetween(22, 6)`, which the arm above compiles over the
+    /// register. Undecided is the permissive direction, so the gap is safe as well as empty.
     fn variable_against_query<'g>(
         &mut self,
         op: &str,
@@ -2118,76 +2093,8 @@ impl<'a> GuardCompiler<'a> {
                 _ => return None,
             },
         };
-        // A READING THAT MOVES has no one value to compare against, so it is answered hour by
-        // hour instead. This has to be tried first: `fixed_value` refuses such a query, and
-        // refusing here would send the whole guard to the fallback path.
-        if ClockTime::owns(&query) && self.vars.clock_ops().is_some() {
-            return self.variable_against_moving_reading(op, &name, &query, args);
-        }
-
         let value = self.fixed_value(&query, args)?;
         Some(self.comparison(op, &name, &value))
-    }
-
-    /// `Variable[name] op query()` where the query reads a clock the search can move.
-    ///
-    /// ## Hour by hour, because neither side is a constant
-    ///
-    /// The deadline shape is `TotalHourCount() >= Variable["..."]`, and with a carried clock
-    /// both sides are things a state decides: the variable through its slot, the reading
-    /// through the register. A comparison between two registers is not something the
-    /// arithmetic here offers, and it is not needed - THE READING TAKES ONE OF TWENTY-FOUR
-    /// VALUES. So the day is split into its hours, each hour's reading is the constant that
-    /// hour's states compare against, and the answers are gathered.
-    ///
-    /// ## Both rails, rather than one and its negation
-    ///
-    /// An hour whose term is undecided is undecided for the states at that hour and settled
-    /// elsewhere, so the two rails are not each other's complement and building one from the
-    /// other would lose exactly that. Gathering them separately keeps every hour that did
-    /// decide, which is the whole reason this is worth more than a fallback.
-    ///
-    /// The hours partition the day, so every state lies under exactly one term.
-    fn variable_against_moving_reading(
-        &mut self,
-        op: &str,
-        name: &str,
-        query: &str,
-        args: Arguments<'_>,
-    ) -> Option<MayBe> {
-        let values = Self::literal_arguments(args)?;
-        let day = self.day() as i32;
-
-        let mut may_be_true = self.bottom();
-        let mut may_be_false = self.bottom();
-        for hour in 0..i64::from(ClockTime::HOURS_IN_DAY) {
-            let reading = ClockTime::answer(query, &values, (hour * 60) as i32, day);
-            if reading.kind() == GuardValueKind::Unknown {
-                return None;
-            }
-
-            let at = self.hour_range(hour, hour)?;
-            // Through the ordinary comparison path, so a rebased slot, a dropped counter or
-            // a variable the layout does not carry are read here exactly as they are read
-            // anywhere else. Quietly, because these are twenty-four parts of one guard.
-            let term = self.quietly(|me| me.comparison(op, name, &reading));
-            may_be_true = may_be_true.or(&at.and(&term.may_be_true).ok()?).ok()?;
-            may_be_false = may_be_false.or(&at.and(&term.may_be_false).ok()?).ok()?;
-        }
-
-        let made = MayBe {
-            may_be_true,
-            may_be_false,
-        };
-        if made.is_decided() {
-            self.compiled += 1;
-        } else {
-            self.note_undecided(
-                "comparison: a variable against a moving clock reading",
-                format!("(Variable[{name}] {op} {query}(..))"),
-            );
-        }
-        Some(made)
     }
 
     /// What a constant query evaluates to, as a value rather than as a truth.
@@ -3185,54 +3092,37 @@ mod tests {
         assert_eq!(compiler.fallbacks(), 0);
     }
 
-    /// THE DEADLINE SHAPE, with both sides moving: the slot holds the hour a script wrote
-    /// down and the register holds the hour the state is at.
+    /// THE DEADLINE SHAPE gives way rather than answering wrongly, where the clock moves.
     ///
-    /// The variable is set to 28, and on day 2 the total hour is 24 plus the hour - so the
-    /// deadline is reached at four in the morning and not before.
+    /// `TotalHourCount() >= Variable["..."]` has both sides deciding per state once the
+    /// clock is carried, and nothing here compares two registers. So it is undecided, which
+    /// is the permissive direction - and it is a gap no shipped guard falls into: see
+    /// [`GuardCompiler::variable_against_query`]. The same guard with the clock HELD is
+    /// answered, which is the other half of the contract and the line below it.
     #[test]
-    fn a_deadline_is_read_against_the_carried_clock() {
-        let mut symbols = StateSymbols::new();
-        let slot = symbols.variable("plaza.alice_serial_next_meeting_time");
-        let node = LookAheadNode {
-            actions: vec![DialogueAction::assign(slot, 28, "s".to_string())],
-            links: vec![DialogueNodeId::new(1, 0)],
-            ..LookAheadNode::new(DialogueNodeId::new(1, 0))
-        };
-        let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
-        let symbols = graph.symbols().clone();
-
-        let layout = DataLayout::for_graph(&graph, 16, None, true);
+    fn a_deadline_gives_way_to_a_moving_clock_and_is_answered_by_a_held_one() {
+        let (graph, symbols) = fixture(&["plaza.alice_serial_next_meeting_time"], None);
         let day_two = crate::world::GameWorld::blank().with_day_counter(2);
-
-        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
-        let mut compiler = GuardCompiler::new(&vars)
-            .with_world(&day_two)
-            .with_constant_clock(true);
-        let due = compiler.compile(&Guard::comparison(
+        let deadline = Guard::comparison(
             ">=".to_string(),
             call("TotalHourCount", vec![]),
             Guard::variable("plaza.alice_serial_next_meeting_time".to_string()),
-        ));
+        );
 
-        // The slot has to be pinned too: a state the search has not reached the assignment
-        // in holds nothing, and the question is about the ones that have.
-        let written = vars
-            .slot_equals(
-                vars.slot_of("plaza.alice_serial_next_meeting_time")
-                    .expect("the layout carries it"),
-                28,
-            )
-            .expect("the manager has room");
-        let reached = due.may_be_true.and(&written).expect("the manager has room");
-        let missed = due
-            .may_be_false
-            .and(&written)
-            .expect("the manager has room");
+        let carried = DataLayout::for_graph(&graph, 16, None, true);
+        let vars = DataVars::new(&carried, &symbols, DiagramBudget::modest());
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(&day_two)
+            .with_constant_clock(true);
+        assert!(!compiler.compile(&deadline).is_decided());
+        assert_eq!(compiler.fallbacks(), 1);
 
-        assert!(!holds_at(&vars, &reached, 3 * 60));
-        assert!(holds_at(&vars, &reached, 4 * 60));
-        assert!(holds_at(&vars, &missed, 3 * 60));
+        let held = DataLayout::for_graph(&graph, 16, None, false);
+        let vars = DataVars::new(&held, &symbols, DiagramBudget::modest());
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(&day_two)
+            .with_constant_clock(true);
+        assert!(compiler.compile(&deadline).is_decided());
         assert_eq!(compiler.fallbacks(), 0);
     }
 
