@@ -24,8 +24,7 @@ namespace GlobalConversationTracker.Automation.Tests
         {
             _temp = Path.Combine(Path.GetTempPath(), "degct-deployed-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(PluginFolder);
-            Directory.CreateDirectory(Path.Combine(RepoRoot, "target", "release"));
-            Directory.CreateDirectory(Path.Combine(RepoRoot, "target", "debug"));
+            Directory.CreateDirectory(Path.Combine(RepoRoot, "target"));
 
             _was = DegctEnv.Get(DeployedEngine.CheckVariable);
             Environment.SetEnvironmentVariable(
@@ -88,6 +87,22 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.Equal(DeployedEngine.Freshness.Stale, Check().Freshness);
         }
 
+        /// <summary>
+        /// The same failure through a profile no list would have named:
+        /// <c>release-incremental</c> is what this repository builds with by default, and a
+        /// check that only knows release and debug sees nothing newer than the deploy.
+        /// </summary>
+        [Fact]
+        public void A_build_under_a_profile_nobody_named_is_stale_too()
+        {
+            DateTime yesterday = DateTime.UtcNow.AddDays(-1);
+            Build("release", yesterday);
+            Deploy(yesterday);
+            Build("release-incremental", DateTime.UtcNow);
+
+            Assert.Equal(DeployedEngine.Freshness.Stale, Check().Freshness);
+        }
+
         [Fact]
         public void Nothing_deployed_is_not_a_staleness()
         {
@@ -134,6 +149,9 @@ namespace GlobalConversationTracker.Automation.Tests
 
         private static void Write(string path, DateTime written)
         {
+            // THE FOLDER IS PART OF WHAT IS BEING STAGED: a profile exists because cargo made
+            // a folder for it, so a test naming a new one makes the folder the same way.
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllText(path, "not an engine");
             File.SetLastWriteTimeUtc(path, written);
         }

@@ -59,9 +59,6 @@ namespace GlobalConversationTracker.Automation
         /// </remarks>
         public const string CheckVariable = "CHECK_DEPLOY";
 
-        /// <summary>The profile directories under <c>target/</c> a build can land in.</summary>
-        private static readonly string[] Profiles = { "release", "debug" };
-
         /// <summary>How a deployed engine compares with what this tree has built.</summary>
         public enum Freshness
         {
@@ -161,20 +158,33 @@ namespace GlobalConversationTracker.Automation
         /// The most recently built engine under <c>target/</c>, or null where there is none.
         /// </summary>
         /// <remarks>
-        /// EVERY PROFILE, newest wins. Which one the plugin's build would have copied is not
-        /// the question - the question is whether anything this tree produced is newer than
+        /// <para>EVERY PROFILE, newest wins. Which one the plugin's build would have copied is
+        /// not the question - the question is whether anything this tree produced is newer than
         /// what is deployed, and a debug build nobody deployed answers it as well as a release
-        /// one.
+        /// one.</para>
+        ///
+        /// <para>SO THE FOLDERS ARE ASKED FOR RATHER THAN LISTED. A named list is a list that
+        /// goes short: a profile this file has never heard of holds an engine this file cannot
+        /// see, the newest it does see agrees with the deployed copy, and the check says the
+        /// deployment is current while a run tests something else. Cargo puts each profile's
+        /// output in a folder of its own under <c>target/</c>, so the folders that are there
+        /// are the profiles that were built.</para>
         /// </remarks>
         /// <param name="repoRoot">The repository root.</param>
         /// <returns>The path of the newest built engine, or null.</returns>
         private static string? NewestBuilt(string repoRoot)
         {
+            string target = Path.Combine(repoRoot, "target");
+            if (!Directory.Exists(target))
+            {
+                return null;
+            }
+
             string? newest = null;
             DateTime when = DateTime.MinValue;
-            foreach (string profile in Profiles)
+            foreach (string profile in Directory.EnumerateDirectories(target))
             {
-                string path = Path.Combine(repoRoot, "target", profile, BuiltFileName);
+                string path = Path.Combine(profile, BuiltFileName);
                 if (!File.Exists(path))
                 {
                     continue;
