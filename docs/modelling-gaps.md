@@ -25,8 +25,8 @@ row stays exact only while the content stays as it is.
 
 | gap                                                                                                                                                                                    | errs   | where                                                                             | in content                                                                            | tracked   |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------- |
-| Until the clock hook has fired for the first time, a crawl is told the clock is locked                                                                                                 | restrictive | plugin `ClockLockPatch`                                                     | a crawl in the seconds before the game's first clock tick or save load                | de-gh1o   |
-| The game's own clock is understood to advance about a minute per unseen line, which nothing models                                                                                     | either | not modelled                                                                      | every conversation; unmeasured                                                        | de-sze.10 |
+| Until the clock hook has fired for the first time, a crawl is told the clock is locked                                                                                                 | restrictive | plugin `ClockLockPatch`                                                     | a crawl in the seconds before the game's first clock tick or save load                |           |
+| The game's own clock is understood to advance about a minute per unseen line, which nothing models                                                                                     | either | not modelled                                                                      | every conversation; unmeasured                                                        |           |
 | A thought part-way through internalising never finishes during a conversation, so `IsTHCFixed`, `IsTHCCooking` and `IsTHCCookingOrFixed` hold their starting answer however late it gets - and the passive checks a newly fixed thought would move keep the world's answer. DECIDED, not pending: see below | either | `core::thought_effects`; cabinet states in `world::GameWorld`                | the same 72 live `PassTime` sites; cabinet questions: 110 entries                     |           |
 | Passing time wears a running substance off, stripping the buffs it was giving - which move an ATTRIBUTE, so six skills at once - and that can flip a passive check either way. DEFERRED: see below | either | not modelled                                                                      | 3,566 passive checks sit in a group that can pass time, but only while something is running - no committed save has one | de-m11s.3.3 |
 | The clock is read to the hour, not the minute                                                                                                                                          | either | plugin `GameFacts.ReadClock`                                                      | not reached: no guard asks about minutes                                              |           |
@@ -45,7 +45,7 @@ finish it, and a check close enough to its threshold for the thought's effect to
 
 It is treated the way the game's own per-entry minute is treated - ignored deliberately, and
 written down here so the next person meets the decision rather than the surprise. The
-[Time](#time) row above is the entry; this is why it carries no issue id.
+[Time](#time) row above is the entry.
 
 ### A substance wearing off is deferred rather than decided against
 
@@ -59,10 +59,10 @@ thought finishing:
   as a `skillType` and applies through `GetAbility(...).Add(modifier)`, so one wearing off
   moves every skill under that attribute - six margins to cross instead of one.
 
-Still small in absolute terms: it needs a player who is on something, in one of the 34
-time-passing groups holding a passive check, with a check inside the buff's swing. What it
-would take to build is written out on de-m11s.3.3, including the one thing missing - a
-committed save with a substance actually running, since none of the 23 has one.
+Still small in absolute terms: it needs a player who is on something, in one of the
+time-passing groups holding a passive check - the row above counts them - with a check inside
+the buff's swing. What it would take to build is written out on de-m11s.3.3, including the one
+thing missing: a committed save with a substance actually running, and none of them has one.
 
 ## Counters and amounts
 
@@ -91,7 +91,7 @@ world although a dialogue action can change them.
 | gap                                                                                                                                                                                                                     | errs                  | where                                                                        | in content                                                                                                         | tracked |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------- |
 | A passive check is decided once per request, by the plugin. Where the group can change what is worn, or its damage or healing can cross the check's margin, the check is Unknown - item bonuses are not in the database | permissive            | plugin `PassiveCheckRule`; `core::skill_movers`; `Fitting::damage_unsettled` | groups that lose a worn item, gain an autoequip item, or damage or heal Volition or Endurance near a passive check |         |
-| A failed white check stays closed. The game reopens one when its skill rank rises or a modifier expression lowers the target                                                                                            | restrictive           | `FlagName_failed` slot, never cleared                                        | 70 of the game's 126 white checks; see below                                                                       | de-vdy9 |
+| A failed white check stays closed. The game reopens one when its skill rank rises or a modifier expression lowers the target                                                                                            | restrictive           | `FlagName_failed` slot, never cleared                                        | 70 of the game's 126 white checks; see below                                                                       |         |
 | A fake check's `FlagName` and `FlagName_failed` are not read, though the game hides the option once either is set                                                                                                       | permissive            | fake check handling in the graph builder                                     | three fake checks; nothing writes their `_failed` flags                                                            |         |
 | `RemoveWhiteCheck` is not applied, so a check it retires mid-conversation stays offered                                                                                                                                 | permissive            | `core::modelling`                                                            | not reached: all four call sites pass a variable's value rather than a check's flag name                           |         |
 | A rolled check's odds (hardcore difficulty, situational modifiers, crit range) are not read. Both outcomes are taken whatever they are                                                                                  | none for reachability | by design                                                                    | every rolled check. Exact for "can this be reached"; says nothing about how likely it is                           |         |
@@ -113,12 +113,11 @@ and come back to the check** - 68 of those with a negative bonus among them, whi
 direction that lowers the target. 54 have nothing downstream that writes what their modifiers
 read, and 2 have such a write downstream with no way back.
 
-Measured over the link graph with guards ignored, the way [actions.md](actions.md) defines
-downstream, so it OVER-approximates what a crawl can walk. It also does not ask whether the
-write moves the expression from the value it had when the check failed, nor whether the
-check's own precondition still holds - both of which the game requires. What it settles is
-the question that was open: this is not rare, so the approximation does not stand on
-frequency. See de-vdy9, which carries the numbers and what modelling it would take.
+That count is over the link graph with guards ignored, the way [actions.md](actions.md)
+defines downstream, so it OVER-approximates what a crawl can walk. It does not ask whether
+the write moves the expression from the value it had when the check failed, nor whether the
+check's own precondition still holds - both of which the game requires, and both of which
+would make it fire less often. de-vdy9 carries the numbers and what modelling it would take.
 
 ## Actions not applied, or applied in part
 
@@ -156,7 +155,7 @@ and they can differ from the exact marking.
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------- | ---------------- |
 | The onward question stars an option that reaches unread content without returning through the menu or the hubs just passed. It is not a superset of the exact marking: over the whole game 18 menus mark more and 12 fewer | marks can differ from the exact marking, by design           | `menu::mark_menu_hybrid` step 1                          |                  |
 | The hub stack decides "can the player get back" over the link graph. On a trimmed menu (`bridge::walkable_menu`) guards that hold in no state are respected; others are ignored                                            | a way back that a variable closes still counts as a way back | `symbolic::hub`, `symbolic::trim`                        |                  |
-| Trimming runs one round: a slot whose writers were all trimmed away is still tracked rather than read as a constant. Measured over the scenario menus, a second round would remove 17 entries in one menu of 32            | less tight, never wrong                                      | `symbolic::trim`                                         | de-fw84 (closed) |
+| Trimming runs one round: a slot whose writers were all trimmed away is still tracked rather than read as a constant. Measured over the scenario menus, a second round would remove 17 entries in one menu of 32            | less tight, never wrong                                      | `symbolic::trim`                                         |                  |
 | A search that runs out of time or diagram memory draws the uncertain marker rather than an answer                                                                                                                          | no answer, reported as such                                  | `bridge::LookAheadRequest::search_budget`, `menu_budget` |                  |
 
 ## Keeping this current
