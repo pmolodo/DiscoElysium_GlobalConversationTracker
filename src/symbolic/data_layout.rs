@@ -1288,10 +1288,15 @@ impl DataLayout {
     /// This is about what the ENGINE models. Whether the GAME advances the clock by other
     /// means - it is thought to tick roughly a minute per unseen entry, which the engine
     /// does not model at all - is de-sze.10 and is a different question.
+    /// Asked of every action a node runs rather than of its scripts alone, so it cannot
+    /// disagree with [`LookAheadGraph::minutes_passable`] about what a walk can do. No
+    /// failure action is a `PassTime` today - they are thought effects - so the two spellings
+    /// pick out the same groups; they are not guaranteed to stay that way.
+    ///
+    /// [`LookAheadGraph::minutes_passable`]: crate::graph::LookAheadGraph::minutes_passable
     pub fn group_passes_time(graph: &LookAheadGraph) -> bool {
         graph.nodes().any(|node| {
-            node.actions
-                .iter()
+            node.all_actions()
                 .any(|a| a.kind() == DialogueActionKind::PassTime)
         })
     }

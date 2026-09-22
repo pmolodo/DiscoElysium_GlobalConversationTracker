@@ -594,6 +594,111 @@ impl LookAheadGraph {
             .collect()
     }
 
+    /// The most minutes a walk over this group can pass, or `None` where it can pass any.
+    ///
+    /// ## What it is for
+    ///
+    /// Time passing is what ends a substance - `SunshineClock.ApplyTimeForwardEffects` bakes
+    /// every running one down by the minutes passed and strips its buffs at zero - so the
+    /// question "can this walk outlast what the player is on" is this number against the
+    /// minutes the world says are left. See de-m11s.3.3.
+    ///
+    /// ## A PassTime on a cycle has no bound
+    ///
+    /// A walk that can come back round to a `PassTime` can take it again, and again, so such a
+    /// group can pass any amount of time and outlast anything. That is `None` rather than a
+    /// large number: a bound that is merely big invites a comparison that treats it as small
+    /// enough, and there is no honest large number to pick.
+    ///
+    /// ## And otherwise it is a longest path
+    ///
+    /// With every `PassTime` off the cycles, the answer is the most of them a walk can string
+    /// together, which is a longest path over the condensation - and the components are
+    /// already numbered in topological order, since a link that leaves one always climbs (see
+    /// [`crate::symbolic::order::IterationOrder`]). So one pass in component order settles it,
+    /// and a component that is a real cycle contributes nothing, having no `PassTime` in it.
+    ///
+    /// EVERY ACTION A NODE RUNS is counted, its failure actions included - though none of
+    /// those is a `PassTime` today, since they are thought effects rather than scripts. Asked
+    /// of the whole set anyway: an under-estimate here is the one direction this must not be
+    /// wrong in, because it models a substance as outlasting a walk that ends it.
+    pub fn minutes_passable(&self) -> Option<i32> {
+        use crate::core::action::DialogueActionKind;
+
+        let passes = |node: &LookAheadNode| {
+            node.all_actions()
+                .filter(|action| action.kind() == DialogueActionKind::PassTime)
+                .count() as i32
+        };
+
+        let order = crate::symbolic::order::IterationOrder::of(self);
+        let cyclic = crate::symbolic::data_layout::DataLayout::entries_on_a_cycle(self, &order);
+
+        let mut weight: HashMap<u32, i32> = HashMap::new();
+        for node in self.nodes() {
+            let taken = passes(node);
+            if taken == 0 {
+                continue;
+            }
+            if cyclic.contains(&node.id) {
+                return None;
+            }
+            let Some(component) = order.component_of(node.id) else {
+                continue;
+            };
+            *weight.entry(component).or_default() += taken;
+        }
+
+        if weight.is_empty() {
+            return Some(0);
+        }
+
+        // Every component's own contribution first, so a source's answer is right before
+        // anything reads it.
+        let mut best: HashMap<u32, i32> = HashMap::new();
+        for node in self.nodes() {
+            if let Some(component) = order.component_of(node.id) {
+                best.entry(component)
+                    .or_insert_with(|| weight.get(&component).copied().unwrap_or(0));
+            }
+        }
+
+        // THE LINKS, GATHERED BY COMPONENT, so the pass below walks the condensation rather
+        // than the graph and cannot be led round a cycle.
+        let mut onward: HashMap<u32, HashSet<u32>> = HashMap::new();
+        for node in self.nodes() {
+            let Some(from) = order.component_of(node.id) else {
+                continue;
+            };
+            for link in &node.links {
+                if let Some(to) = order.component_of(*link)
+                    && to != from
+                {
+                    onward.entry(from).or_default().insert(to);
+                }
+            }
+        }
+
+        let mut components: Vec<u32> = best.keys().copied().collect();
+        components.sort_unstable();
+        for from in components {
+            let reached = best.get(&from).copied().unwrap_or(0);
+            let Some(nexts) = onward.get(&from) else {
+                continue;
+            };
+            for to in nexts {
+                let own = weight.get(to).copied().unwrap_or(0);
+                let entry = best.entry(*to).or_insert(own);
+                *entry = (*entry).max(reached + own);
+            }
+        }
+
+        Some(
+            best.values().copied().max().unwrap_or(0)
+                * crate::core::clock::ClockTime::PASS_TIME_MINUTES,
+        )
+    }
+
     /// The passive checks a garment this group takes off or puts on can flip.
     ///
     /// ## What changed, and why it was worth changing
@@ -910,6 +1015,112 @@ impl fmt::Display for LookAheadGraph {
             self.nodes.len(),
             self.symbols.count()
         )
+    }
+}
+
+#[cfg(test)]
+mod minutes_passable_tests {
+    use crate::test_graph::{Entry, GraphBuilder};
+
+    /// What one `PassTime` is worth, so a count reads as the arithmetic it is.
+    const STEP: i32 = crate::core::clock::ClockTime::PASS_TIME_MINUTES;
+
+    #[test]
+    fn a_group_with_no_pass_time_passes_none() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1))
+            .build();
+
+        assert_eq!(graph.minutes_passable(), Some(0));
+    }
+
+    #[test]
+    fn a_chain_passes_a_step_for_each_one_on_it() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).script("PassTime()").links(&[1]))
+            .add(Entry::new(1).script("PassTime()").links(&[2]))
+            .add(Entry::new(2))
+            .build();
+
+        assert_eq!(graph.minutes_passable(), Some(2 * STEP));
+    }
+
+    /// The LONGEST branch, not the sum of them: a walk takes one way through a fork.
+    #[test]
+    fn a_fork_passes_what_its_longest_branch_passes() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1, 3]))
+            .add(Entry::new(1).script("PassTime()").links(&[2]))
+            .add(Entry::new(2).script("PassTime()"))
+            .add(Entry::new(3).script("PassTime()"))
+            .build();
+
+        assert_eq!(graph.minutes_passable(), Some(2 * STEP));
+    }
+
+    /// Both halves of a diamond are walked in turn, so the two branches do not add up.
+    #[test]
+    fn a_diamond_counts_one_side_and_the_tail() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1, 2]))
+            .add(Entry::new(1).script("PassTime()").links(&[3]))
+            .add(Entry::new(2).script("PassTime()").links(&[3]))
+            .add(Entry::new(3).script("PassTime()"))
+            .build();
+
+        assert_eq!(graph.minutes_passable(), Some(2 * STEP));
+    }
+
+    /// A `PassTime` a walk can come back round to can be taken without end.
+    #[test]
+    fn a_pass_time_on_a_cycle_has_no_bound() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).script("PassTime()").links(&[0]))
+            .build();
+
+        assert_eq!(graph.minutes_passable(), None);
+    }
+
+    /// An entry that links to itself is a cycle of one, which is easy to miss.
+    #[test]
+    fn a_pass_time_that_links_to_itself_has_no_bound() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).script("PassTime()").links(&[0]))
+            .build();
+
+        assert_eq!(graph.minutes_passable(), None);
+    }
+
+    /// A cycle carrying no `PassTime` bounds nothing; the walk through it still counts.
+    #[test]
+    fn a_cycle_without_one_leaves_the_bound_alone() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).script("PassTime()").links(&[1]))
+            .add(Entry::new(1).links(&[2]))
+            .add(Entry::new(2).links(&[1, 3]))
+            .add(Entry::new(3).script("PassTime()"))
+            .build();
+
+        assert_eq!(graph.minutes_passable(), Some(2 * STEP));
+    }
+
+    /// A check's script counts like any other, whichever way the roll goes.
+    #[test]
+    fn a_pass_time_on_a_check_counts() {
+        let graph = GraphBuilder::new()
+            .add(
+                Entry::new(0)
+                    .kind(crate::core::types::DialogueCheckKind::White)
+                    .flag("roll")
+                    .script("PassTime()")
+                    .links(&[1]),
+            )
+            .add(Entry::new(1))
+            .build();
+
+        assert_eq!(graph.minutes_passable(), Some(STEP));
     }
 }
 
