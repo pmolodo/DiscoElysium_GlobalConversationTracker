@@ -41,6 +41,35 @@ use crate::world::MONEY_QUERY;
 /// Minutes in a day; the clock is wrapped into `0..MINUTES_IN_DAY`.
 const MINUTES_IN_DAY: u32 = 1440;
 
+/// How many `PassTime` steps fit in a day, which is where the count wraps.
+const STEPS_IN_DAY: u32 = MINUTES_IN_DAY / crate::core::clock::ClockTime::PASS_TIME_MINUTES as u32;
+
+/// How the clock is carried: as `PassTime` STEPS TAKEN, not as a minute of the day.
+///
+/// ## Why steps
+///
+/// `PassTime` takes no argument in any of its uses and advances exactly fifteen minutes, and
+/// nothing else moves the clock during a walk - so the only values a walk can reach are the
+/// world's minute plus a multiple of fifteen. An absolute minute needs eleven bits to say
+/// that; the multiple needs [`Self::bits`], which is one bit for the fourteen groups holding
+/// a single `PassTime` call and five for the worst in the database.
+///
+/// The world's minute is the base the count is read against, and it lives in the world rather
+/// than here - so a layout stays a property of the group, as it is for every other slot. See
+/// `GuardCompiler`, which is where the two are put together.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClockRun {
+    /// The first variable of the run.
+    pub base: u32,
+    /// How many bits it has.
+    pub bits: u8,
+    /// The most steps a walk can take, which is what the width was chosen to hold.
+    pub ceiling: u32,
+    /// Whether the count WRAPS rather than stopping, which a `PassTime` on a cycle forces:
+    /// such a walk can take any number of steps, and ninety-six of them is a whole day.
+    pub wraps: bool,
+}
+
 /// How many bits it takes to represent `0..=max`.
 fn bits_for(max: u32) -> u8 {
     if max == 0 {
@@ -227,7 +256,7 @@ pub struct DataLayout {
     /// Per slot: the first variable of its little-endian run, and how many bits it has.
     slots: Vec<(u32, u8)>,
     money: Option<(u32, u8)>,
-    clock: Option<(u32, u8)>,
+    clock: Option<ClockRun>,
     total: u32,
     /// The slots held as a DELTA from the value the search started with. See
     /// [`Self::lay_out_counters`].
@@ -324,13 +353,26 @@ impl DataLayout {
             at
         });
 
-        let clock = if track_clock {
-            let at = (next, bits_for(MINUTES_IN_DAY - 1));
-            next += at.1 as u32;
-            Some(at)
-        } else {
-            None
-        };
+        let clock = track_clock.then(|| {
+            // HOW FAR THE WALK CAN GET, which is what the width has to hold. A `PassTime` on a
+            // cycle can be taken without end, and there the count wraps at a day.
+            let (ceiling, wraps) = match graph.minutes_passable() {
+                Some(minutes) => {
+                    let steps = minutes.max(0) as u32
+                        / crate::core::clock::ClockTime::PASS_TIME_MINUTES as u32;
+                    (steps, false)
+                }
+                None => (STEPS_IN_DAY - 1, true),
+            };
+            let run = ClockRun {
+                base: next,
+                bits: bits_for(ceiling),
+                ceiling,
+                wraps,
+            };
+            next += run.bits as u32;
+            run
+        });
 
         Self {
             order: (0..slots.len()).collect(),
@@ -951,9 +993,9 @@ impl DataLayout {
             next += *bits as u32;
         }
 
-        if let Some((base, bits)) = &mut self.clock {
-            *base = next;
-            next += *bits as u32;
+        if let Some(run) = &mut self.clock {
+            run.base = next;
+            next += run.bits as u32;
         }
 
         self.total = next;
@@ -1053,6 +1095,11 @@ impl DataLayout {
 
     /// The variable run for the clock, if it is tracked.
     pub fn clock(&self) -> Option<(u32, u8)> {
+        self.clock.map(|run| (run.base, run.bits))
+    }
+
+    /// The whole of what the clock run holds, if it is tracked - see [`ClockRun`].
+    pub fn clock_run(&self) -> Option<ClockRun> {
         self.clock
     }
 
@@ -1596,10 +1643,38 @@ mod tests {
         assert_eq!(still.clock(), None);
 
         let moving = DataLayout::for_graph(&graph, 16, Some(1000), true);
-        // Ten bits for money up to 1000, eleven for a day of minutes.
+        // Ten bits for money up to 1000, and ONE for the clock rather than eleven. The
+        // register counts `PassTime` steps - see `ClockRun` - and this graph has no action at
+        // all, so a walk takes none and the only count is zero. A caller asking for a clock
+        // over such a graph gets the narrowest one there is; `for_group` never asks, since
+        // `clock_can_move` wants a `PassTime` first.
         assert_eq!(moving.money(), Some((1, 10)));
-        assert_eq!(moving.clock(), Some((11, 11)));
-        assert_eq!(moving.total_vars(), 22);
+        assert_eq!(moving.clock(), Some((11, 1)));
+        assert_eq!(moving.total_vars(), 12);
+
+        let run = moving.clock_run().expect("this layout carries a clock");
+        assert_eq!(run.ceiling, 0);
+        assert!(!run.wraps, "nothing here to come back round to");
+    }
+
+    /// A `PassTime` a walk can come back round to can be taken without end, so the count wraps
+    /// at a day - which is ninety-six quarter-hours, and seven bits.
+    #[test]
+    fn a_pass_time_on_a_cycle_costs_a_whole_day_of_steps() {
+        let mut symbols = StateSymbols::new();
+        let moving = crate::parser::action_parser::parse_actions("PassTime()", &mut symbols);
+        let node = LookAheadNode {
+            actions: moving,
+            links: vec![DialogueNodeId::new(1, 0)],
+            ..LookAheadNode::new(DialogueNodeId::new(1, 0))
+        };
+        let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
+
+        let layout = DataLayout::for_graph(&graph, 16, None, true);
+        let run = layout.clock_run().expect("this layout carries a clock");
+        assert_eq!(run.ceiling, 95);
+        assert!(run.wraps);
+        assert_eq!(run.bits, 7, "ninety-six counts, against 1,440 minutes");
     }
 
     /// The saving the whole rebasing exists for: a counter nothing can fire twice needs room

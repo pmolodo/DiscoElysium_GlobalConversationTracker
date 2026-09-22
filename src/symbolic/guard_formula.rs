@@ -1538,16 +1538,19 @@ impl<'a> GuardCompiler<'a> {
                 let holds = ops.compare(op, value as i64)?;
                 Some(self.decided(holds))
             }
-            // The hour, over the register that carries it. `HourCount()` IS the hour, and
-            // `TotalHourCount()` is the hour plus a whole number of days - so both are a
-            // question about which hour of the day a state is at, once the days the world
-            // counts are taken off the literal.
+            // A READING AGAINST A LITERAL, over the register that carries the clock. Both of
+            // these are numbers the clock model gives for a minute, so the question is which
+            // step counts give a number the comparison accepts - and the model is asked rather
+            // than the arithmetic restated here.
             "HourCount" | "TotalHourCount" => {
-                let base = match name.as_str() {
-                    "TotalHourCount" => i64::from(ClockTime::HOURS_IN_DAY) * (self.day() - 1),
-                    _ => 0,
-                };
-                let holds = self.hour_comparison(op, value as i64 - base)?;
+                let day = self.day() as i32;
+                let reading = name.clone();
+                let holds = self.steps_where(|minute| {
+                    ClockTime::answer(&reading, &[], minute, day)
+                        .try_as_number()
+                        .and_then(|at| Self::compares(at, op, value))
+                        .unwrap_or(false)
+                })?;
                 Some(self.decided(holds))
             }
             _ => None,
@@ -1568,85 +1571,99 @@ impl<'a> GuardCompiler<'a> {
         self.constant_clock && self.vars.clock_ops().is_none()
     }
 
-    /// The states at which `<the state's hour> op hour` holds.
+    /// The minute of the day a walk is at once it has taken `steps` of them.
     ///
-    /// An hour outside the day is not a comparison the register can be asked for and does not
-    /// need to be: every state is on one side of it, and [`Self::hour_range`] clamps to that
-    /// answer rather than building a formula about a minute no clock holds.
-    fn hour_comparison(&self, op: &str, hour: i64) -> Option<BDDFunction> {
-        let last = i64::from(ClockTime::HOURS_IN_DAY) - 1;
-        match op {
-            ">=" => self.hour_range(hour, last),
-            ">" => self.hour_range(hour + 1, last),
-            "<=" => self.hour_range(0, hour),
-            "<" => self.hour_range(0, hour - 1),
-            "==" => self.hour_range(hour, hour),
-            "~=" | "!=" => self.hour_range(hour, hour)?.not().ok(),
-            _ => None,
-        }
+    /// The register counts steps and the WORLD says where the count is read from, which is why
+    /// the base lives here rather than in the layout - see `DataLayout::clock_run`.
+    fn minute_after(&self, start: i32, steps: u32) -> i32 {
+        let passed = i64::from(start) + i64::from(steps) * i64::from(ClockTime::PASS_TIME_MINUTES);
+        passed.rem_euclid(i64::from(ClockTime::MINUTES_IN_DAY)) as i32
     }
 
-    /// The states whose hour lies in `lo..=hi`, as a formula over the clock register.
+    /// The states whose clock satisfies `holds`, as a formula over the step count.
     ///
-    /// EVERY HOUR QUESTION REDUCES TO THIS. The hour is the minute count divided by sixty
-    /// and that division is monotone, so a range of hours is a range of minutes: `lo..=hi`
-    /// is `60 * lo ..= 60 * hi + 59`. A range clamped to nothing is no state at all, which
-    /// is how an hour outside the day answers without being asked of the register.
-    fn hour_range(&self, lo: i64, hi: i64) -> Option<BDDFunction> {
+    /// ## Every clock question reduces to this
+    ///
+    /// A state's clock is decided entirely by how many `PassTime` steps got it there, so a
+    /// question about the clock is a question about WHICH COUNTS satisfy it. There are at most
+    /// ninety-six of those and usually two or three, so the answer is found by asking the
+    /// clock model at each one rather than by restating what the model knows - which is what
+    /// keeps the boundaries, afternoon running to the end of the eighteenth hour and dusk
+    /// being the single hour of nineteen, stated in exactly one place. This port has had them
+    /// wrong once by restating them.
+    ///
+    /// ## Gathered as runs
+    ///
+    /// Consecutive counts are consecutive quarter-hours, so the counts satisfying an hour
+    /// question come in runs - four of them to an hour - and each run is one comparison pair
+    /// rather than one term per count.
+    ///
+    /// A run covering every count is every state, and is returned as such: the width holds at
+    /// least the ceiling and often more, so a comparison against the ceiling would leave the
+    /// counts above it on the other rail and a guard every real state satisfies would read as
+    /// undecided. Those counts do not occur - the seed pins the register to zero and the image
+    /// stops or wraps at the ceiling.
+    fn steps_where(&self, holds: impl Fn(i32) -> bool) -> Option<BDDFunction> {
+        let run = self.vars.layout().clock_run()?;
         let ops = self.vars.clock_ops()?;
-        let last = i64::from(ClockTime::HOURS_IN_DAY) - 1;
-        let (lo, hi) = (lo.max(0), hi.min(last));
-        if lo > hi {
-            return Some(self.bottom());
-        }
+        let start = self.world?.day_minutes();
 
-        // A RANGE COVERING THE DAY IS EVERY STATE, and saying so is not the same as building
-        // `clock <= 1439`. Eleven bits hold 2,048 minutes and the day has 1,440, so that
-        // comparison leaves the 608 the clock can never be at on the other rail - and a guard
-        // every real state satisfies would read as undecided. Those minutes do not occur: the
-        // seed pins the register to a minute of the day and `PassTime` wraps within it.
-        if lo == 0 && hi == last {
-            return Some(self.top());
-        }
-
-        let to = ops.compare("<=", hi * 60 + 59)?;
-        if lo == 0 {
-            return Some(to);
-        }
-        let from = ops.compare(">=", lo * 60)?;
-        from.and(&to).ok()
-    }
-
-    /// Every minute of the day at which a clock question is true, as a formula.
-    ///
-    /// The hours that satisfy it are found by ASKING THE CLOCK MODEL at each hour, so the
-    /// boundaries - afternoon running to the end of the eighteenth hour, dusk being the
-    /// single hour of nineteen - are stated in exactly one place. This port has already had
-    /// them wrong once by restating them.
-    fn clock_hours_formula(&mut self, name: &str, args: Arguments<'_>) -> Option<BDDFunction> {
-        let values = Self::literal_arguments(args)?;
-        // Asked before the loop rather than left to the first hour that answers true: a
-        // question no hour satisfies would otherwise come back as "nowhere" from a compiler
-        // that carries no clock, which is a definite answer it has no right to.
-        self.vars.clock_ops()?;
-
-        let mut holds = self.bottom();
-        let mut answered = false;
-        for hour in 0..i64::from(ClockTime::HOURS_IN_DAY) {
-            let answer = ClockTime::answer(name, &values, (hour * 60) as i32, self.day() as i32);
-            if answer.kind() == GuardValueKind::Unknown {
-                return None;
+        let range = |from: u32, to: u32| -> Option<BDDFunction> {
+            if from == 0 && to >= run.ceiling {
+                return Some(self.top());
             }
+            let upper = ops.compare("<=", i64::from(to))?;
+            if from == 0 {
+                return Some(upper);
+            }
+            let lower = ops.compare(">=", i64::from(from))?;
+            lower.and(&upper).ok()
+        };
 
-            answered = true;
-            if !answer.boolean() {
+        let mut formula = self.bottom();
+        let mut began: Option<u32> = None;
+        for steps in 0..=run.ceiling {
+            if holds(self.minute_after(start, steps)) {
+                began.get_or_insert(steps);
                 continue;
             }
-
-            holds = holds.or(&self.hour_range(hour, hour)?).ok()?;
+            if let Some(from) = began.take() {
+                formula = formula.or(&range(from, steps - 1)?).ok()?;
+            }
+        }
+        if let Some(from) = began {
+            formula = formula.or(&range(from, run.ceiling)?).ok()?;
         }
 
-        if answered { Some(holds) } else { None }
+        Some(formula)
+    }
+
+    /// Every step count at which a clock question is true, as a formula.
+    fn clock_hours_formula(&mut self, name: &str, args: Arguments<'_>) -> Option<BDDFunction> {
+        let values = Self::literal_arguments(args)?;
+        let day = self.day() as i32;
+
+        // A QUESTION THE MODEL CANNOT ANSWER is refused here rather than read as "at no count",
+        // which would be a definite answer it has no right to. Whether it can answer depends on
+        // the name and its arguments, not on the time, so one minute settles it.
+        if ClockTime::answer(name, &values, 0, day).kind() == GuardValueKind::Unknown {
+            return None;
+        }
+
+        self.steps_where(|minute| ClockTime::answer(name, &values, minute, day).boolean())
+    }
+
+    /// Whether `a op b` holds, for the operators a guard writes between two numbers.
+    fn compares(a: f64, op: &str, b: f64) -> Option<bool> {
+        Some(match op {
+            ">=" => a >= b,
+            "<=" => a <= b,
+            ">" => a > b,
+            "<" => a < b,
+            "==" => a == b,
+            "~=" | "!=" => a != b,
+            _ => return None,
+        })
     }
 
     /// The name a zero-argument call carries, if the expression is one.
@@ -2997,31 +3014,52 @@ mod tests {
         assert_eq!(compiler.fallbacks(), 1);
     }
 
-    /// The states at one minute of the day, for asking what a formula says there.
-    fn at_minute(vars: &DataVars<'_>, minutes: u32) -> BDDFunction {
+    /// A graph a walk can take `steps` `PassTime` calls over, one to an entry in a chain.
+    ///
+    /// The register counts steps, so a layout is only as wide as the walk is long - which
+    /// means a test about a clock two hours from now has to give the walk the calls to get
+    /// there.
+    fn ticking(steps: i32) -> (LookAheadGraph, StateSymbols) {
+        let mut symbols = StateSymbols::new();
+        let nodes = (0..steps)
+            .map(|entry| LookAheadNode {
+                actions: crate::parser::action_parser::parse_actions("PassTime()", &mut symbols),
+                links: vec![DialogueNodeId::new(1, entry + 1)],
+                ..LookAheadNode::new(DialogueNodeId::new(1, entry))
+            })
+            .collect();
+        let graph = LookAheadGraph::new(nodes, symbols).unwrap();
+        let snapshot = graph.symbols().clone();
+        (graph, snapshot)
+    }
+
+    /// The states a given number of `PassTime` steps along, for asking what a formula says.
+    fn after_steps(vars: &DataVars<'_>, steps: u32) -> BDDFunction {
         vars.clock_ops()
             .expect("this layout carries a clock")
-            .equals(minutes)
+            .equals(steps)
             .expect("the manager has room to pin it")
     }
 
-    /// Whether a formula holds at a particular minute of the day.
-    fn holds_at(vars: &DataVars<'_>, formula: &BDDFunction, minutes: u32) -> bool {
+    /// Whether a formula holds once a walk has taken that many steps.
+    fn holds_after(vars: &DataVars<'_>, formula: &BDDFunction, steps: u32) -> bool {
         formula
-            .and(&at_minute(vars, minutes))
+            .and(&after_steps(vars, steps))
             .expect("the manager has room")
             .satisfiable()
     }
 
     /// With the clock carried, a clock question is answered at the STATE's hour rather than
-    /// at the world's - so one question decides both ways over the day.
+    /// at the world's - so one question decides both ways over the walk.
+    ///
+    /// A quarter to seven is night; one `PassTime` later it is seven, which is dawn. That
+    /// single step is the whole difference between the two answers, and the world's own hour
+    /// is the one that must NOT decide it.
     #[test]
     fn a_clock_question_is_answered_at_the_states_hour() {
-        let (graph, symbols) = fixture(&["a"], None);
+        let (graph, symbols) = ticking(1);
         let layout = DataLayout::for_graph(&graph, 16, None, true);
-        // Two in the morning, which is where the world stands and where the answer must NOT
-        // be pinned.
-        let night = crate::world::GameWorld::blank().with_day_minutes(2 * 60);
+        let night = crate::world::GameWorld::blank().with_day_minutes(6 * 60 + 45);
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars)
@@ -3031,22 +3069,23 @@ mod tests {
 
         assert!(compiled.is_decided());
         assert_eq!(compiler.fallbacks(), 0);
-        assert!(holds_at(&vars, &compiled.may_be_true, 2 * 60));
-        assert!(!holds_at(&vars, &compiled.may_be_true, 14 * 60));
-        assert!(holds_at(&vars, &compiled.may_be_false, 14 * 60));
+        assert!(holds_after(&vars, &compiled.may_be_true, 0));
+        assert!(!holds_after(&vars, &compiled.may_be_true, 1));
+        assert!(holds_after(&vars, &compiled.may_be_false, 1));
     }
 
-    /// A clock NUMBER against a literal is a question about the hour, over the register.
+    /// A clock NUMBER against a literal is a question about which step counts satisfy it.
     ///
-    /// On day 2 the total hour is 24 plus the hour of the day, so `TotalHourCount() >= 30`
-    /// is `the hour is 6 or later` - and the boundary is what a stale reading gets wrong.
+    /// On day 2 the total hour is 24 plus the hour of the day, so `TotalHourCount() >= 30` is
+    /// "the hour is 6 or later". From a quarter to six that is one `PassTime` away, and the
+    /// boundary is what a stale reading gets wrong.
     #[test]
     fn a_clock_number_is_compared_over_the_carried_clock() {
-        let (graph, symbols) = fixture(&["a"], None);
+        let (graph, symbols) = ticking(1);
         let layout = DataLayout::for_graph(&graph, 16, None, true);
         let day_two = crate::world::GameWorld::blank()
             .with_day_counter(2)
-            .with_day_minutes(10 * 60);
+            .with_day_minutes(5 * 60 + 45);
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars)
@@ -3060,14 +3099,14 @@ mod tests {
 
         assert!(late.is_decided());
         assert_eq!(compiler.fallbacks(), 0);
-        assert!(!holds_at(&vars, &late.may_be_true, 5 * 60 + 59));
-        assert!(holds_at(&vars, &late.may_be_true, 6 * 60));
+        assert!(!holds_after(&vars, &late.may_be_true, 0));
+        assert!(holds_after(&vars, &late.may_be_true, 1));
     }
 
     /// An hour no clock can be at is answered rather than asked of the register.
     #[test]
     fn an_hour_outside_the_day_settles_without_a_comparison() {
-        let (graph, symbols) = fixture(&["a"], None);
+        let (graph, symbols) = ticking(4);
         let layout = DataLayout::for_graph(&graph, 16, None, true);
         let world = crate::world::GameWorld::blank();
 

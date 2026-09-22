@@ -320,9 +320,10 @@ impl<'a> ActionImage<'a> {
                 });
             }
             DialogueActionKind::PassTime => {
-                let modulus = crate::core::clock::ClockTime::MINUTES_IN_DAY as u32;
-                return self.on_clock(states, |ops, set| {
-                    ops.pre_wrapping_add(set, action.value().max(0) as u32, modulus)
+                let run = self.vars.layout().clock_run();
+                return self.on_clock(states, |ops, set| match run {
+                    Some(run) if run.wraps => ops.pre_wrapping_add(set, 1, run.ceiling + 1),
+                    _ => ops.pre_saturating_add(set, 1),
                 });
             }
             _ => {}
@@ -437,7 +438,7 @@ impl<'a> ActionImage<'a> {
         match action.kind() {
             DialogueActionKind::GainMoney => return self.gain_money(states, action.value()),
             DialogueActionKind::LoseMoney => return self.lose_money(states, action.value()),
-            DialogueActionKind::PassTime => return self.pass_time(states, action.value()),
+            DialogueActionKind::PassTime => return self.pass_time(states),
             _ => {}
         }
 
@@ -482,14 +483,24 @@ impl<'a> ActionImage<'a> {
         })
     }
 
-    /// `clock := (clock + minutes) mod 1440`, where the layout carries the clock.
+    /// One more step taken, where the layout carries the clock.
     ///
-    /// WRAPPING, not saturating: midnight is not a ceiling, and a clock that stuck at
-    /// 23:59 would answer every night-time question wrongly for the rest of the search.
-    fn pass_time(&mut self, states: &BDDFunction, minutes: i32) -> BDDFunction {
-        let modulus = crate::core::clock::ClockTime::MINUTES_IN_DAY as u32;
-        self.on_clock(states, |ops, set| {
-            ops.wrapping_add(set, minutes.max(0) as u32, modulus)
+    /// THE REGISTER COUNTS STEPS, not minutes - see [`DataLayout::clock_run`] for why - and
+    /// every `PassTime` is one step, so this is an increment whatever minutes the action
+    /// carries.
+    ///
+    /// WRAPPING WHERE THE COUNT CAN RUN WITHOUT END, which is a `PassTime` on a cycle: ninety-
+    /// six steps is a whole day and the ninety-seventh is the first one again. Saturating
+    /// otherwise, and there it never fires - the width was chosen to hold the longest walk -
+    /// but a count that ran off the end would report a time earlier than the walk reached,
+    /// and stopping at the latest is the direction that cannot hide content behind a wait.
+    ///
+    /// [`DataLayout::clock_run`]: crate::symbolic::data_layout::DataLayout::clock_run
+    fn pass_time(&mut self, states: &BDDFunction) -> BDDFunction {
+        let run = self.vars.layout().clock_run();
+        self.on_clock(states, |ops, set| match run {
+            Some(run) if run.wraps => ops.wrapping_add(set, 1, run.ceiling + 1),
+            _ => ops.saturating_add(set, 1),
         })
     }
 

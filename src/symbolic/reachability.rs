@@ -124,14 +124,16 @@ pub fn seed_of(
         set = set.and(&holds).ok()?;
     }
 
-    // AND THE HOUR, for the same reason and with more at stake. The layout carries a clock
-    // only where the group's `PassTime` can move one - see `DataLayout::clock_can_move` - and
-    // a register left free would start the search at every minute of the day at once, which
-    // makes every hour guard in the group passable down some path. `day_minutes` is already
-    // wrapped into the day by `LookAheadState`, so it needs no clamp: the register is eleven
-    // bits and the day is 1,440 minutes.
+    // AND THE CLOCK, for the same reason and with more at stake. A register left free would
+    // start the search at every time of day at once, which makes every hour guard in the group
+    // passable down some path.
+    //
+    // AT ZERO, because the register counts `PassTime` STEPS TAKEN rather than a minute - see
+    // `DataLayout::clock_run`. No time has passed at the seed whatever the world's clock says,
+    // and the world's own minute is the base those steps are read against, which is
+    // `GuardCompiler`'s business rather than the seed's.
     if let Some(clock) = vars.clock_ops() {
-        let holds = clock.equals(state.day_minutes().max(0) as u32)?;
+        let holds = clock.equals(0)?;
         set = set.and(&holds).ok()?;
     }
 
@@ -897,16 +899,20 @@ mod branch_tests {
             .satisfiable()
     }
 
-    /// The seed pins the hour, so a search starts at one time of day rather than all of them.
+    /// The seed starts the search with no time passed, rather than at every hour at once.
     ///
     /// A register nothing constrains is every value at once, which for the clock would make
     /// every hour guard in the group passable down some path - the same failure the purse
     /// has, and a louder one, since there are only twenty-four hours to be wrong about.
+    ///
+    /// AT ZERO STEPS rather than at the world's minute, because the register counts
+    /// `PassTime` calls: the world's own clock is the base those are read against and it does
+    /// not go in the register at all. See `DataLayout::clock_run`.
     #[test]
-    fn the_seed_starts_the_search_at_the_worlds_minute() {
+    fn the_seed_starts_the_search_with_no_time_passed() {
         let graph = GraphBuilder::new()
             .add(Entry::new(0).script("PassTime()").links(&[1]))
-            .add(Entry::new(1))
+            .add(Entry::new(1).guard("IsHour(3)"))
             .build();
 
         let world = GameWorld::blank()
@@ -917,14 +923,14 @@ mod branch_tests {
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
 
-        let at = |minutes: u32| {
+        let after = |steps: u32| {
             vars.clock_ops()
                 .expect("this layout carries a clock")
-                .equals(minutes)
+                .equals(steps)
                 .expect("room to pin it")
         };
-        assert!(seed.and(&at(2 * 60 + 45)).expect("room").satisfiable());
-        assert!(!seed.and(&at(3 * 60)).expect("room").satisfiable());
+        assert!(seed.and(&after(0)).expect("room").satisfiable());
+        assert!(!seed.and(&after(1)).expect("room").satisfiable());
     }
 
     /// A clock is carried only where a `PassTime` can move an unlocked one AND something can

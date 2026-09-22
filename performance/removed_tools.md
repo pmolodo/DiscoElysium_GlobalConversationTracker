@@ -19,7 +19,7 @@ Every path below existed and worked at the commit beside it.
 |---|---|---|
 | `bidirectional_headroom` | What a forward front costs per layer, against the backward one the search already walks - the argument for meeting in the middle. | `58bb39f:crates/gct-measure/examples/bidirectional_headroom.rs` |
 | `bound_slack` | Where the structural bound's slack is, and what refusals and dominance can take off it. | `596a427:performance/bound_slack.rs` |
-| `clock_cost` | What carrying the clock costs the GUARDS: eleven variables, roughly twice the diagram nodes, no change to a single verdict and no measurable time, over the eight groups that pass time and ask the hour. It does not price a search. | `6344c47:crates/gct-measure/examples/clock_cost.rs` |
+| `clock_cost` | What carrying the clock costs the GUARDS, over the eight groups that pass time and ask the hour. Held as a minute of the day it was eleven variables and roughly TWICE the diagram nodes; held as `PassTime` steps it is one to seven variables and about a tenth more nodes - 631 goes 609 to 721 where it went 609 to 1,498, and 566 goes 23 to 25 where it went 23 to 856. No verdict moved under either. It does not price a search. | `6344c47:crates/gct-measure/examples/clock_cost.rs` |
 | `group_census` | How many DISTINCT groups the game has: 1,372 of 1,422 are one conversation, and the other 50 carry fifty-five per cent of the entries. | `58bb39f:crates/gct-measure/examples/group_census.rs` |
 | `guard_depth` | How deeply nested the deepest guard in the shipped database is. Eleven levels, of 26,210. | `58bb39f:crates/gct-measure/examples/guard_depth.rs` |
 | `live_ranges` | How much of the state is dead at the average entry. | `596a427:performance/live_ranges.rs` |
