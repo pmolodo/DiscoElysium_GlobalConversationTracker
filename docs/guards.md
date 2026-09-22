@@ -596,8 +596,8 @@ No guard in the corpus reads an entry's `SimStatus` directly.
 
 A thought changes what dialogue sees in two ways: an effect it applies while cooking or fixed
 (`CharacterEffect.Apply`), and game code that branches on whether it is fixed. Only `PassTime`
-bakes a thought, and the plugin sends the clock locked, so which thoughts are cooking or fixed is
-constant for a search. What matters is whether a thought changes an answer, or a write, while a
+bakes a thought, and nothing models the baking - the clock moves and the cabinet does not follow
+it (de-m11s.3.4) - so which thoughts are cooking or fixed is constant for a search. What matters is whether a thought changes an answer, or a write, while a
 search runs. Taken from the pre-final-cut bodies, since Final Cut's export has them stripped.
 
 | effect                                                                                                                                                                      | what it changes                                                                                                                           | engine                                                                                       |

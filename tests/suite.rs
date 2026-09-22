@@ -46,6 +46,9 @@ mod bridge_contract;
 #[path = "check_branches.rs"]
 mod check_branches;
 
+#[path = "clock_lock.rs"]
+mod clock_lock;
+
 #[path = "committed_diffs.rs"]
 mod committed_diffs;
 

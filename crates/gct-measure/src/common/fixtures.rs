@@ -1248,6 +1248,17 @@ pub struct Holdings {
     /// Minutes past midnight, and which day it is.
     pub day_minutes: i32,
     pub day_counter: i32,
+    /// Whether the game would hold the clock still, so a `PassTime` moves nothing.
+    ///
+    /// NOT A FIELD OF THE SAVE, and that is why it is derived rather than read.
+    /// `SunshineClockTime.isTimeLocked` is not persisted: the loader assigns through the
+    /// `DayMinutes` setter and that setter calls `LockTimeIfNeed`, so the game recomputes
+    /// it on the way in. Simulating that step here is what keeps the committed save the
+    /// game's and the world a fixture builds the LOADED one - the same arrangement
+    /// `WeatherController` forces on `auto.is_raining`.
+    ///
+    /// See [`clock_locked_in_save`] for the rule and what it is taken from.
+    pub clock_locked: bool,
     /// Where the player is standing, and what the weather is doing there.
     pub scene: Scene,
     /// Who is with them.
@@ -1359,6 +1370,58 @@ impl Holdings {
     }
 }
 
+/// Whether the game would hold this save's clock still once it had loaded it.
+///
+/// ## The rule, and where it is from
+///
+/// `SunshineClockTime.LockTimeIfNeed`:
+///
+/// ```text
+/// realDayCounter > dayCounter && Hours >= 2 && !TequilaAreaStateKeeper.IsOnTheIsland()
+/// ```
+///
+/// It is the MUST-SLEEP MECHANIC rather than a normal state. `realDayCounter` counts
+/// midnights crossed and `dayCounter` is the story day, which only moves when the player
+/// sleeps - so the clock locks once they have stayed up past midnight and the hour reaches
+/// two, and stays locked until they sleep. The island is the exception the game makes, and
+/// `IsOnTheIsland` is the plain variable read below.
+///
+/// TAKEN FROM THE PRE-FINAL-CUT EXPORT, whose method bodies survive; the shipping build's
+/// are stripped. If the two ever disagreed, the plugin would be the one that is right - it
+/// reads the flag itself rather than deriving it - and `tests/request_agreement.rs` is where
+/// that would show, since it diffs a captured world against the one built here.
+///
+/// # Panics
+///
+/// If the save's clock carries no `realDayCounter`. Every save the game writes has one.
+pub fn clock_locked_in_save(save: &str, day_minutes: i32, day_counter: i32) -> bool {
+    /// The hour the game stops the clock at, per `SunshineClockTime.stopTickingHour`.
+    const STOP_TICKING_HOUR: i32 = 2;
+
+    /// What `TequilaAreaStateKeeper` reads to decide whether the player is on the island.
+    const ISLAND: &str = "TASK.use_boat_done";
+
+    let clock = world_state(save, "sunshineClockTimeHolder");
+    let real_day = whole(&clock["time"]["realDayCounter"], save, "the midnight count");
+
+    if real_day <= day_counter {
+        return false;
+    }
+
+    if lookahead_engine::core::clock::ClockTime::hours_of(day_minutes) < STOP_TICKING_HOUR {
+        return false;
+    }
+
+    // Lua's own truthiness, which is what the game applies to this variable: anything but
+    // false and nil is true, and a variable nobody has written is nil.
+    let on_the_island = match variables_in_save(save).get(ISLAND) {
+        Some(WireValue::Bool { value }) => *value,
+        Some(_) => true,
+        None => false,
+    };
+    !on_the_island
+}
+
 /// What one save holds, for the world a scenario is answered against.
 ///
 /// # Panics
@@ -1369,6 +1432,14 @@ pub fn holdings_in_save(save: &str) -> Holdings {
     let cabinet = world_state(save, "thoughtCabinetState");
     let character = world_state(save, "playerCharacter");
     let clock = world_state(save, "sunshineClockTimeHolder");
+
+    // TO THE HOUR, because that is the resolution the game answers at: the plugin reads the
+    // clock through Lua, where HourCount is as fine as it gets, and every guard in the
+    // database compares hours or days. A save that knows the minute would otherwise be
+    // staging a world the run it stands for cannot be in.
+    let day_minutes = whole(&clock["time"]["dayMinutes"], save, "the clock") / MINUTES_PER_HOUR
+        * MINUTES_PER_HOUR;
+    let day_counter = whole(&clock["time"]["dayCounter"], save, "the day");
 
     let thought_states = thought_states(&cabinet);
     let carried = world_state(save, "inventoryState");
@@ -1408,13 +1479,11 @@ pub fn holdings_in_save(save: &str) -> Holdings {
             .collect(),
         thought_states,
         money: whole(&character["Money"], save, "the balance"),
-        // TO THE HOUR, because that is the resolution the game answers at: the plugin reads
-        // the clock through Lua, where HourCount is as fine as it gets, and every guard in
-        // the database compares hours or days. A save that knows the minute would otherwise
-        // be staging a world the run it stands for cannot be in.
-        day_minutes: whole(&clock["time"]["dayMinutes"], save, "the clock") / MINUTES_PER_HOUR
-            * MINUTES_PER_HOUR,
-        day_counter: whole(&clock["time"]["dayCounter"], save, "the day"),
+        day_minutes,
+        day_counter,
+        // From the two above as this world sees them, so the lock cannot be decided at an
+        // hour no question here can be asked at.
+        clock_locked: clock_locked_in_save(save, day_minutes, day_counter),
         scene: scene_in_save(save),
         party: party_in_save(save),
         hardcore_playthrough_completed: HARDCORE_PLAYTHROUGH_COMPLETED,

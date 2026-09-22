@@ -364,9 +364,13 @@ variables and answers every hour question over them - but only where a `PassTime
 can move an unlocked clock, since otherwise the hour is a constant and a register would spend
 bits restating it. `DataLayout::clock_can_move` is that decision.
 
-**AND THE PLUGIN ALWAYS SENDS IT LOCKED**, so time stands still for the crawls a player actually
-gets. That is a decision of its own with its own reasons - see de-gh1o - and it is what keeps
-the engine's modelling off the screen rather than anything the engine lacks.
+**WHETHER IT IS LOCKED IS THE GAME'S TO SAY, and it usually is not.** The lock is the
+must-sleep mechanic - `SunshineClockTime.LockTimeIfNeed` sets it once the player has crossed
+midnight without sleeping and the hour reaches two - so during ordinary play the clock runs. No
+Lua function exposes the flag, so the plugin takes it from a hook on a method the game calls
+with the live clock in hand (`ClockLockPatch`), and a fixture derives it from the save the way
+the loader does (`fixtures::clock_locked_in_save`). Until the hook has fired the answer is
+locked, which is the conservative one.
 
 72 call sites are live - 50 through a clock question and 45 through a cabinet question, since
 baking can turn a cooking thought fixed. THE BAKING IS NOT MODELLED: the clock moves and the

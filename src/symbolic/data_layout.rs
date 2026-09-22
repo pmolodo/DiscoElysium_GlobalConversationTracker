@@ -1267,9 +1267,10 @@ impl DataLayout {
     /// clock moves nothing - `core::action` skips it - so holding the clock still is EXACT
     /// there rather than an approximation.
     ///
-    /// The second half is not hypothetical: the plugin sends the clock locked whatever the
-    /// game reads, so the shipped path carries no clock and pays nothing for this. See
-    /// de-gh1o for that decision and what reversing it would need.
+    /// The second half is not hypothetical, and it is not the common case either: the lock is
+    /// the game's must-sleep mechanic, set once the player has stayed up past midnight, so an
+    /// ordinary world's clock runs and a group with a `PassTime` in it carries one. A world
+    /// that cannot say reports locked, which is the conservative answer. See de-gh1o.
     pub fn clock_can_move(
         graph: &LookAheadGraph,
         world: &dyn crate::world::ILookAheadWorld,

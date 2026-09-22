@@ -257,10 +257,11 @@ fn build_of_save(
         money: holdings.money,
         day_minutes: holdings.day_minutes,
         day_counter: holdings.day_counter,
-        // LOCKED, as the plugin sends it, for the reason the scenario suites give: nothing the
-        // game exposes to Lua says whether its clock is locked, so a walk that let time pass
-        // would be walking a world no run of the game is in.
-        clock_locked: true,
+        // AS THE SAVE HAS IT, derived the way the game derives it on load - see
+        // `fixtures::clock_locked_in_save`, which also says why it is derived rather than
+        // read. The plugin reads the flag itself and sends the same answer, so a walk here
+        // and a crawl in the game are in the same world. See de-gh1o.
+        clock_locked: holdings.clock_locked,
         data_values: holdings.data_for(&asked.data),
         items: holdings.items.clone(),
         thoughts: holdings.thoughts.clone(),
