@@ -332,8 +332,8 @@ pub(crate) fn enter(
             results.extend(enter_rolled(
                 node,
                 state,
+                context,
                 caps,
-                context.world,
                 crate::world::roll_may_succeed(node, context.world),
             ));
         }
@@ -360,20 +360,27 @@ pub(crate) fn enter(
 fn enter_rolled(
     node: &LookAheadNode,
     state: &LookAheadState,
+    context: &CrawlContext<'_>,
     caps: &CounterCaps,
-    world: &dyn ILookAheadWorld,
     may_succeed: bool,
 ) -> Vec<LookAheadState> {
+    let world = context.world;
     let mut results = Vec::new();
 
     let passed = node.flag_slot >= 0 && state.is_set(node.flag_slot as usize);
     let failed = node.failed_flag_slot >= 0 && state.is_set(node.failed_flag_slot as usize);
 
-    // A check already resolved is closed, whichever way it went and whichever kind it is.
-    // The game keeps failed white checks in FailedWhiteChecks and only reopens one when the
-    // skill rank rises or a modifier lowers the target; neither is modelled here, so a
-    // failure closes it for the rest of the walk. See de-1uy8.
-    if passed || failed {
+    // A check that has PASSED is closed for good, and one that has FAILED is closed until
+    // its target falls: the game keeps failed white checks in FailedWhiteChecks and offers
+    // one again once a modifier worth a negative bonus holds - see
+    // `LookAheadNode::reopen_when`. The skill rank cannot rise inside a conversation, so the
+    // other half of the game's rule cannot fire here. See de-1uy8 and de-vdy9.
+    let reopened = !node.reopen_when.is_empty()
+        && node
+            .reopen_when
+            .iter()
+            .any(|reopening| reopening.test(&context.bound(state)) == Ternary::True);
+    if passed || (failed && !reopened) {
         return results;
     }
 
@@ -518,6 +525,53 @@ mod tests {
             .get(node(2))
             .expect("the fixture has entry 2")
             .check_settled
+    }
+
+    /// A failed white check is walked again once a modifier lowers its target.
+    ///
+    /// THE AUTHORITATIVE COPY OF THE RULE. The symbolic searches are compared against this
+    /// walk, so a rule the walk does not have is a rule the comparison would report as their
+    /// mistake - see `symbolic::backward::tests::a_modifier_reopens_a_failed_white_check`,
+    /// which is the same shape against the other engine.
+    #[test]
+    fn a_modifier_reopens_a_failed_white_check() {
+        let entries = || {
+            vec![
+                Entry::new(0).links(&[1, 2]),
+                white(Entry::new(1))
+                    .flag("check.jump")
+                    .field("variable1", r#"Variable["character.brave"]"#)
+                    .field("modifier1", "-2")
+                    .links(&[3]),
+                Entry::new(2)
+                    .script(r#"SetVariableValue("character.brave", true)"#)
+                    .links(&[1]),
+                Entry::new(3),
+            ]
+        };
+        let failed =
+            GameWorld::blank().set_variable("check.jump_failed", GuardValue::from_boolean(true));
+
+        assert!(
+            walked(entries(), &failed).reached(node(3)),
+            "the walk never took the reopened check",
+        );
+
+        // AND THE FAILURE STILL CLOSES IT where nothing sets what the modifier reads: the
+        // same shape with the setter taken away reaches nothing behind the check.
+        let without_setter = vec![
+            Entry::new(0).links(&[1]),
+            white(Entry::new(1))
+                .flag("check.jump")
+                .field("variable1", r#"Variable["character.brave"]"#)
+                .field("modifier1", "-2")
+                .links(&[3]),
+            Entry::new(3),
+        ];
+        assert!(
+            !walked(without_setter, &failed).reached(node(3)),
+            "a failed check with nothing to reopen it was walked anyway",
+        );
     }
 
     /// A garment unsettles the checks on the skill IT moves, and leaves the others settled.

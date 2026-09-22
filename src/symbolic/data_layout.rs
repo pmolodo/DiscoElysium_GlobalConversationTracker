@@ -1194,6 +1194,12 @@ impl DataLayout {
         names: &mut HashSet<String>,
     ) {
         Self::read_by_guard(&node.guard, names);
+        // WHAT REOPENS A FAILED CHECK IS READ TOO, and a slot only it reads is a slot that
+        // would otherwise be dropped as read by nothing - leaving the formula pointing at a
+        // column the layout no longer has.
+        for reopening in &node.reopen_when {
+            Self::read_by_guard(reopening, names);
+        }
         if Self::reads_any_slot_contents(&node.guard) {
             // Which item a slot holds is the world's to say, so a question about whether
             // a slot is filled reads every item the group can take away.
@@ -1225,6 +1231,7 @@ impl DataLayout {
     pub fn reads_no_slot(node: &LookAheadNode) -> bool {
         node.flag_slot < 0
             && node.failed_flag_slot < 0
+            && node.reopen_when.is_empty()
             && node.actions.iter().all(|action| action.unless().is_none())
             && !node.guard.nodes().any(|part| {
                 matches!(
@@ -1267,7 +1274,7 @@ impl DataLayout {
 
     /// The names one guard reads, including the subjects of the queries answered from
     /// search state.
-    fn read_by_guard(guard: &Guard, names: &mut HashSet<String>) {
+    pub fn read_by_guard(guard: &Guard, names: &mut HashSet<String>) {
         for node in guard.nodes() {
             match node.expression() {
                 GuardExpression::Variable(name) => {

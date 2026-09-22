@@ -64,6 +64,19 @@ pub struct LookAheadNode {
     pub hidden_when_unaffordable: bool,
     pub flag_slot: i32,        // -1 if none
     pub failed_flag_slot: i32, // -1 if none
+    /// What reopens this white check after it has failed, empty where nothing can.
+    ///
+    /// THE GAME DOES NOT CLOSE A FAILED WHITE CHECK FOR GOOD. It keeps the target the check
+    /// was failed against, and offers the check again once the current target falls below it -
+    /// `difficulty` plus the bonuses of whichever of its ten modifier expressions hold. So a
+    /// modifier worth a NEGATIVE bonus reopens the check by becoming true, which is what these
+    /// are: those expressions, any of which is enough.
+    ///
+    /// ONLY THE ONES THIS GROUP CAN MOVE. A modifier reading nothing any action here writes is
+    /// the same answer for the whole search, so its being true now means it was true when the
+    /// check failed - and reopening on it would offer a check the game has closed. Trimmed in
+    /// [`crate::index::build_group_graph`], where what the group writes is known.
+    pub reopen_when: Vec<Guard>,
     pub boolean_only: bool,
     pub seen_slot: i32, // -1 if none
     /// The slot recording that this entry's once-only effects have fired, or -1.
@@ -110,6 +123,7 @@ impl LookAheadNode {
             hidden_when_unaffordable: false,
             flag_slot: -1,
             failed_flag_slot: -1,
+            reopen_when: Vec::new(),
             boolean_only: false,
             seen_slot: -1,
             once_slot: -1,

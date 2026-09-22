@@ -168,6 +168,12 @@ impl GraphBuilder {
             ));
             let failure_actions =
                 crate::index::check_failure_actions(&entry.fields, entry.kind, &mut symbols);
+            // WHAT REOPENS A FAILED CHECK, from the same fields the database carries it in, so
+            // a fixture writes `variable1` and `modifier1` and gets what the real builder
+            // would give it. No journal here: a fixture naming a task would be naming one that
+            // does not exist.
+            let reopen_when =
+                crate::index::parse_reopening_without_journal(&entry.fields, entry.kind);
 
             // A rolled check's success and failure flags, matching the real builder.
             let (flag_slot, failed_flag_slot) = match &entry.flag {
@@ -205,6 +211,7 @@ impl GraphBuilder {
                 cost_once: entry.cost_once,
                 flag_slot,
                 failed_flag_slot,
+                reopen_when,
                 boolean_only: entry.boolean_only,
                 seen_slot,
                 ..LookAheadNode::new(id)
@@ -212,6 +219,14 @@ impl GraphBuilder {
             built.player = entry.player;
             nodes.push(built);
         }
+
+        // THE SAME TRIM THE REAL BUILDER APPLIES, so a fixture's failed check reopens on
+        // exactly what a group's would - see `index::retain_movable_reopenings`. Without it a
+        // fixture would reopen on a modifier the world settles, which is the one thing the
+        // trim exists to refuse.
+        let mut nodes = nodes;
+        let written = crate::index::slots_written_by(&nodes, &symbols);
+        crate::index::retain_movable_reopenings(&mut nodes, &symbols, &written);
 
         let graph =
             LookAheadGraph::new(nodes, symbols).expect("a fixture should have distinct ids");

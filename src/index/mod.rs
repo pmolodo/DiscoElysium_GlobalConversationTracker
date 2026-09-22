@@ -631,6 +631,7 @@ pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, V
                 None
             };
             let (flag_slot, failed_flag_slot) = parse_flags(&entry.fields, &mut symbols, kind);
+            let reopen_when = parse_reopening(&entry.fields, kind, &journal);
             let boolean_only = read_boolean(&entry.fields, BOOLEAN_ONLY_FIELD);
             let closes_once_seen = kind == DialogueCheckKind::Fake
                 || (kind == DialogueCheckKind::KimSwitch && !boolean_only);
@@ -655,6 +656,7 @@ pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, V
                 hidden_when_unaffordable,
                 flag_slot,
                 failed_flag_slot,
+                reopen_when,
                 boolean_only,
                 seen_slot,
                 ..LookAheadNode::new(node_id)
@@ -674,6 +676,66 @@ pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, V
     let (nodes, symbols) = keeping_only_read_slots(nodes, symbols);
 
     Ok((LookAheadGraph::new(nodes, symbols)?, group))
+}
+
+/// Which slots anything in these nodes writes.
+///
+/// WRITTEN MEANS WRITTEN BY ANYTHING, NOT BY AN ACTION, which is the distinction that broke
+/// the first two attempts at the slot trim - see [`keeping_only_read_slots`], where the scar
+/// is written out. A check records its own result in `flag_slot` and `failed_flag_slot`, and
+/// the engine writes those rather than any parsed action.
+pub(crate) fn slots_written_by(nodes: &[LookAheadNode], symbols: &StateSymbols) -> Vec<bool> {
+    let mut written = vec![false; symbols.count()];
+    let mut mark = |slot: i32| {
+        if let Ok(slot) = usize::try_from(slot)
+            && slot < written.len()
+        {
+            written[slot] = true;
+        }
+    };
+    for node in nodes {
+        mark(node.flag_slot);
+        mark(node.failed_flag_slot);
+        mark(node.seen_slot);
+        mark(node.once_slot);
+        for action in node.all_actions() {
+            // Money, clock and unmodelled actions carry no slot.
+            if action.writes_slot() {
+                mark(action.slot());
+            }
+        }
+    }
+    written
+}
+
+/// Drops what reopens a failed check where nothing in these nodes can move it.
+///
+/// A modifier expression reading nothing anything here writes has the same answer for the
+/// whole search - the seed puts the world's value in and nothing moves it - so its being true
+/// NOW is also its having been true when the check failed, and the game would have reopened
+/// nothing. Keeping it would offer a check the game has closed.
+///
+/// IT IS ALSO WHAT KEEPS THE LAYOUT HONEST: a slot nothing writes is dropped by
+/// [`keeping_only_read_slots`], and a formula kept over one would name a column that is gone.
+pub(crate) fn retain_movable_reopenings(
+    nodes: &mut [LookAheadNode],
+    symbols: &StateSymbols,
+    written: &[bool],
+) {
+    for node in nodes {
+        if node.reopen_when.is_empty() {
+            continue;
+        }
+        node.reopen_when.retain(|reopening| {
+            let mut names = HashSet::new();
+            DataLayout::read_by_guard(reopening, &mut names);
+            names.iter().any(|name| {
+                symbols
+                    .find(name)
+                    .is_some_and(|slot| written.get(slot).copied().unwrap_or(false))
+            })
+        });
+    }
 }
 
 /// Drops every slot no guard in the group reads, renumbering what is left.
@@ -724,9 +786,7 @@ fn keeping_only_read_slots(
     nodes: Vec<LookAheadNode>,
     symbols: StateSymbols,
 ) -> (Vec<LookAheadNode>, StateSymbols) {
-    let reads = DataLayout::read_by_nodes(nodes.iter(), &symbols);
-
-    // AND WHAT SOMETHING WRITES, which is the other half of the same rule.
+    // WHAT SOMETHING WRITES, which is the other half of the same rule.
     //
     // A slot a guard reads but nothing in the group writes cannot change during a search:
     // the seed puts the world's value in it and nothing ever moves it. Carrying it costs a
@@ -743,26 +803,12 @@ fn keeping_only_read_slots(
     // The same is true of `seen_slot`. `once_slot` is -1 at this point - those are interned
     // later, by `LookAheadGraph::new` - and is included so that moving the interning earlier
     // cannot quietly reintroduce the same bug.
-    let mut written = vec![false; symbols.count()];
-    let mark = |slot: i32, written: &mut Vec<bool>| {
-        if let Ok(slot) = usize::try_from(slot)
-            && slot < written.len()
-        {
-            written[slot] = true;
-        }
-    };
-    for node in &nodes {
-        mark(node.flag_slot, &mut written);
-        mark(node.failed_flag_slot, &mut written);
-        mark(node.seen_slot, &mut written);
-        mark(node.once_slot, &mut written);
-        for action in node.all_actions() {
-            // Money, clock and unmodelled actions carry no slot.
-            if action.writes_slot() {
-                mark(action.slot(), &mut written);
-            }
-        }
-    }
+    let written = slots_written_by(&nodes, &symbols);
+
+    let mut nodes = nodes;
+    retain_movable_reopenings(&mut nodes, &symbols, &written);
+
+    let reads = DataLayout::read_by_nodes(nodes.iter(), &symbols);
 
     // A CONDITIONAL WRITE WHOSE TESTED SLOT NOTHING WRITES tests the world's value, which is
     // constant for a search - so the condition is settled when the graph is fitted rather than
@@ -904,6 +950,66 @@ pub fn parse_cost(fields: &HashMap<String, String>) -> (i32, bool, bool) {
         read_boolean(fields, COST_ONCE_FIELD),
         read_boolean(fields, HIDDEN_NOT_ENOUGH_FIELD),
     )
+}
+
+/// What would reopen this check once it has failed, or `None` where nothing in it can.
+///
+/// ## The game's rule
+///
+/// `FailedWhiteChecks.IsFailedWhiteCheckPossible` offers a failed white check again when the
+/// skill has risen above what it was, or when `difficulty` plus the bonuses of whichever
+/// modifier expressions currently hold has fallen below the target it was failed against. The
+/// skill cannot rise inside one conversation - nothing in a dialogue levels one - so what is
+/// left is the modifiers, and only those worth a NEGATIVE bonus, which are the ones that lower
+/// a target by becoming true.
+///
+/// ## Why a parse failure takes the expression away
+///
+/// An unparsed guard elsewhere falls back to "always true", which is the permissive answer and
+/// the right one for a guard: it opens a route rather than closing one that exists. Here the
+/// permissive answer is the reverse - an expression that always holds reopens the check for
+/// good - so an expression this cannot read is dropped, and the check keeps the behaviour it
+/// has without it.
+/// The same, for a caller with no journal - a fixture, where a task named would be one that
+/// does not exist.
+pub(crate) fn parse_reopening_without_journal(
+    fields: &HashMap<String, String>,
+    kind: DialogueCheckKind,
+) -> Vec<Guard> {
+    parse_reopening(fields, kind, &journal::Journal::from_index(&Index::new()))
+}
+
+fn parse_reopening(
+    fields: &HashMap<String, String>,
+    kind: DialogueCheckKind,
+    journal: &journal::Journal,
+) -> Vec<Guard> {
+    if kind != DialogueCheckKind::White {
+        return Vec::new();
+    }
+
+    let mut reopening = Vec::new();
+    for slot in 1..=MODIFIER_SLOTS {
+        let Some(expression) = fields.get(&modifier_expression_field(slot)) else {
+            continue;
+        };
+        let expression = expression.trim();
+        if expression.is_empty() {
+            continue;
+        }
+        let bonus: i32 = match fields.get(&modifier_bonus_field(slot)) {
+            Some(text) => text.trim().parse().unwrap_or(0),
+            None => 0,
+        };
+        if bonus >= 0 {
+            continue;
+        }
+        let Ok(guard) = parse_guard(expression) else {
+            continue;
+        };
+        reopening.push(journal.with_tasks_as_variables(&guard));
+    }
+    reopening
 }
 
 /// What a passive check's success adds while a thought is fixed, as once actions on the entry -

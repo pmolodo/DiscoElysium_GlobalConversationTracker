@@ -276,7 +276,7 @@ impl<'a> Reachability<'a> {
         }
 
         let may_succeed = crate::world::roll_may_succeed(node, world);
-        let (success, failure) = self.rolled_cases(node, may_succeed, &allowed, image);
+        let (success, failure) = self.rolled_cases(node, may_succeed, &allowed, compiler, image);
         match branch {
             StartBranch::Pass => success,
             StartBranch::Fail => failure,
@@ -328,7 +328,7 @@ impl<'a> Reachability<'a> {
 
             DialogueCheckKind::Red | DialogueCheckKind::White => {
                 let may_succeed = crate::world::roll_may_succeed(node, world);
-                self.rolled(node, may_succeed, &allowed, image)
+                self.rolled(node, may_succeed, &allowed, compiler, image)
             }
 
             DialogueCheckKind::Passive => {
@@ -358,9 +358,10 @@ impl<'a> Reachability<'a> {
         node: &LookAheadNode,
         may_succeed: bool,
         states: &BDDFunction,
+        compiler: &mut GuardCompiler<'a>,
         image: &mut ActionImage<'a>,
     ) -> BDDFunction {
-        let (success, failure) = self.rolled_cases(node, may_succeed, states, image);
+        let (success, failure) = self.rolled_cases(node, may_succeed, states, compiler, image);
         self.or_no_room(success.or(&failure))
     }
 
@@ -375,6 +376,7 @@ impl<'a> Reachability<'a> {
         node: &LookAheadNode,
         may_succeed: bool,
         states: &BDDFunction,
+        compiler: &mut GuardCompiler<'a>,
         image: &mut ActionImage<'a>,
     ) -> (BDDFunction, BDDFunction) {
         // A check already passed is closed, and one already failed is closed too - neither
@@ -385,8 +387,18 @@ impl<'a> Reachability<'a> {
             open = self.or_no_room(open.and(&unpassed));
         }
         if let Some(failed) = self.flag(node.failed_flag_slot) {
-            let unfailed = self.or_no_room(failed.not());
-            open = self.or_no_room(open.and(&unfailed));
+            let mut still_closed = self.or_no_room(failed.not());
+            // UNLESS THE TARGET HAS FALLEN SINCE. The game keeps what a white check was failed
+            // against and offers it again once the current target is lower, which happens when
+            // a modifier worth a negative bonus comes true - see `LookAheadNode::reopen_when`,
+            // which holds those of them this group can move.
+            if !node.reopen_when.is_empty() {
+                let reopened = compiler
+                    .reopening_for(node.id, &node.reopen_when)
+                    .may_be_true;
+                still_closed = self.or_no_room(still_closed.or(&reopened));
+            }
+            open = self.or_no_room(open.and(&still_closed));
         }
 
         if !open.satisfiable() {

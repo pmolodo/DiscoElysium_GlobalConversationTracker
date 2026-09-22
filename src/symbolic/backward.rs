@@ -646,7 +646,7 @@ impl<'a> Backward<'a> {
 
             DialogueCheckKind::Red | DialogueCheckKind::White => {
                 let may_succeed = crate::world::roll_may_succeed(node, world);
-                self.pre_rolled(node, may_succeed, onward, image)
+                self.pre_rolled(node, may_succeed, onward, compiler, image)
             }
 
             DialogueCheckKind::Passive => {
@@ -690,6 +690,7 @@ impl<'a> Backward<'a> {
         node: &LookAheadNode,
         may_succeed: bool,
         onward: &BDDFunction,
+        compiler: &mut GuardCompiler<'a>,
         image: &mut ActionImage<'a>,
     ) -> BDDFunction {
         // Success raised the pass flag, so undoing it selects the states where it is
@@ -728,8 +729,16 @@ impl<'a> Backward<'a> {
             open = self.or_no_room(open.and(&unpassed));
         }
         if let Some(failed) = self.flag(node.failed_flag_slot) {
-            let unfailed = self.or_no_room(failed.not());
-            open = self.or_no_room(open.and(&unfailed));
+            let mut still_closed = self.or_no_room(failed.not());
+            // AND REOPENED BY A MODIFIER, the same rule as `Reachability::rolled_cases`,
+            // which this has to mirror exactly or the two engines answer different questions.
+            if !node.reopen_when.is_empty() {
+                let reopened = compiler
+                    .reopening_for(node.id, &node.reopen_when)
+                    .may_be_true;
+                still_closed = self.or_no_room(still_closed.or(&reopened));
+            }
+            open = self.or_no_room(open.and(&still_closed));
         }
 
         open
@@ -1878,6 +1887,80 @@ mod tests {
             3,
             true,
         );
+    }
+
+    /// A failed white check is offered again once a modifier lowers its target.
+    ///
+    /// THE GAME'S RULE, which the engine refused for as long as it held a failure for good:
+    /// `FailedWhiteChecks.IsFailedWhiteCheckPossible` reopens a check when the bonuses of the
+    /// modifier expressions that hold have brought the target below what it was failed
+    /// against. Here `character.brave` is worth -2, so setting it reopens 1 - and the walk
+    /// that sets it has to happen first, which is what makes this more than "the flag is
+    /// ignored".
+    ///
+    /// The world arrives with the check already failed, as a save that failed it does.
+    #[test]
+    fn a_modifier_reopens_a_failed_white_check() {
+        let shape = |helper: &str| {
+            vec![
+                Entry::new(0).links(&[1, 2]),
+                Entry::new(1)
+                    .kind(DialogueCheckKind::White)
+                    .flag("check.jump")
+                    .field("variable1", helper)
+                    .field("modifier1", "-2")
+                    .links(&[3]),
+                Entry::new(2)
+                    .script(r#"SetVariableValue("character.brave", true)"#)
+                    .links(&[1]),
+                Entry::new(3),
+            ]
+        };
+        let failed =
+            || GameWorld::blank().set_variable("check.jump_failed", GuardValue::from_boolean(true));
+
+        // What 2 sets is what reopens it, so the walk 0 -> 2 -> 1 reaches what is behind it.
+        agree(shape(r#"Variable["character.brave"]"#), &failed(), 3, true);
+
+        // AND A MODIFIER NOTHING HERE CAN MOVE DOES NOT REOPEN IT. `character.tall` is the
+        // world's answer for the whole search, so its being true now is its having been true
+        // when the check failed - the target never fell, and the game would offer nothing.
+        agree(
+            shape(r#"Variable["character.tall"]"#),
+            &failed().set_variable("character.tall", GuardValue::from_boolean(true)),
+            3,
+            false,
+        );
+    }
+
+    /// A modifier that does not LOWER the target reopens nothing.
+    ///
+    /// The sign is the whole of the rule - `difficulty + num < LastTargetValue` - so a
+    /// positive bonus makes the check harder and a zero one changes nothing, and a reopening
+    /// that took either would offer a check the game has not.
+    #[test]
+    fn a_modifier_that_does_not_lower_the_target_reopens_nothing() {
+        for bonus in ["2", "0"] {
+            agree(
+                vec![
+                    Entry::new(0).links(&[1, 2]),
+                    Entry::new(1)
+                        .kind(DialogueCheckKind::White)
+                        .flag("check.jump")
+                        .field("variable1", r#"Variable["character.brave"]"#)
+                        .field("modifier1", bonus)
+                        .links(&[3]),
+                    Entry::new(2)
+                        .script(r#"SetVariableValue("character.brave", true)"#)
+                        .links(&[1]),
+                    Entry::new(3),
+                ],
+                &GameWorld::blank()
+                    .set_variable("check.jump_failed", GuardValue::from_boolean(true)),
+                3,
+                false,
+            );
+        }
     }
 
     /// The target itself is the answer: entering it is the whole event, so a start that

@@ -91,12 +91,12 @@ world although a dialogue action can change them.
 | gap                                                                                                                                                                                                                     | errs                  | where                                                                        | in content                                                                                                         | tracked |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------- |
 | A passive check is decided once per request, by the plugin. Where the group can change what is worn, or its damage or healing can cross the check's margin, the check is Unknown - item bonuses are not in the database | permissive            | plugin `PassiveCheckRule`; `core::skill_movers`; `Fitting::damage_unsettled` | groups that lose a worn item, gain an autoequip item, or damage or heal Volition or Endurance near a passive check |         |
-| A failed white check stays closed. The game reopens one when its skill rank rises or a modifier expression lowers the target                                                                                            | restrictive           | `FlagName_failed` slot, never cleared                                        | 70 of the game's 126 white checks; see below                                                                       |         |
+| A failed white check is reopened by a modifier the group can move, without asking what the modifier was worth when it failed                                                                                            | permissive            | `LookAheadNode::reopen_when`; `Backward::rolled_cases`                       | 75 of the game's 126 white checks carry such a modifier; see below                                                 |         |
 | A fake check's `FlagName` and `FlagName_failed` are not read, though the game hides the option once either is set                                                                                                       | permissive            | fake check handling in the graph builder                                     | three fake checks; nothing writes their `_failed` flags                                                            |         |
 | `RemoveWhiteCheck` is not applied, so a check it retires mid-conversation stays offered                                                                                                                                 | permissive            | `core::modelling`                                                            | not reached: all four call sites pass a variable's value rather than a check's flag name                           |         |
 | A rolled check's odds (hardcore difficulty, situational modifiers, crit range) are not read. Both outcomes are taken whatever they are                                                                                  | none for reachability | by design                                                                    | every rolled check. Exact for "can this be reached"; says nothing about how likely it is                           |         |
 
-### A reopened white check is the widest gap here, and it was measured
+### What reopens a failed white check, and what is left of the gap
 
 **The skill-rank half is dead inside one conversation** - nothing in a dialogue levels a
 skill - so what reopens a check during a crawl is the modifier half:
@@ -108,16 +108,21 @@ they read is items and equipment (`CheckItem`, `CheckEquipped`, 83 of them), tho
 (`IsTHCPresent` and the fixed forms, 38), Kim, the clock, and named variables. All of those
 are things a dialogue action writes.
 
-**70 of the 126 sit on a walk that can fail the check, write what one of its modifiers reads,
-and come back to the check** - 68 of those with a negative bonus among them, which is the
-direction that lowers the target. 54 have nothing downstream that writes what their modifiers
-read, and 2 have such a write downstream with no way back.
+**The engine reopens a check where a modifier worth a negative bonus holds** - the ones this
+group can MOVE, which is 75 of the 126 and 168 expressions between them. A modifier reading
+nothing the group writes is dropped when the graph is built: its answer is the world's for
+the whole search, so it was already true when the check failed and the target never fell.
 
-That count is over the link graph with guards ignored, the way [actions.md](actions.md)
-defines downstream, so it OVER-approximates what a crawl can walk. It does not ask whether
-the write moves the expression from the value it had when the check failed, nor whether the
-check's own precondition still holds - both of which the game requires, and both of which
-would make it fire less often. de-vdy9 carries the numbers and what modelling it would take.
+**What is left is the value at the failure.** The game keeps the target a check was failed
+against; the engine keeps no such thing, so a movable modifier that was ALREADY true then -
+the item already worn, the flag already set - reopens a check the game would leave shut. That
+is the residue, and it errs permissive, which is the direction this engine is built to be
+wrong in. Closing it needs one bit per check and modifier, recording what held at the moment
+of the failure; de-vdy9 carries the shape of that.
+
+Two more of the game's conditions are not asked either, both of which would make it reopen
+LESS often: whether the check's own precondition still holds, and the exact comparison rather
+than the sign of one bonus.
 
 ## Actions not applied, or applied in part
 

@@ -209,6 +209,8 @@ pub struct GuardCompiler<'a> {
     /// [`Self::forget_guards`] is the way out for a caller that would rather have the room.
     guards: HashMap<DialogueNodeId, MayBe>,
     guard_cache_hits: usize,
+    /// What reopens each failed check, compiled - see [`Self::reopening_for`].
+    reopenings: HashMap<DialogueNodeId, MayBe>,
     /// The reputation ranges no search from the menu's starts can change the winner of, keyed
     /// by the range's first index, each with the world's winner. See
     /// [`Self::settle_reputation`].
@@ -233,6 +235,7 @@ impl<'a> GuardCompiler<'a> {
             declared_constants: Vec::new(),
             guards: HashMap::new(),
             guard_cache_hits: 0,
+            reopenings: HashMap::new(),
             settled_reputation: HashMap::new(),
             reputation_from_world: 0,
         }
@@ -482,6 +485,53 @@ impl<'a> GuardCompiler<'a> {
     /// answer. Nothing is lost but time.
     pub fn forget_guards(&mut self) {
         self.guards.clear();
+        self.reopenings.clear();
+    }
+
+    /// What reopens this check once it has failed, compiled once and remembered.
+    ///
+    /// A SECOND CACHE RATHER THAN A SECOND ENTRY IN THE FIRST, because an entry has one guard
+    /// and either none or several of these, and they are asked for at different moments: the
+    /// guard whenever the entry is reached, this only where a failed check is being offered
+    /// again. See [`Self::compile_for`], whose reasoning this follows.
+    ///
+    /// ANY OF THEM IS ENOUGH, so what comes back is their disjunction - the game's rule is that
+    /// the target falls, and each of these lowers it on its own.
+    pub fn reopening_for(&mut self, id: DialogueNodeId, reopening: &[Guard]) -> MayBe {
+        if let Some(compiled) = self.reopenings.get(&id) {
+            return compiled.clone();
+        }
+
+        let mut held: Option<MayBe> = None;
+        for guard in reopening {
+            let compiled = self.compile_node(guard.as_ref());
+            held = Some(match held {
+                Some(held) => MayBe {
+                    may_be_true: held
+                        .may_be_true
+                        .or(&compiled.may_be_true)
+                        .unwrap_or_else(|_| {
+                            self.out_of_memory = true;
+                            self.vars.bottom()
+                        }),
+                    may_be_false: held
+                        .may_be_false
+                        .and(&compiled.may_be_false)
+                        .unwrap_or_else(|_| {
+                            self.out_of_memory = true;
+                            self.vars.top()
+                        }),
+                },
+                None => compiled,
+            });
+        }
+
+        let compiled = held.unwrap_or_else(|| MayBe {
+            may_be_true: self.vars.bottom(),
+            may_be_false: self.vars.top(),
+        });
+        self.reopenings.insert(id, compiled.clone());
+        compiled
     }
 
     /// Gives the compiler a world to read untracked variables from.
