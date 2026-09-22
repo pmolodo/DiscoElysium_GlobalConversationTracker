@@ -43,6 +43,11 @@
     BepInEx\interop: they are generated from the player's own copy of the game on
     first launch. That is why the first launch after installing is a slow one.
 
+.PARAMETER NativeProfile
+    The cargo profile the look-ahead engine and the state library are built
+    with, and the folder under target\ the C# build then copies them from.
+    Defaults to release, because this is what goes out: the profile the measurements
+    are taken with and the numbers describe.
 .PARAMETER Configuration
     The MSBuild configuration built and then packaged; "Release" unless given.
     The archive is named from the csproj's <Version> alone, so a zip built from
@@ -69,6 +74,9 @@
 [CmdletBinding()]
 param(
     [string]$Configuration = "Release",
+    # Which cargo profile the native artifacts are built with - see
+    # Invoke-NativeBuild in build-support.psm1.
+    [string]$NativeProfile = "release",
     [string]$DiscoElysiumDir,
     [switch]$PluginOnly,
     [switch]$BundleOnly
@@ -90,7 +98,7 @@ $ReadmeReleaseName = "$AssemblyName-README.md"
 Invoke-ScriptMain {
 
 # --- Build --------------------------------------------------------------------
-$dllPath = Invoke-PluginBuild -Configuration $Configuration -DiscoElysiumDir $DiscoElysiumDir
+$dllPath = Invoke-PluginBuild -Configuration $Configuration -DiscoElysiumDir $DiscoElysiumDir -NativeProfile $NativeProfile
 $version = Get-PluginVersion
 
 if ($PluginOnly -and $BundleOnly) {

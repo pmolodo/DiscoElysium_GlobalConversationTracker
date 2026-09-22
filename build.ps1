@@ -18,6 +18,10 @@
     The work lives in build-support.psm1 (Invoke-PluginBuild, Copy-PluginPayload,
     Get-PluginVersion, and the reference resolution beneath them).
 
+.PARAMETER NativeProfile
+    The cargo profile the look-ahead engine and the state library are built
+    with, and the folder under target\ the C# build then copies them from.
+    Defaults to release-incremental, the test loop's profile: this builds, it does not ship.
 .PARAMETER Configuration
     The MSBuild configuration handed to `dotnet build -c`; "Release" unless
     given. It also selects the output directory the built DLL is picked up from
@@ -34,6 +38,9 @@
 [CmdletBinding()]
 param(
     [string]$Configuration = "Release",
+    # Which cargo profile the native artifacts are built with - see
+    # Invoke-NativeBuild in build-support.psm1.
+    [string]$NativeProfile = "release-incremental",
     [string]$DiscoElysiumDir
 )
 
@@ -45,6 +52,6 @@ $ErrorActionPreference = "Stop"
 Import-Module (Join-Path $PSScriptRoot "build-support.psm1") -Force -DisableNameChecking
 
 Invoke-ScriptMain {
-    $dll = Invoke-PluginBuild -Configuration $Configuration -DiscoElysiumDir $DiscoElysiumDir
+    $dll = Invoke-PluginBuild -Configuration $Configuration -DiscoElysiumDir $DiscoElysiumDir -NativeProfile $NativeProfile
     Write-Host "Built: $dll" -ForegroundColor Green
 }

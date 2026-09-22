@@ -18,6 +18,25 @@
   </PropertyGroup>
 
   <!--
+    WHICH CARGO PROFILE'S OUTPUT A C# BUILD COPIES. Two projects take the look-ahead engine
+    and the state library out of target\, and cargo puts each profile's output in a folder
+    of its own, so the folder is a property rather than a path spelled three times.
+
+    RELEASE BY DEFAULT, because that is what a bare `dotnet build` or `dotnet test` should
+    find: the profile the measurements are taken with and the one a release ships. The
+    scripts at the root override it - build.ps1 and deploy.ps1 with release-incremental,
+    which is the test loop's profile and what an iterate step wants, make-release.ps1 with
+    release. See Invoke-NativeBuild in build-support.psm1, which builds what this then
+    copies.
+
+    IT IS THE FOLDER NAME AND NOT THE PROFILE NAME, which differ for exactly one profile:
+    cargo's `dev` writes to target\debug.
+  -->
+  <PropertyGroup>
+    <RustProfileDir Condition="'$(RustProfileDir)' == ''">release</RustProfileDir>
+  </PropertyGroup>
+
+  <!--
     A WARNING FAILS THE BUILD, for every project rather than for the plugin alone, which had
     said so in its own csproj since it existed. The Rust side says the same thing in
     Cargo.toml's [workspace.lints.rust], and the reasoning is written out there: a warning

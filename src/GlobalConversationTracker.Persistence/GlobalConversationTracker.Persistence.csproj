@@ -57,7 +57,7 @@
   -->
   <PropertyGroup>
     <StateLibraryName>gct_state.dll</StateLibraryName>
-    <StateLibraryRelease>$(MSBuildThisFileDirectory)..\..\target\release\$(StateLibraryName)</StateLibraryRelease>
+    <StateLibraryRelease>$(MSBuildThisFileDirectory)..\..\target\$(RustProfileDir)\$(StateLibraryName)</StateLibraryRelease>
     <StateLibraryDebug>$(MSBuildThisFileDirectory)..\..\target\debug\$(StateLibraryName)</StateLibraryDebug>
     <StateLibrary Condition="Exists('$(StateLibraryRelease)')">$(StateLibraryRelease)</StateLibrary>
     <StateLibrary

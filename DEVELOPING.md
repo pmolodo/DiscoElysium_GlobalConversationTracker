@@ -217,8 +217,12 @@ What it does:
 
 1. resolves and vets the target (before building, so a bad target fails in a second)
 2. builds the two Rust artifacts the plugin's build copies rather than builds - the
-   look-ahead engine and the state library - with `--release`, which is the profile that
-   goes beside the game whatever the test loop is using, then builds the plugin
+   look-ahead engine and the state library - and then builds the plugin, which copies them
+   out of the folder they were just written to. `-NativeProfile` says which cargo profile,
+   and a deploy defaults to `release-incremental`: an iterate step is edit, deploy,
+   relaunch, and a from-scratch release build in the middle of it buys nothing. Pass
+   `-NativeProfile release` to install what a release ships. `make-release.ps1` defaults to
+   `release` for the same reason in reverse
 3. prints the exact directory it is about to write to
 4. replaces the previous build in `<game>\BepInEx\plugins\GlobalConversationTracker`:
    one `GlobalConversationTracker.dll` and nothing else, the mod's own layers being

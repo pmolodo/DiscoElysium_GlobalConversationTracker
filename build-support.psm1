@@ -1254,44 +1254,60 @@ function Get-PluginVersion {
 }
 
 
+function Get-RustProfileDir {
+    # The folder cargo writes $Profile's output to, which is the profile's own name for
+    # every profile but one: `dev` writes to target\debug.
+    param([Parameter(Mandatory = $true)][string]$Profile)
+    if ($Profile -eq "dev") { return "debug" }
+    return $Profile
+}
+
+
 function Invoke-NativeBuild {
-    # Build the two Rust artifacts the plugin's build copies into its output:
-    # the engine the mod talks to over a pipe, and the state library it loads.
+    # Build the two Rust artifacts a C# build copies into its output: the engine the mod
+    # talks to over a pipe, and the state library it loads. Returns the folder under
+    # target\ they were written to, for the caller to hand to MSBuild.
     #
-    # WHY THIS IS HERE AND NOT LEFT TO THE CALLER. The csproj copies both out of
-    # target\release and builds neither, so without this a deploy installs
-    # whatever that folder happens to hold - and CLAUDE.md has everything else
-    # building with --profile release-incremental, which writes somewhere else
-    # entirely. A stale engine beside a fresh plugin is the worst shape of all:
-    # it runs, it answers, and what it answers is last week's.
+    # WHY THIS IS HERE AND NOT LEFT TO THE CALLER. The csproj COPIES both and builds
+    # neither, so without this a deploy installs whatever the folder happens to hold. A
+    # stale engine beside a fresh plugin is the worst shape there is: it runs, it answers,
+    # and what it answers is last week's.
     #
-    # RELEASE, NOT release-incremental. What goes beside the game is the profile
-    # the measurements are taken with and the one the shipped numbers describe;
-    # the incremental profile exists for the test loop - see Cargo.toml, which
-    # says the same.
+    # WHICH PROFILE IS THE CALLER'S CHOICE, and the two answers are different jobs.
+    # make-release.ps1 asks for `release`, because that is what goes out and what the
+    # measurements describe. build.ps1 and deploy.ps1 ask for `release-incremental`, the
+    # test loop's profile: an iterate step is edit, deploy, relaunch, and a from-scratch
+    # release build in the middle of it costs forty seconds to produce an artefact nobody
+    # is timing. Either can be overridden per run.
     #
-    # Both targets by name rather than a whole-workspace build: these two are
-    # what gets installed, and naming them keeps the measurement drivers and the
-    # test binaries out of a deploy.
+    # Both targets by name rather than a whole-workspace build: these two are what gets
+    # installed, and naming them keeps the measurement drivers and the test binaries out
+    # of a deploy.
+    param([Parameter(Mandatory = $true)][string]$Profile)
+
+    $profileDir = Get-RustProfileDir -Profile $Profile
+    $outDir = Join-Path $RepoRoot "target\$profileDir"
 
     if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
-        throw "cargo is not on PATH, and the plugin's build copies target\release\$NativeEngineName and target\release\$StateLibraryName without building them. Install the Rust toolchain, or build those two yourself and deploy again."
+        throw "cargo is not on PATH, and a C# build copies $outDir\$NativeEngineName and $outDir\$StateLibraryName without building them. Install the Rust toolchain, or build those two yourself and build again."
     }
 
     foreach ($target in @(
             @{ What = "the look-ahead engine"; File = $NativeEngineName; Args = @("--bin", "gct-engine-host") },
             @{ What = "the state library"; File = $StateLibraryName; Args = @("-p", "gct_state") })) {
-        Write-Host "Building $($target.What) (release)..."
-        cargo build --release @($target.Args) | Out-Host
+        Write-Host "Building $($target.What) ($Profile)..."
+        cargo build --profile $Profile @($target.Args) | Out-Host
         if ($LASTEXITCODE -ne 0) {
-            throw "cargo build --release $($target.Args -join ' ') failed with exit code $LASTEXITCODE"
+            throw "cargo build --profile $Profile $($target.Args -join ' ') failed with exit code $LASTEXITCODE"
         }
 
-        $built = Join-Path $RepoRoot "target\release\$($target.File)"
+        $built = Join-Path $outDir $target.File
         if (-not (Test-Path -LiteralPath $built)) {
-            throw "cargo reported success and $built is not there, so the plugin's build would copy an older one or fail."
+            throw "cargo reported success and $built is not there, so the build would copy an older one or fail."
         }
     }
+
+    return $profileDir
 }
 
 
@@ -1301,18 +1317,21 @@ function Invoke-PluginBuild {
     # output goes to the host so it does not pollute the returned path.
     param(
         [string]$Configuration = "Release",
-        [string]$DiscoElysiumDir
+        [string]$DiscoElysiumDir,
+        # The cargo profile the native artifacts are built with - see Invoke-NativeBuild.
+        [string]$NativeProfile = "release-incremental"
     )
 
     $gameDir = Initialize-BuildReferences -DiscoElysiumDir $DiscoElysiumDir
 
     # BEFORE dotnet, because the csproj COPIES what this builds rather than
-    # building it - see Invoke-NativeBuild.
-    Invoke-NativeBuild
+    # building it - see Invoke-NativeBuild. The folder it wrote to is handed on,
+    # so the copy takes what was just built rather than whatever `release` holds.
+    $profileDir = Invoke-NativeBuild -Profile $NativeProfile
 
     # Stamped into the assembly so a deployed DLL - and any log captured from a
     # session that loaded it - can be tied back to the source it was built from.
-    $buildArgs = @("-p:DiscoElysiumDir=$gameDir")
+    $buildArgs = @("-p:DiscoElysiumDir=$gameDir", "-p:RustProfileDir=$profileDir")
     $status = Get-SourceRevisionStatus
     $revision = Get-SourceRevisionId -Status $status
     if ($revision) {

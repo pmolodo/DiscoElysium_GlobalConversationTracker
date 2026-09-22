@@ -8,9 +8,9 @@
 .DESCRIPTION
     The everyday iterate command: edit -> .\deploy.ps1 -> relaunch the game.
 
-      1. Builds the look-ahead engine and the state library with cargo, in
-         release - the plugin's own build COPIES those rather than building
-         them - and then GlobalConversationTracker.dll.
+      1. Builds the look-ahead engine and the state library with cargo - the
+         plugin's own build COPIES those rather than building them - and then
+         GlobalConversationTracker.dll. See -NativeProfile for which profile.
       2. Works out which game folder to install into, and says so out loud
          before touching anything.
       3. Clears the previous build out of
@@ -45,6 +45,12 @@
     a BepInEx\core, and must not be one of the repo's reference copies unless
     -AllowReferenceCopy says otherwise.
 
+.PARAMETER NativeProfile
+    The cargo profile the look-ahead engine and the state library are built
+    with, and the folder under target\ the C# build then copies them from.
+    Defaults to release-incremental, the test loop's profile - an iterate step is edit,
+    deploy, relaunch, and a from-scratch release build in the middle of it buys
+    nothing. Pass release to install what a release would ship.
 .PARAMETER Configuration
     The configuration built before installing; "Release" unless given. The
     installed files are that build's output.
@@ -70,6 +76,9 @@
 param(
     [string]$GameDir,
     [string]$Configuration = "Release",
+    # Which cargo profile the native artifacts are built with - see
+    # Invoke-NativeBuild in build-support.psm1.
+    [string]$NativeProfile = "release-incremental",
     [string]$DiscoElysiumDir,
     [switch]$AllowReferenceCopy,
     [switch]$DryRun
@@ -110,7 +119,7 @@ $pluginDir = Get-PluginInstallDir -GameDir $gameDir
 # --- 2. Build -----------------------------------------------------------------
 Write-Host ""
 Write-Host "== Building ==" -ForegroundColor Cyan
-$dllPath = Invoke-PluginBuild -Configuration $Configuration -DiscoElysiumDir $DiscoElysiumDir
+$dllPath = Invoke-PluginBuild -Configuration $Configuration -DiscoElysiumDir $DiscoElysiumDir -NativeProfile $NativeProfile
 
 # --- 3. Replace the previous install -----------------------------------------
 # Say what is about to be written, before writing it. Only this plugin's own

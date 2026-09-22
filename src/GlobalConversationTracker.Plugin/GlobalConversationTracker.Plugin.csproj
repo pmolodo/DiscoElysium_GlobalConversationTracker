@@ -118,7 +118,7 @@
   -->
     <Target Name="CopyNativeLookAhead" AfterTargets="Build">
         <PropertyGroup>
-            <NativeLookAheadRelease>$(MSBuildThisFileDirectory)..\..\target\release\</NativeLookAheadRelease>
+            <NativeLookAheadRelease>$(MSBuildThisFileDirectory)..\..\target\$(RustProfileDir)\</NativeLookAheadRelease>
             <NativeLookAheadDebug>$(MSBuildThisFileDirectory)..\..\target\debug\</NativeLookAheadDebug>
             <NativeLookAheadDir Condition="Exists('$(NativeLookAheadRelease)gct-engine-host.exe')">$(NativeLookAheadRelease)</NativeLookAheadDir>
             <NativeLookAheadDir Condition="'$(NativeLookAheadDir)' == '' And Exists('$(NativeLookAheadDebug)gct-engine-host.exe')">$(NativeLookAheadDebug)</NativeLookAheadDir>
@@ -166,7 +166,7 @@
     <Target Name="CopyStateLibrary" AfterTargets="Build">
         <PropertyGroup>
             <StateLibraryName>gct_state.dll</StateLibraryName>
-            <StateLibraryRelease>$(MSBuildThisFileDirectory)..\..\target\release\$(StateLibraryName)</StateLibraryRelease>
+            <StateLibraryRelease>$(MSBuildThisFileDirectory)..\..\target\$(RustProfileDir)\$(StateLibraryName)</StateLibraryRelease>
             <StateLibraryDebug>$(MSBuildThisFileDirectory)..\..\target\debug\$(StateLibraryName)</StateLibraryDebug>
             <StateLibrary Condition="Exists('$(StateLibraryRelease)')">$(StateLibraryRelease)</StateLibrary>
             <StateLibrary
