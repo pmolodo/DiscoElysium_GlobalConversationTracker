@@ -550,10 +550,19 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
                     checked += 1;
 
                     if got != option.marker {
+                        // THE WITNESS BY NAME, because it is the engine's own reason for
+                        // `best` and the row's why is a sentence about that line. A
+                        // disagreement is then readable without a second run: either the
+                        // line it found is one the row overlooked, or the row is right and
+                        // the route to that line is one the search should not have had.
+                        let witness = match reply.witness {
+                            Some(node) => format!("{}:{}", node.conversation, node.entry),
+                            None => "nothing".to_string(),
+                        };
                         failures.push(format!(
                             "{}/{} ({}): {}:{} should be {} - {} - and the engine \
-                             draws {got}: own {own}, best {}, {}, {} pass(es) \
-                             - run it in game with --suite {}",
+                             draws {got}: own {own}, best {}, witness {witness}, {}, \
+                             {} pass(es) - run it in game with --suite {}",
                             suite.suite,
                             scenario.save,
                             stop.what,

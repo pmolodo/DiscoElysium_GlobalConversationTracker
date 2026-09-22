@@ -1008,6 +1008,38 @@ namespace GlobalConversationTracker.Harness
             + "been refused before it walked anything";
     }
 
+    /// <summary>Whether answering cost the engine a diagram at all.</summary>
+    /// <remarks>
+    /// <para>WHAT A SUITE ABOUT THE LAYOUT NEEDS, and the one thing a marker cannot say: the
+    /// registers a group carries - the clock among them - live in the diagram, so a menu
+    /// answered without building one exercises the layout no more than a menu never asked.
+    /// The markers say the answer is right; this says the engine arrived at it the long
+    /// way.</para>
+    ///
+    /// <para>The count is menu-level and carried on each menu's first answer, so the total
+    /// over a run is the sum of the menus that were answered by building something.</para>
+    /// </remarks>
+    private static string? ADiagramWasBuilt(string? json)
+    {
+        if (json is null)
+        {
+            return "no statistics file was written, so nothing says whether a diagram was "
+                + "built at all";
+        }
+
+        using JsonDocument document = JsonDocument.Parse(json);
+        long built = document.RootElement
+            .GetProperty("diagramNodes").GetProperty("total").GetInt64();
+        if (built > 0)
+        {
+            return null;
+        }
+
+        long crawls = document.RootElement.GetProperty("crawls").GetInt64();
+        return $"{crawls} crawl(s) built no diagram node at all, so whatever the menu drew, "
+            + "the layout this suite is about was never put to work";
+    }
+
     /// <summary>Checks the overflow log names the conversation that ran out.</summary>
     private static string? CheckOverflowLog(string? text)
     {
@@ -1410,6 +1442,7 @@ namespace GlobalConversationTracker.Harness
         private static IReadOnlyDictionary<string, Func<string?, string?>> ArtefactChecks =>
             new Dictionary<string, Func<string?, string?>>(StringComparer.Ordinal)
             {
+                ["aDiagramWasBuilt"] = ADiagramWasBuilt,
                 ["statisticsAddUp"] = CheckStatistics,
                 ["noCrawls"] = NoCrawls,
                 ["overflowNamesTheConversation"] = CheckOverflowLog,

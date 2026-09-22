@@ -723,6 +723,45 @@
       "suite": "reputation-branch",
       "what": "a branch on which reputation is winning is closed where the save's amounts close it",
       "why": "de-4riz and de-a55g, from a real playthrough: Evrart's option 4, 785:24, was starred in game, and choosing it offered two starred replies that both led straight back. 785:30 splits on IsHighestCopotype(\"apocalypse_cop\"); this save holds apocalypse_cop 9, superstar_cop 8, sorry_cop 7 and boring_cop 3, so only the apocalypse branch is open. The unread lines are all behind the other side, and a reputation question left undecided opened it. The global state is the player's own."
+    },
+    {
+      "inGame": {
+        "artefacts": [
+          {
+            "file": "look-ahead-stats.json",
+            "what": "the deployed engine built a diagram to answer this menu, which is where the clock register lives",
+            "check": "aDiagramWasBuilt"
+          }
+        ]
+      },
+      "scenarios": [
+        {
+          "conversation": 631,
+          "stops": [
+            {
+              "what": "Joyce's hub on the sloop, from a save that has been through it",
+              "inputs": [],
+              "options": [
+                { "entry": 1406, "marker": "none", "why": "both flags its guard wants are set, so it is offered here for the first time - and an option unseen in any game is itself the top rung, which nothing outranks" },
+                { "entry": 1275, "marker": "none", "why": "the boat hub behind it reaches nothing this save has not already had" },
+                { "entry": 1519, "marker": "orange", "why": "Joyce's answer about Wild Pines, 1082, runs straight on into 269, which no save has read" },
+                { "entry": 741, "marker": "orange", "why": "it goes back to the strike hub, where questions this save left unasked still lead to unread lines" },
+                { "entry": 100, "marker": "orange", "why": "the lynching hub it opens in 632 is one this save has not read out" },
+                { "entry": 960, "marker": "orange", "why": "the reality hub it reopens still holds lines no save has read" },
+                { "entry": 1434, "marker": "none", "why": "leaving takes the exited-once branch, which goes nowhere: the first farewell at 14 is behind the branch a save that has left once already closes" }
+              ]
+            }
+          ],
+          "markers": "named",
+          "save": "at-evart"
+        }
+      ],
+      "settings": { "KeepLookAheadStates": "true" },
+      "settingsWhy": "The artefact is the claim: the stats file has to be written for the run to be able to say a diagram was built.",
+      "state": "global-state-empty.json",
+      "suite": "joyce-clock",
+      "what": "a menu in a group the clock moves through is answered in the game, with the register carried",
+      "why": "de-086x: the carried clock is checked offline three ways and the plugin sends the lock, but no in-game run had ever built a search state in a group that carries a clock - so the deployed host binary, where the budget, the threading and the process boundary all differ from a test, had never run the layout the register lives in. 631's group is one of the nine carriers, and with this save's world - unlocked, 15:00 on day three - its layout takes a seven-bit clock with a ceiling of 95 quarter-hour steps. A LOCKED CLOCK WOULD CARRY NO BITS AT ALL, which is why the save matters as much as the group. at-evart rather than at-joyce, and an empty global state rather than the recorded one, because a menu where everything is recorded is settled before a diagram is built: this save has been through Joyce's hub, so four of its seven options sit on the bottom rung with unread content behind them and the menu discriminates. WHAT THE MARKERS ARE DOING HERE is holding the answer to the same standard as every other suite - the clock is what the run is for, but a run that only counted diagram nodes could carry the register and still answer wrongly."
     }
   ]
 }
