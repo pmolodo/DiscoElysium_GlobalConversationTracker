@@ -495,7 +495,7 @@ namespace GlobalConversationTracker
                 "KeepLookAheadStates",
                 false,
                 "Maintain " + LookAheadDiagnosticsWriter.StatisticsFileName + " in the SaveGames "
-                + "folder: how many states and how long each look-ahead takes, as totals, "
+                + "folder: how many diagram nodes and how long each look-ahead takes, as totals, "
                 + "extremes, a histogram, and a per-conversation breakdown.");
             var keepLookAheadRequests = Config.Bind(
                 "Diagnostics",

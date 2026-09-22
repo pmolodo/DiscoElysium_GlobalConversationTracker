@@ -252,7 +252,7 @@ namespace GlobalConversationTracker
             text.Append("  stopped by     ")
                 .AppendLine(answer.StoppedBy.Length == 0 ? "(not said)" : answer.StoppedBy);
             text.Append("  memory budget  ").Append(memoryBudgetMb).AppendLine(" MB");
-            text.Append("  states         ").Append(answer.StatesExplored).AppendLine();
+            text.Append("  diagram nodes  ").Append(answer.DiagramNodes).AppendLine();
             text.Append("  entries        ").Append(answer.NodesReached)
                 .Append(" of ").Append(groupEntryCount).AppendLine(" in the group");
             text.Append("  elapsed        ")
@@ -320,11 +320,11 @@ namespace GlobalConversationTracker
                 writer.WriteNumber("budgetExhausted", statistics.BudgetExhausted);
                 writer.WriteNumber("timeExhausted", statistics.TimeExhausted);
 
-                writer.WriteStartObject("states");
-                writer.WriteNumber("total", statistics.TotalStates);
-                writer.WriteNumber("min", statistics.MinStatesOrZero);
-                writer.WriteNumber("mean", Round(statistics.MeanStates));
-                writer.WriteNumber("max", statistics.MaxStates);
+                writer.WriteStartObject("diagramNodes");
+                writer.WriteNumber("total", statistics.TotalDiagramNodes);
+                writer.WriteNumber("min", statistics.MinDiagramNodesOrZero);
+                writer.WriteNumber("mean", Round(statistics.MeanDiagramNodes));
+                writer.WriteNumber("max", statistics.MaxDiagramNodes);
                 writer.WriteEndObject();
 
                 writer.WriteStartObject("entriesReached");
@@ -346,7 +346,7 @@ namespace GlobalConversationTracker
 
                 // The histogram, not percentiles: a mean hides the one menu in a thousand
                 // that costs a hundred times the rest, and that is the one worth finding.
-                writer.WriteStartObject("statesHistogram");
+                writer.WriteStartObject("diagramNodesHistogram");
                 for (int i = 0; i < statistics.Buckets.Count; i++)
                 {
                     writer.WriteNumber(
@@ -361,8 +361,8 @@ namespace GlobalConversationTracker
                     writer.WriteStartObject();
                     writer.WriteNumber("conversation", pair.Key);
                     writer.WriteNumber("crawls", pair.Value.Crawls);
-                    writer.WriteNumber("meanStates", Round(pair.Value.MeanStates));
-                    writer.WriteNumber("maxStates", pair.Value.MaxStates);
+                    writer.WriteNumber("meanDiagramNodes", Round(pair.Value.MeanDiagramNodes));
+                    writer.WriteNumber("maxDiagramNodes", pair.Value.MaxDiagramNodes);
                     writer.WriteNumber("maxMs", Round(pair.Value.MaxMilliseconds));
                     writer.WriteNumber("budgetExhausted", pair.Value.BudgetExhausted);
                     writer.WriteNumber("timeExhausted", pair.Value.TimeExhausted);
@@ -384,7 +384,7 @@ namespace GlobalConversationTracker
         {
             var rows = new List<KeyValuePair<int, ConversationStatistics>>(
                 statistics.ByConversation);
-            rows.Sort((left, right) => right.Value.MaxStates.CompareTo(left.Value.MaxStates));
+            rows.Sort((left, right) => right.Value.MaxDiagramNodes.CompareTo(left.Value.MaxDiagramNodes));
             return rows;
         }
 

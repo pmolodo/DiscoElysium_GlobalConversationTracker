@@ -365,11 +365,13 @@ message LookAheadAnswer {
   bool complete = 6;
 
   uint64 elapsed_ms = 7;
-  // How many states were enumerated.
+  // How many diagram nodes answering the menu added, on the menu's FIRST answer.
   //
-  // The plugin's diagnostics are about what an ANSWER COSTS, and a time alone cannot say
-  // whether a menu was slow because the search was large or because the machine was busy.
-  uint64 states_explored = 8;
+  // The plugin's diagnostics are about what an answer costs, and a time alone cannot say
+  // whether a menu was slow because its diagram was large or because the machine was busy.
+  // It is also the unit the budget is denominated in. The NAME changed in de-g0dz; field 8
+  // is the contract and is unmoved.
+  uint64 diagram_nodes = 8;
   // How many entries it reached.
   uint64 nodes_reached = 9;
   StoppedBy stopped_by = 10;

@@ -594,14 +594,12 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         /// <summary>The part of a statistics file the no-crawl fixture reads.</summary>
-        /// <summary>A statistics artefact naming what a run cost.</summary>
         /// <param name="crawls">How many searches were asked for.</param>
         /// <param name="reached">How many entries those searches walked.</param>
         /// <remarks>
-        /// REACHED RATHER THAN STATES, which is what this said until de-c7do: the
-        /// engine never fills <c>states_explored</c> in, so a fixture built on it
-        /// agreed with a policy that could not fail. <c>entriesReached</c> is the
-        /// counter the engine actually sets.
+        /// REACHED RATHER THAN DIAGRAM NODES: a menu's diagram is built before any search is
+        /// considered, so that count cannot say whether one ran. <c>entriesReached</c> counts
+        /// the backward passes, which a refused search does not take.
         /// </remarks>
         private static string Statistics(int crawls, int reached) =>
             $"{{\"crawls\":{crawls},\"entriesReached\":{{\"total\":{reached}}}}}";

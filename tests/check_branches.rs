@@ -286,6 +286,22 @@ fn an_outcome_on_the_top_rung_is_not_searched() {
 
     let (pass, fail) = response.outcomes(rolled).expect("a roll comes back as two");
 
+    // AND THE MENU STILL COST SOMETHING, which is the other half of the claim and what makes
+    // the passes the right counter to read. Laying out the group and compiling its guards
+    // allocates diagram nodes before any search is considered, so that figure is never zero
+    // for a menu answered at all - and a search that never ran cannot be told from one that
+    // did by looking at it.
+    let built: usize = response
+        .answers
+        .iter()
+        .map(|answer| answer.diagram_nodes)
+        .sum();
+    assert!(
+        built > 0,
+        "{conversation}:{} answered a menu without building a diagram, so the figure is dead",
+        rolled.entry,
+    );
+
     for (name, branch) in [("pass", pass), ("fail", fail)] {
         // Where it lands is read off the graph and costs nothing; what it says about
         // BEYOND has to be the destination itself, unsearched and not in doubt.
@@ -300,12 +316,10 @@ fn an_outcome_on_the_top_rung_is_not_searched() {
             rolled.entry,
         );
 
-        // ON THE PASSES A SEARCH TOOK, which is the only counter here that can be zero.
-        // This asked `states_explored` until de-8b85, and that is set once - to zero, in
-        // `bridge::unanswered` - and written again by nothing, so the assertion held
-        // whatever the outcomes did. A node count cannot serve either: building the layout
-        // and compiling the guards allocates before any search is considered, so the figure
-        // is never zero for a menu that was answered at all.
+        // ON THE PASSES A SEARCH TOOK, which is the only counter here that can be zero. The
+        // other cost figure cannot serve: building the layout and compiling the guards
+        // allocates diagram nodes before any search is considered, so that one is never zero
+        // for a menu that was answered at all.
         //
         // A BACKWARD PASS IS THE SEARCH ITSELF, and a refused one performs none.
         assert_eq!(

@@ -538,6 +538,17 @@ impl<'a> GuardCompiler<'a> {
         self.constant_clock && self.clock_approximated && self.vars.clock_ops().is_none()
     }
 
+    /// How many diagram nodes the manager is holding.
+    ///
+    /// What the work COST, in the unit the budget is denominated in - so a caller reporting it
+    /// can say whether a slow menu was a large diagram or a busy machine, which a clock alone
+    /// cannot. Read twice and subtracted, since a manager outlives one request:
+    /// `workspace::Workspace` keeps one across a conversation, so the count at any moment
+    /// includes whatever earlier questions left behind.
+    pub fn diagram_nodes(&self) -> usize {
+        self.vars.node_count()
+    }
+
     /// How many sub-expressions the compiler could not read and had to call undecided.
     pub fn fallbacks(&self) -> usize {
         self.fallbacks

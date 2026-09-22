@@ -39,12 +39,12 @@ namespace GlobalConversationTracker.LookAhead.Tests
             var statistics = new LookAheadStatistics();
 
             Assert.Equal(0, statistics.Crawls);
-            Assert.Equal(0d, statistics.MeanStates);
+            Assert.Equal(0d, statistics.MeanDiagramNodes);
             Assert.Equal(0d, statistics.MeanMilliseconds);
 
-            // MinStates starts at int.MaxValue so the first sample wins; the reported
+            // MinDiagramNodes starts at int.MaxValue so the first sample wins; the reported
             // value must not leak that sentinel into a file someone reads.
-            Assert.Equal(0, statistics.MinStatesOrZero);
+            Assert.Equal(0, statistics.MinDiagramNodesOrZero);
         }
 
         [Fact]
@@ -58,10 +58,10 @@ namespace GlobalConversationTracker.LookAhead.Tests
             statistics.Record(node, Result(20, nodes: 6), 2.0);
 
             Assert.Equal(3, statistics.Crawls);
-            Assert.Equal(60, statistics.TotalStates);
-            Assert.Equal(10, statistics.MinStatesOrZero);
-            Assert.Equal(30, statistics.MaxStates);
-            Assert.Equal(20d, statistics.MeanStates);
+            Assert.Equal(60, statistics.TotalDiagramNodes);
+            Assert.Equal(10, statistics.MinDiagramNodesOrZero);
+            Assert.Equal(30, statistics.MaxDiagramNodes);
+            Assert.Equal(20d, statistics.MeanDiagramNodes);
             Assert.Equal(9, statistics.MaxNodes);
             Assert.Equal(19, statistics.TotalNodes);
             Assert.Equal(3.0, statistics.MaxMilliseconds);
@@ -138,7 +138,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
 
             Assert.Equal(99, statistics.Buckets[0]);
             Assert.Equal(1, statistics.Buckets[4]);
-            Assert.Equal(50_000, statistics.MaxStates);
+            Assert.Equal(50_000, statistics.MaxDiagramNodes);
         }
 
         [Fact]
@@ -154,13 +154,13 @@ namespace GlobalConversationTracker.LookAhead.Tests
 
             ConversationStatistics lena = statistics.ByConversation[825];
             Assert.Equal(2, lena.Crawls);
-            Assert.Equal(30, lena.MaxStates);
-            Assert.Equal(20d, lena.MeanStates);
+            Assert.Equal(30, lena.MaxDiagramNodes);
+            Assert.Equal(20d, lena.MeanDiagramNodes);
             Assert.Equal(2.0, lena.MaxMilliseconds);
 
             ConversationStatistics garte = statistics.ByConversation[28];
             Assert.Equal(1, garte.Crawls);
-            Assert.Equal(5, garte.MaxStates);
+            Assert.Equal(5, garte.MaxDiagramNodes);
         }
 
     }

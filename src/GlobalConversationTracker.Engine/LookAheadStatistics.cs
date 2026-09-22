@@ -6,7 +6,7 @@ namespace GlobalConversationTracker.Engine
 {
     /// <remarks>
     /// Moved here from the managed look-ahead when that engine was deleted (de-i5xj.6).
-    /// The numbers are the same numbers - states, entries, time, why a crawl stopped - and
+    /// The numbers are the same numbers - diagram nodes, entries, time, why a crawl stopped - and
     /// they now arrive in a <see cref="LookAheadAnswer"/> from the Rust engine rather than
     /// in a result object from a crawl in this process.
     /// </remarks>
@@ -16,11 +16,11 @@ namespace GlobalConversationTracker.Engine
         /// <summary>How many crawls started in this conversation.</summary>
         public long Crawls { get; internal set; }
 
-        /// <summary>Their total state count.</summary>
-        public long TotalStates { get; internal set; }
+        /// <summary>Their total diagram nodes.</summary>
+        public long TotalDiagramNodes { get; internal set; }
 
-        /// <summary>The most states one of them took.</summary>
-        public int MaxStates { get; internal set; }
+        /// <summary>The most diagram nodes one of them added.</summary>
+        public int MaxDiagramNodes { get; internal set; }
 
         /// <summary>Their total wall time, in milliseconds.</summary>
         public double TotalMilliseconds { get; internal set; }
@@ -34,8 +34,8 @@ namespace GlobalConversationTracker.Engine
         /// <summary>How many of them ran out of time rather than states.</summary>
         public long TimeExhausted { get; internal set; }
 
-        /// <summary>Their mean state count.</summary>
-        public double MeanStates => Crawls == 0 ? 0 : (double)TotalStates / Crawls;
+        /// <summary>Their mean diagram nodes.</summary>
+        public double MeanDiagramNodes => Crawls == 0 ? 0 : (double)TotalDiagramNodes / Crawls;
     }
 
     /// <summary>
@@ -55,7 +55,7 @@ namespace GlobalConversationTracker.Engine
     public sealed class LookAheadStatistics
     {
         /// <summary>
-        /// The upper bound of each histogram bucket, in states. The last bucket catches
+        /// The upper bound of each histogram bucket, in diagram nodes. The last bucket catches
         /// everything above the highest bound.
         /// </summary>
         public static readonly IReadOnlyList<int> BucketBounds =
@@ -68,14 +68,14 @@ namespace GlobalConversationTracker.Engine
         /// <summary>How many crawls have been recorded.</summary>
         public long Crawls { get; private set; }
 
-        /// <summary>Their total state count.</summary>
-        public long TotalStates { get; private set; }
+        /// <summary>Their total diagram nodes.</summary>
+        public long TotalDiagramNodes { get; private set; }
 
-        /// <summary>The fewest states one crawl took.</summary>
-        public int MinStates { get; private set; } = int.MaxValue;
+        /// <summary>The fewest diagram nodes one crawl added.</summary>
+        public int MinDiagramNodes { get; private set; } = int.MaxValue;
 
-        /// <summary>The most states one crawl took.</summary>
-        public int MaxStates { get; private set; }
+        /// <summary>The most diagram nodes one crawl added.</summary>
+        public int MaxDiagramNodes { get; private set; }
 
         /// <summary>The total number of distinct entries reached.</summary>
         public long TotalNodes { get; private set; }
@@ -113,8 +113,8 @@ namespace GlobalConversationTracker.Engine
         /// <summary>How many found something no save has seen.</summary>
         public long FoundUnseenAnyGame { get; private set; }
 
-        /// <summary>The mean state count per crawl.</summary>
-        public double MeanStates => Crawls == 0 ? 0 : (double)TotalStates / Crawls;
+        /// <summary>The mean diagram nodes per crawl.</summary>
+        public double MeanDiagramNodes => Crawls == 0 ? 0 : (double)TotalDiagramNodes / Crawls;
 
         /// <summary>The mean wall time per crawl, in milliseconds.</summary>
         public double MeanMilliseconds => Crawls == 0 ? 0 : TotalMilliseconds / Crawls;
@@ -137,18 +137,18 @@ namespace GlobalConversationTracker.Engine
             // No null check: an answer is a value now, where the managed engine's result
             // was a reference. There is nothing to guard against.
             Crawls++;
-            TotalStates += (int)result.StatesExplored;
+            TotalDiagramNodes += (int)result.DiagramNodes;
             TotalNodes += (int)result.NodesReached;
             TotalMilliseconds += milliseconds;
 
-            if ((int)result.StatesExplored < MinStates)
+            if ((int)result.DiagramNodes < MinDiagramNodes)
             {
-                MinStates = (int)result.StatesExplored;
+                MinDiagramNodes = (int)result.DiagramNodes;
             }
 
-            if ((int)result.StatesExplored > MaxStates)
+            if ((int)result.DiagramNodes > MaxDiagramNodes)
             {
-                MaxStates = (int)result.StatesExplored;
+                MaxDiagramNodes = (int)result.DiagramNodes;
             }
 
             if ((int)result.NodesReached > MaxNodes)
@@ -183,7 +183,7 @@ namespace GlobalConversationTracker.Engine
                     break;
             }
 
-            _buckets[BucketOf((int)result.StatesExplored)]++;
+            _buckets[BucketOf((int)result.DiagramNodes)]++;
 
             if (!_byConversation.TryGetValue(start.Conversation, out ConversationStatistics? row))
             {
@@ -192,11 +192,11 @@ namespace GlobalConversationTracker.Engine
             }
 
             row.Crawls++;
-            row.TotalStates += (int)result.StatesExplored;
+            row.TotalDiagramNodes += (int)result.DiagramNodes;
             row.TotalMilliseconds += milliseconds;
-            if ((int)result.StatesExplored > row.MaxStates)
+            if ((int)result.DiagramNodes > row.MaxDiagramNodes)
             {
-                row.MaxStates = (int)result.StatesExplored;
+                row.MaxDiagramNodes = (int)result.DiagramNodes;
             }
 
             if (milliseconds > row.MaxMilliseconds)
@@ -214,13 +214,13 @@ namespace GlobalConversationTracker.Engine
             }
         }
 
-        /// <summary>Which histogram bucket a state count falls in.</summary>
-        /// <param name="states">The state count.</param>
-        public static int BucketOf(int states)
+        /// <summary>Which histogram bucket a node count falls in.</summary>
+        /// <param name="nodes">The node count.</param>
+        public static int BucketOf(int nodes)
         {
             for (int i = 0; i < BucketBounds.Count; i++)
             {
-                if (states <= BucketBounds[i])
+                if (nodes <= BucketBounds[i])
                 {
                     return i;
                 }
@@ -248,7 +248,7 @@ namespace GlobalConversationTracker.Engine
             return low + "-" + BucketBounds[index];
         }
 
-        /// <summary>The fewest states any crawl took, or zero before the first one.</summary>
-        public int MinStatesOrZero => Crawls == 0 ? 0 : MinStates;
+        /// <summary>The fewest diagram nodes any crawl added, or zero before the first one.</summary>
+        public int MinDiagramNodesOrZero => Crawls == 0 ? 0 : MinDiagramNodes;
     }
 }

@@ -978,12 +978,10 @@ namespace GlobalConversationTracker.Harness
     /// fail a suite that is behaving perfectly. What the shortcut still shows, and what this
     /// suite is really about, is that the search COST NOTHING.</para>
     ///
-    /// <para>AND NOT STATES EITHER, which is what this asked until de-c7do. The same move to
-    /// the bridge that made crawls the wrong number is what stopped the engine filling
-    /// <c>states_explored</c> in: every answer is built by <c>bridge::unanswered</c>, which
-    /// sets it to zero, and nothing writes it again. So the assertion was rewritten onto a
-    /// field the new engine never sets, and passed unconditionally for as long as it stood.
-    /// Nothing it ever reported is evidence of anything.</para>
+    /// <para>AND NOT DIAGRAM NODES EITHER, tempting as the other cost figure is: laying the
+    /// group out and compiling its guards allocates before any search is considered, so that
+    /// count is never zero for a menu answered at all. A search that never ran cannot be told
+    /// from one that did by looking at it.</para>
     ///
     /// <para>ENTRIES REACHED is the live counter: the engine sets <c>nodes_reached</c> to the
     /// backward passes a marking performed, and a refused search performs none. It is written
@@ -1073,7 +1071,7 @@ namespace GlobalConversationTracker.Harness
 
         Console.WriteLine();
         Console.WriteLine(
-            "        conversation  crawls  max states  max ms  mean states  "
+            "        conversation  crawls  max nodes  max ms  mean nodes  "
             + "spent  of which time");
 
         int counted = 0;
@@ -1087,9 +1085,9 @@ namespace GlobalConversationTracker.Harness
 
             Console.WriteLine(
                 $"        {row.GetProperty("conversation").GetInt32(),12}  {crawls,6}  "
-                + $"{row.GetProperty("maxStates").GetInt32(),10}  "
+                + $"{row.GetProperty("maxDiagramNodes").GetInt32(),9}  "
                 + $"{row.GetProperty("maxMs").GetDouble(),6:N1}  "
-                + $"{row.GetProperty("meanStates").GetDouble(),11:N1}  "
+                + $"{row.GetProperty("meanDiagramNodes").GetDouble(),10:N1}  "
                 + $"{row.GetProperty("budgetExhausted").GetInt32(),5}  {timed,13}");
         }
 
@@ -1097,9 +1095,9 @@ namespace GlobalConversationTracker.Harness
         Console.WriteLine();
         Console.WriteLine(
             $"        overall: {total} crawls, "
-            + $"{root.GetProperty("states").GetProperty("max").GetInt32()} states at worst, "
+            + $"{root.GetProperty("diagramNodes").GetProperty("max").GetInt32()} diagram nodes at worst, "
             + $"{root.GetProperty("milliseconds").GetProperty("max").GetDouble():N1} ms at worst");
-        Console.WriteLine($"        histogram: {root.GetProperty("statesHistogram")}");
+        Console.WriteLine($"        histogram: {root.GetProperty("diagramNodesHistogram")}");
         Console.WriteLine();
 
         if (total <= 0)

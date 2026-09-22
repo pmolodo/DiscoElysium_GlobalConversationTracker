@@ -255,7 +255,7 @@ namespace GlobalConversationTracker.Engine
                 (int)answer.Best,
                 answer.Complete,
                 (long)answer.ElapsedMs,
-                (long)answer.StatesExplored,
+                (long)answer.DiagramNodes,
                 (long)answer.NodesReached,
                 StoppedByOf(answer.StoppedBy),
                 BranchOf(answer.Branch),

@@ -752,9 +752,9 @@ fn every_offline_claim_holds_over_the_whole_group() {
                         .iter()
                         // OR WALKED SOMETHING, so an option that was searched and found
                         // nothing is reported too - that is the interesting half of a menu.
-                        // This asked `states_explored` until de-8b85, which is set to zero
-                        // and never written again, so the disjunct matched nothing and only
-                        // options that drew something were ever listed.
+                        // The passes are what says so: a refused search takes none, and the
+                        // other cost figure is a menu's, carried on its first answer, so it
+                        // cannot say which OPTION was walked.
                         .filter(|reply| {
                             reply.nodes_reached > 0
                                 || drawn(staged.seen_state_of(reply.start), reply) != "none"

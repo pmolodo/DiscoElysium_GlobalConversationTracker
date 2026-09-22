@@ -324,7 +324,7 @@ fn write_answer(answer: LookAheadAnswer) -> wire::LookAheadAnswer {
         witness: answer.witness.map(wire::NodeRef::from),
         complete: answer.complete,
         elapsed_ms: answer.elapsed_ms,
-        states_explored: answer.states_explored as u64,
+        diagram_nodes: answer.diagram_nodes as u64,
         nodes_reached: answer.nodes_reached as u64,
         stopped_by: stopped_by_of(&answer.stopped_by) as i32,
     }

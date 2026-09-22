@@ -142,7 +142,7 @@ fn a_look_ahead_response_survives_the_wire() {
             witness: Some(node(9, 42)),
             complete: false,
             elapsed_ms: 17,
-            states_explored: 200_000,
+            diagram_nodes: 200_000,
             nodes_reached: 1_284,
             stopped_by: wire::StoppedBy::Time as i32,
         }],

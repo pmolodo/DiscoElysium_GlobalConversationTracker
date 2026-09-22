@@ -125,7 +125,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 Witness = Node(9, 42),
                 Complete = false,
                 ElapsedMs = 17,
-                StatesExplored = 200_000,
+                DiagramNodes = 200_000,
                 NodesReached = 1_284,
                 StoppedBy = StoppedBy.Time,
             });

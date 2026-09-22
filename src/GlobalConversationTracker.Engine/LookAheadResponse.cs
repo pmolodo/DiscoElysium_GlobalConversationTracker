@@ -17,9 +17,11 @@ namespace GlobalConversationTracker.Engine
     /// from an incomplete answer is not wrong, only possibly too modest.
     /// </param>
     /// <param name="ElapsedMs">How long the crawl for this option took.</param>
-    /// <param name="StatesExplored">
-    /// How many search states it explored. What the diagnostics are really about: a time
-    /// alone cannot say whether a menu was slow because the search was large or because the
+    /// <param name="DiagramNodes">
+    /// How many diagram nodes answering the MENU added, carried on the menu's first answer
+    /// and zero on the rest - the marking is shared across the options, so there is no honest
+    /// way to divide it between them. What the diagnostics are really about: a time alone
+    /// cannot say whether a menu was slow because its diagram was large or because the
     /// machine was busy, and this is the half that is the same on both.
     /// </param>
     /// <param name="NodesReached">How many entries it reached.</param>
@@ -46,7 +48,7 @@ namespace GlobalConversationTracker.Engine
         int Best,
         bool Complete,
         long ElapsedMs,
-        long StatesExplored,
+        long DiagramNodes,
         long NodesReached,
         string StoppedBy,
         string? Branch = null,

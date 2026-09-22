@@ -1073,13 +1073,23 @@ pub struct LookAheadAnswer {
     /// Whether the search settled. False means `best` is a lower bound.
     pub complete: bool,
     pub elapsed_ms: u64,
-    /// How many states were enumerated.
+    /// How many diagram nodes answering the MENU added.
     ///
-    /// Carried because the plugin's diagnostics are about what an ANSWER COSTS, and a time
-    /// alone cannot say whether a menu was slow because the search was large or because
-    /// the machine was busy. This is the number that is the same on both.
+    /// Carried because the plugin's diagnostics are about what an answer costs, and a time
+    /// alone cannot say whether a menu was slow because its diagram was large or because the
+    /// machine was busy. This is the number that is the same on both - and it is the unit the
+    /// budget is denominated in, so it is what a player turning that dial needs.
+    ///
+    /// ONE MENU'S FIGURE, ON ITS FIRST ANSWER, as [`Self::elapsed_ms`] and
+    /// [`Self::nodes_reached`] are and for the same reason: the marking is shared across the
+    /// options, so there is no honest way to divide it between them. A reader wanting to know
+    /// whether one OPTION was searched wants `nodes_reached`, which counts the passes a
+    /// refused search does not take.
+    ///
+    /// ADDED rather than held: a manager outlives one request where a workspace keeps it, so
+    /// the count is taken before and after and the difference reported.
     #[serde(default)]
-    pub states_explored: usize,
+    pub diagram_nodes: usize,
     /// How many entries it reached.
     #[serde(default)]
     pub nodes_reached: usize,
@@ -1690,6 +1700,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> SeenState>(
     use crate::symbolic::menu::{self, Contestant};
     use crate::symbolic::search::Search;
     let began = std::time::Instant::now();
+    let nodes_before = compiler.diagram_nodes();
     // THE GROUP AS THIS MENU CAN WALK IT, and what there is to find in it - see
     // [`walkable_menu`]. Every search below sees the trimmed links and the trimmed seen state.
     let (trimmed, shape) = walkable_menu(group, compiler, &starts_of(request));
@@ -1968,6 +1979,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> SeenState>(
     if let Some(first) = answers.first_mut() {
         first.elapsed_ms = began.elapsed().as_millis() as u64;
         first.nodes_reached = passes;
+        first.diagram_nodes = compiler.diagram_nodes().saturating_sub(nodes_before);
     }
     answers
 }
@@ -2105,7 +2117,7 @@ fn unanswered(start: NodeRef, stopped_by: &str) -> LookAheadAnswer {
         witness: None,
         complete: false,
         elapsed_ms: 0,
-        states_explored: 0,
+        diagram_nodes: 0,
         nodes_reached: 0,
         stopped_by: stopped_by.to_string(),
     }
@@ -2474,7 +2486,7 @@ mod branch_wire_tests {
             witness: None,
             complete: true,
             elapsed_ms: 4,
-            states_explored: 90,
+            diagram_nodes: 90,
             nodes_reached: 30,
             stopped_by: "none".to_string(),
         };
@@ -2501,7 +2513,7 @@ mod branch_wire_tests {
             witness: None,
             complete: true,
             elapsed_ms: 0,
-            states_explored: 1,
+            diagram_nodes: 1,
             nodes_reached: 1,
             stopped_by: "none".to_string(),
         };
@@ -2520,7 +2532,7 @@ mod branch_wire_tests {
     #[test]
     fn an_answer_without_the_field_still_parses() {
         let text = r#"{"start":{"conversation":1,"entry":2},"best":1,"complete":true,
-            "elapsed_ms":0,"states_explored":0,"nodes_reached":0,"stopped_by":"none"}"#;
+            "elapsed_ms":0,"diagram_nodes":0,"nodes_reached":0,"stopped_by":"none"}"#;
 
         let answer: LookAheadAnswer = serde_json::from_str(text).expect("it parses");
         assert_eq!(answer.branch, None);
