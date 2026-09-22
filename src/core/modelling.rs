@@ -242,7 +242,12 @@ pub const DECISIONS: &[Decision] = &[
               change where the player stands, while nothing in the database reads back \
               whether a fan is on or a door is shut. Measured rather than assumed - no \
               conversation both moves the player and asks IsExterior, so the staleness \
-              this admits to is theoretical in the shipped content.",
+              this admits to is theoretical in the shipped content. LetterSleep does one \
+              thing more, and it is a thing guards read: its dream puts Kim back in the \
+              party where it finds him out of it. Held all the same, and not on the \
+              strength of the family - the coroutine waits for the conversation to end \
+              before it does anything, and its one call site links nowhere, so no walk \
+              reaches a reader of it. See docs/actions.md.",
     },
     Decision {
         writers: &["IsTHCPresent"],

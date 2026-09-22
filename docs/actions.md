@@ -111,7 +111,7 @@ today; `verdict` is how that compares with the game for the writes a downstream 
 | DamageEnduranceWithNewspaper       | damage          |     1 |     0 | damage amount += n                         | ported; no downstream reader           |
 | GraffitoAlight                     | scenery         |     1 |     0 | held by decision                           | excluded                               |
 | GraffitoExtinguish                 | scenery         |     1 |     0 | held by decision                           | excluded                               |
-| LetterSleep                        | endday          |     1 |     0 | held by decision                           | excluded; not fully traced             |
+| LetterSleep                        | endday          |     1 |     0 | held by decision                           | excluded; a cutscene, nothing downstream |
 | LoseMoneyOnce                      | money           |     1 |     0 | once-subtract from the money register      | excluded; ported anyway                |
 | NightyNightKitsuragiShack          | party           |     1 |     0 | held by decision                           | excluded                               |
 | PlaySoundGroup                     | presentation    |     1 |     0 | declared, no effect                        | excluded                               |
@@ -125,7 +125,7 @@ today; `verdict` is how that compares with the game for the writes a downstream 
 | SellItemGroupWithModifier          | items           |     1 |     0 | held by decision                           | excluded                               |
 | ShackBedWasUsed                    | endday          |     1 |     0 | held by decision                           | excluded                               |
 | ShowInventoryForPawning            | items           |     1 |     0 | held by decision                           | excluded                               |
-| SkipToDebriefLocation              | endday          |     1 |     0 | held by decision                           | excluded; not fully traced             |
+| SkipToDebriefLocation              | endday          |     1 |     0 | held by decision                           | excluded; a cutscene, no readable write |
 | TequilaPutOnBodysuit               | presentation    |     1 |     0 | held by decision                           | excluded; body not recovered           |
 | TequilaRemoveBodysuit              | presentation    |     1 |     0 | held by decision                           | excluded; body not recovered           |
 | TequilaUnobscured                  | presentation    |     1 |     0 | declared, no effect                        | excluded                               |
@@ -407,10 +407,16 @@ No call site of these writes anything a downstream reader reads.
   `ShowInventoryForPawning` and `LoseMoneyOnce`.
 - **Movement.** `GoTo` and `GoToDestination` call `ConversationLogger.ForceStopConversation`
   before changing area, so nothing after them in the conversation runs.
-- **Not fully traced.** `LetterSleep` and `SkipToDebriefLocation` hand off to `EnddayManager`,
-  whose property setters write `auto.daychange_*` variables; which of those these two reach is
-  not traced here. `TequilaPutOnBodysuit` and `TequilaRemoveBodysuit` are Final Cut coroutines
-  whose bodies were not recovered.
+- **A cutscene, which is not a write.** `LetterSleep` and `SkipToDebriefLocation` each hand a
+  `CutsceneSituation` to `EnddayManager` - `LedgerDream` and `KimDebrief` - and neither
+  coroutine touches an `auto.daychange_*` variable, though the class holding them has setters
+  that do. `KimDebrief` changes area and fades; `LedgerDream` does the same and, if Kim is not
+  in the party, returns him to it. THAT ONE WRITE IS READ BY GUARDS - `IsKimHere` is
+  `IsInParty && !IsLeftOutside` - and it still reaches no downstream reader twice over:
+  `LedgerDream` waits out the conversation before doing anything (`WaitWhile InConversation`),
+  and its one call site, 625:868, has no outgoing link at all.
+- **Not fully traced.** `TequilaPutOnBodysuit` and `TequilaRemoveBodysuit` are Final Cut
+  coroutines whose bodies were not recovered.
 
 `RemoveWhiteCheck` retires a white check from the failed and seen caches, which the check reads
 rather than a guard - see [Hidden reads in guards.md](guards.md#hidden-reads). All four call sites
@@ -435,7 +441,7 @@ from one-off queries over the same index rather than from the survey.
 | `DamageVolition`, `HealVolition` and the endurance forms      | the skill value itself, since `DAMAGE` is one of its modifiers                                                          | PFC `Modifiable.Recalc`                                          | the damage slot is tracked; a Volition or Endurance passive check is answered Unknown where the group's damage or healing can cross the margin the plugin sends for it (`core::skill_movers`)                                                                      |
 | `UseSubstanceInHand`                                          | `stats.uses_<group>`                                                                                                    | PFC `HudHeldPanelController.OnSubstanceUse`                      | excluded: no downstream reader                                                                                                                                                                                                                                     |
 | `PassTime`                                                    | cooking thoughts become fixed, substances wear off                                                                      | PFC `SunshineClock.Clang`, `ThoughtManager.BakeThoughts`         | held: the clock moves and these do not follow it - de-m11s.3.3 and de-m11s.3.4. See [Clock](#clock)                                                                                                                                                                |
-| `LetterSleep`, `SkipToDebriefLocation`                        | `auto.daychange_*` through `EnddayManager` property setters                                                             | PFC `EnddayManager`                                              | excluded; which variables each reaches is not traced                                                                                                                                                                                                               |
+| `LetterSleep`                                                | Kim back into the party, where the dream finds him out of it                                                            | PFC `LedgerDream`, `PartyManager.ReturnKitsuragiToParty`        | excluded: the coroutine waits out the conversation, and 625:868 links nowhere                                                                                                                                                                                      |
 | `SetAreaState`, `DestroyObject`, `GainItem("ledger_damaged")` | the `AreaState` Lua table                                                                                               | PFC `AreaStatePlaceholder.SwitchTo`, `Alterant.HandleItemPickup` | excluded: no guard reads it                                                                                                                                                                                                                                        |
 | `XP*SetBool`                                                  | experience                                                                                                              | PFC `TaskLuaFunctions.XPSetBool`                                 | not applied: no guard reads experience                                                                                                                                                                                                                             |
 | red and white checks                                          | `FlagName` on success; red `FlagName_failed` on failure; a failed white check joins `FailedWhiteChecks`                 | PFC `RedCheckNode.CheckSuccess`, `WhiteCheckNode.CheckSuccess`   | tracked flag slots; a white failure is recorded as a `FlagName_failed` slot                                                                                                                                                                                        |

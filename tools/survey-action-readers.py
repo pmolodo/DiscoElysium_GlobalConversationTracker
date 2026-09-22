@@ -149,6 +149,13 @@ WRITES = {
     "RemoveCunoWaitAtFort": ["cuno"],
     "GoTo": ["scene"],
     "GoToDestination": ["scene"],
+    # Each hands a cutscene to EnddayManager - KimDebrief and LedgerDream - and what the
+    # coroutine does is change area, with LedgerDream also returning Kim to the party where it
+    # finds him out of it. Recorded so that a zero here is a count rather than a blank: an
+    # action missing from this table has no writes to look for readers of, which reads the
+    # same as having no readers.
+    "SkipToDebriefLocation": ["scene"],
+    "LetterSleep": ["scene", "kim"],
 }
 # fmt: on
 
