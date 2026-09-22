@@ -1,0 +1,34 @@
+# Cargo settings for this repository.
+
+[build]
+# COMPILE ONCE PER VERSION OF THE CODE, not once per visit to it.
+#
+# `target/` already caches what this tree built last; what it cannot do is remember a
+# build it has since thrown away. Every checkout of another commit, every `cargo clean`,
+# every switch between this tree and a worktree starts the engine's crate from nothing -
+# and the A/B measurements this repository is built around do exactly that, over and over,
+# between two commits that were each compiled minutes earlier.
+#
+# sccache keys on the source and the flags rather than on the file times, so coming back to
+# code it has seen is a copy rather than a compile. Measured on the engine's own crate,
+# `cargo clean -p lookahead_engine --profile release` then rebuild:
+#
+#     without the wrapper          36 s
+#     with it, cold cache          42 s   (the miss, plus the cost of storing it)
+#     with it, warm cache           7 s
+#
+# WHICH IS A RELEASE WIN IN PRACTICE, though nothing here says `release`. An incremental
+# build DOES go through the wrapper - it is not skipped, and incremental compilation is not
+# turned off - and sccache declines to cache it, forwarding to rustc instead. Its own
+# counters say so: a forced `release-incremental` rebuild is 2 compile requests, 0 executed,
+# 2 "non-cacheable calls", under the reasons `incremental` and `crate-type`. What that costs
+# is the wrapper's own overhead, measured at 50 to 100 ms on a 4.3 s rebuild.
+#
+# A `cdylib` is non-cacheable by crate type whatever the profile, so `gct_state` never hits
+# and never will. It is a 1.5 s build; the 36 s one is the engine's crate, and that one
+# caches.
+#
+# IT IS A REQUIRED TOOL, not an optional one: with this line here, a machine without
+# sccache cannot run cargo at all. `RUSTC_WRAPPER=` empty in the environment overrides it
+# for a shell that has to build without one. See DEVELOPING.md.
+rustc-wrapper = "sccache"

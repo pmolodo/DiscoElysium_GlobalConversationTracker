@@ -31,6 +31,13 @@ error in the plugin fails `dotnet test`.
 
 - Windows PowerShell 5.1 (what ships with Windows) or newer
 - the .NET SDK (`dotnet`) - 10.0.400 was used; the plugin targets `net6.0`
+- the Rust toolchain, and **`sccache`**, which `.cargo/config.toml` names as the compiler
+  wrapper: with that line there, a machine without it cannot run cargo at all. `cargo
+  install sccache`, or set `RUSTC_WRAPPER=` (empty) in a shell that has to build without
+  one. What it buys is the second visit to a commit: `target\` remembers what this tree
+  built last, sccache remembers what it built ever, so a rebuild of code it has seen takes
+  **7 seconds against 36** - which is most of what an A/B measurement between two commits
+  spends
 - **for the plugin only**, a Disco Elysium install with **BepInEx 6.0.0-be.688 (IL2CPP /
   CoreCLR)** already set up **and run at least once**, so `<game>\BepInEx\interop` holds
   the generated interop assemblies. Nothing else needs a game: `BepInEx\core` is downloaded
