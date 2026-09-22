@@ -54,12 +54,12 @@ namespace GlobalConversationTracker
             GameFacts.GameClock? time = GameFacts.ReadClock();
             world.DayMinutes = time?.DayMinutes ?? 0;
             world.DayCounter = time?.DayCounter ?? 1;
-            // LOCKED WHATEVER THE READING SAYS, because nothing the game exposes to Lua
-            // says whether its clock is locked, and a crawl that invents movement can mark
-            // an option for content behind a wait the player cannot make happen. So time
-            // stands still during a crawl, which is what it did when the clock could not be
-            // read at all - what changes is that the HOUR is now the hour. See de-3jec.
-            world.ClockLocked = true;
+            // AS THE GAME HAS IT, which is unlocked during ordinary play: the lock is the
+            // must-sleep mechanic, and a crawl told the clock is frozen when it is not
+            // reports a branch closed that the player would walk. No Lua function exposes
+            // it, so it comes from a hook - see ClockLockPatch, which also says why the
+            // answer is locked until that hook has fired. See de-gh1o.
+            world.ClockLocked = time?.Locked ?? true;
 
             foreach (string name in questions.Variables)
             {

@@ -583,6 +583,16 @@ namespace GlobalConversationTracker
                     + "draws them. Tracking is unaffected. Turn it back on with MarkNovelOptions.");
             }
 
+            // Before the look-ahead hook, and not counted among the reasons to keep the
+            // hooks in place: this only tells a crawl what the clock is doing, so with no
+            // crawl running there is nothing for it to tell.
+            TryInstall(
+                "SunshineClock.NormalTimeForward",
+                "a crawl is told whether the game's clock is locked",
+                "Crawls will assume the clock is frozen, which can hide content behind a wait "
+                    + "the player could actually make",
+                () => ClockLockPatch.Install(harmony, log));
+
             bool markingLookAhead = TryInstall(
                 "Sunshine.ConversationLogger.ChooseResponseText",
                 markLookAhead.Value

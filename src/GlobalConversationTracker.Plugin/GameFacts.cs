@@ -124,10 +124,12 @@ namespace GlobalConversationTracker
             /// <summary>Creates a reading.</summary>
             /// <param name="dayMinutes">Minutes past midnight.</param>
             /// <param name="dayCounter">Which day it is.</param>
-            internal GameClock(int dayMinutes, int dayCounter)
+            /// <param name="locked">Whether the clock is frozen where it stands.</param>
+            internal GameClock(int dayMinutes, int dayCounter, bool locked)
             {
                 DayMinutes = dayMinutes;
                 DayCounter = dayCounter;
+                Locked = locked;
             }
 
             /// <summary>Minutes past midnight.</summary>
@@ -135,6 +137,17 @@ namespace GlobalConversationTracker
 
             /// <summary>Which day it is.</summary>
             internal int DayCounter { get; }
+
+            /// <summary>
+            /// Whether the clock is frozen where it stands, so a crawl's <c>PassTime</c>
+            /// moves nothing.
+            /// </summary>
+            /// <remarks>
+            /// Not a Lua read like the two above: no registered function exposes it. See
+            /// <see cref="ClockLockPatch"/> for where it comes from and why the answer is
+            /// LOCKED until that hook has fired.
+            /// </remarks>
+            internal bool Locked { get; }
         }
 
         /// <summary>The game's clock, or null where it cannot be read.</summary>
@@ -166,7 +179,10 @@ namespace GlobalConversationTracker
                 return null;
             }
 
-            return new GameClock((int)hour.asFloat * MinutesPerHour, (int)day.asFloat);
+            return new GameClock(
+                (int)hour.asFloat * MinutesPerHour,
+                (int)day.asFloat,
+                ClockLockPatch.Locked ?? true);
         }
 
         /// <summary>Says something once, and never again this session.</summary>

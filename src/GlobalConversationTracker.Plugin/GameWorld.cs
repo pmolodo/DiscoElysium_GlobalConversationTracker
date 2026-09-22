@@ -42,12 +42,9 @@ namespace GlobalConversationTracker
             GameFacts.GameClock? time = GameFacts.ReadClock();
             DayMinutes = time?.DayMinutes ?? 0;
             DayCounter = time?.DayCounter ?? 1;
-            // LOCKED WHATEVER THE READING SAYS, because nothing the game exposes to Lua
-            // says whether its clock is locked, and a crawl that invents movement can mark
-            // an option for content behind a wait the player cannot make happen. So time
-            // stands still during a crawl, which is what it did when the clock could not be
-            // read at all - what changes is that the HOUR is now the hour. See de-3jec.
-            IsClockLocked = true;
+            // AS THE GAME HAS IT - see LookAheadRequestBuilder.Build, which reads it the
+            // same way so the two worlds cannot disagree about it. See de-gh1o.
+            IsClockLocked = time?.Locked ?? true;
         }
 
         /// <inheritdoc/>
@@ -60,9 +57,9 @@ namespace GlobalConversationTracker
         public int DayCounter { get; }
 
         /// <summary>
-        /// Whether the clock is locked. True when it could not be read at all, so a
-        /// crawl that cannot see the clock leaves it where it is rather than inventing
-        /// movement.
+        /// Whether the clock is frozen where it stands, so a crawl's <c>PassTime</c> moves
+        /// nothing. True where it could not be read at all, so a crawl that cannot see the
+        /// clock leaves it where it is rather than inventing movement.
         /// </summary>
         public bool IsClockLocked { get; }
 
