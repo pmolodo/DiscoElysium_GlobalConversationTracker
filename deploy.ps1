@@ -8,7 +8,9 @@
 .DESCRIPTION
     The everyday iterate command: edit -> .\deploy.ps1 -> relaunch the game.
 
-      1. Builds GlobalConversationTracker.dll (via build.ps1).
+      1. Builds the look-ahead engine and the state library with cargo, in
+         release - the plugin's own build COPIES those rather than building
+         them - and then GlobalConversationTracker.dll.
       2. Works out which game folder to install into, and says so out loud
          before touching anything.
       3. Clears the previous build out of

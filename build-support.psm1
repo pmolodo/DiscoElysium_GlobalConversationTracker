@@ -221,6 +221,12 @@ $PluginPayloadExtensions = @(".dll", ".exe", ".jsonl")
 # file - there is no C# copy of that format - so a plugin installed without it is a plugin
 # that cannot track anything.
 $PluginPayloadByName = @("Google.Protobuf.dll", "gct_state.dll")
+
+# What cargo calls the two artifacts the plugin's build copies, before it renames the engine
+# on the way in - see Invoke-NativeBuild, which builds them, and the csproj, which copies
+# them out of target\release.
+$NativeEngineName = "gct-engine-host.exe"
+$StateLibraryName = "gct_state.dll"
 # Appended to the commit hash the build stamps into the plugin assembly when the
 # tree it was built from differed from that commit in a way the build could see.
 # Written by Get-SourceRevisionId and read back by Get-PluginBuildStamp, which is
@@ -1248,6 +1254,47 @@ function Get-PluginVersion {
 }
 
 
+function Invoke-NativeBuild {
+    # Build the two Rust artifacts the plugin's build copies into its output:
+    # the engine the mod talks to over a pipe, and the state library it loads.
+    #
+    # WHY THIS IS HERE AND NOT LEFT TO THE CALLER. The csproj copies both out of
+    # target\release and builds neither, so without this a deploy installs
+    # whatever that folder happens to hold - and CLAUDE.md has everything else
+    # building with --profile release-incremental, which writes somewhere else
+    # entirely. A stale engine beside a fresh plugin is the worst shape of all:
+    # it runs, it answers, and what it answers is last week's.
+    #
+    # RELEASE, NOT release-incremental. What goes beside the game is the profile
+    # the measurements are taken with and the one the shipped numbers describe;
+    # the incremental profile exists for the test loop - see Cargo.toml, which
+    # says the same.
+    #
+    # Both targets by name rather than a whole-workspace build: these two are
+    # what gets installed, and naming them keeps the measurement drivers and the
+    # test binaries out of a deploy.
+
+    if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+        throw "cargo is not on PATH, and the plugin's build copies target\release\$NativeEngineName and target\release\$StateLibraryName without building them. Install the Rust toolchain, or build those two yourself and deploy again."
+    }
+
+    foreach ($target in @(
+            @{ What = "the look-ahead engine"; File = $NativeEngineName; Args = @("--bin", "gct-engine-host") },
+            @{ What = "the state library"; File = $StateLibraryName; Args = @("-p", "gct_state") })) {
+        Write-Host "Building $($target.What) (release)..."
+        cargo build --release @($target.Args) | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            throw "cargo build --release $($target.Args -join ' ') failed with exit code $LASTEXITCODE"
+        }
+
+        $built = Join-Path $RepoRoot "target\release\$($target.File)"
+        if (-not (Test-Path -LiteralPath $built)) {
+            throw "cargo reported success and $built is not there, so the plugin's build would copy an older one or fail."
+        }
+    }
+}
+
+
 function Invoke-PluginBuild {
     # Verify references, then `dotnet build`. Returns the path to the built
     # plugin DLL; throws if the build fails or the output is missing. `dotnet`
@@ -1258,6 +1305,10 @@ function Invoke-PluginBuild {
     )
 
     $gameDir = Initialize-BuildReferences -DiscoElysiumDir $DiscoElysiumDir
+
+    # BEFORE dotnet, because the csproj COPIES what this builds rather than
+    # building it - see Invoke-NativeBuild.
+    Invoke-NativeBuild
 
     # Stamped into the assembly so a deployed DLL - and any log captured from a
     # session that loaded it - can be tied back to the source it was built from.
