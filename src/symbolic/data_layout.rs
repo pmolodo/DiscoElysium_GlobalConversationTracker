@@ -533,6 +533,35 @@ impl DataLayout {
             .collect()
     }
 
+    /// The largest constant any guard in `graph` compares each slot against.
+    ///
+    /// What bounds a slot's width - see [`Self::narrow_to_thresholds`] - and what decides
+    /// whether the counter cap hides anything. A cap above this loses no distinction the
+    /// guards make: every value past the largest constant compared against a slot answers
+    /// every guard alike, so stopping there is exact.
+    ///
+    /// A SLOT READ IN A SHAPE NO CONSTANT DESCRIBES has no entry, and its absence means "no
+    /// bound" rather than "no comparison" - a reputation range or a query's argument is read
+    /// in a way nothing here can put a number on. A caller deciding whether a cap is safe has
+    /// to treat those as unbounded rather than as unread.
+    pub fn largest_compared(graph: &LookAheadGraph) -> HashMap<usize, u32> {
+        let GuardReads {
+            highest,
+            unreadable,
+            ..
+        } = Self::guard_reads(graph);
+
+        highest
+            .into_iter()
+            .filter(|(slot, _)| !unreadable.contains(slot))
+            .collect()
+    }
+
+    /// The slots `graph` reads in a shape no constant describes - see [`Self::largest_compared`].
+    pub fn unbounded_reads(graph: &LookAheadGraph) -> HashSet<usize> {
+        Self::guard_reads(graph).unreadable
+    }
+
     /// Collects, per slot, everything one sweep of the group's guards can say about how it is
     /// read - see [`GuardReads`], and [`Self::read_comparisons`] for the sweep.
     fn guard_reads(graph: &LookAheadGraph) -> GuardReads {

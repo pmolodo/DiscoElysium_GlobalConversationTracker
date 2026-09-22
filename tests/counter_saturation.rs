@@ -1,30 +1,35 @@
 // SPDX-License-Identifier: MIT
-//! Which counters the cap actually truncates, over the whole game.
+//! The counter cap hides nothing, anywhere in the game.
 //!
-//! ## Why this is a test and not a measurement
+//! ## What would be wrong if it did
 //!
-//! A slot that stops at [`COUNTER_CAP`] when the dialogue could push it higher is a guard
-//! answered against a number the game would never hold - the quiet kind of wrong, since the
-//! search reports a definite answer either way. Which slots those are was the result of a
-//! measurement somebody had to remember to run; a test fails when the set changes.
+//! A slot that stops at [`COUNTER_CAP`] when the dialogue could push it higher, AND whose
+//! guards tell values above the cap apart, is a guard answered against a number the game would
+//! never hold. The search reports a definite answer either way, so nothing says so - which is
+//! why this is a test rather than something somebody remembers to measure.
 //!
-//! IT EARNED ITS KEEP AT ONCE. The measurement it replaces found one such slot over the 429
-//! groups `group_list` names; asked of every group in the index it finds two, and the second
-//! is in groups that can hold a menu just as the first is. See [`KNOWN`].
+//! ## Both halves are needed, and the second is the one that is easy to leave out
 //!
-//! ## What the cap is, and why so little reaches it
+//! Exceeding the cap is not by itself a defect. Every value past the largest constant a guard
+//! compares a slot against answers every guard alike, so stopping there loses no distinction
+//! anybody can observe. Two slots in the shipped database CAN be raised past the cap -
+//! `damage:VOLITION` in the group named by conversation 640, and `reputation.kim` in those
+//! named by 14 and 1177 - and neither is compared against anything near it, so both are
+//! harmless. A test that checked only the arithmetic would have called them defects, and the
+//! first draft of this one did.
 //!
-//! It is the LAST resort rather than the rule, and two things get there first:
+//! ## What the cap has to get past first
+//!
+//! It is the LAST resort rather than the rule:
 //!
 //! - `DataLayout::narrow_to_thresholds` bounds a slot by the largest constant a guard compares
-//!   it against, plus one. Above that ceiling every value answers every guard alike, so
-//!   stopping there is EXACT rather than a truncation.
+//!   it against, plus one.
 //! - A counter that cannot loop is not capped at all. It is rebased to hold the search's own
 //!   contribution as a distance from whatever the save brought, so its width is the sum of the
 //!   group's increments and nothing is clamped.
 //!
-//! `DataLayout::saturates_at_cap` is what is left over: a slot that can loop and whose guards
-//! distinguish more values than the narrowing could bound it to.
+//! `DataLayout::saturates_at_cap` is what is left over: a slot that can loop and is held as a
+//! value rather than a distance.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -35,43 +40,41 @@ use lookahead_engine::symbolic::data_layout::DataLayout;
 
 use gct_measure::common;
 
-/// The slots in the shipped database the cap truncates.
-///
-/// Named rather than counted, so a new one fails LOUDLY with its own name instead of turning a
-/// 2 into a 3.
-///
-/// `damage:VOLITION` is truncated in the group from conversation 1220 and `reputation.kim` in
-/// those from 1177 and 464. All three can hold a menu, so a crawl can run in each.
-///
-/// WHETHER EITHER IS A DEFECT is a different question from whether the arithmetic can reach
-/// it, and this cannot answer it: `damage:VOLITION` needs 36 increment sites all firing, and
-/// what decides whether the truncation is observable at all is whether any guard distinguishes
-/// values above the cap. See de-qkng.
-const KNOWN: [&str; 2] = ["damage:VOLITION", "reputation.kim"];
-
 #[test]
-fn the_counter_cap_truncates_two_slots_in_the_whole_game() {
+fn the_counter_cap_hides_nothing_in_the_whole_game() {
     let Some(path) = common::conversation_index() else {
         return;
     };
     let index = read_index(&path).expect("the index reads");
 
     // ONE GROUP PER SET OF CONVERSATIONS. `discover_group` answers for a conversation, and a
-    // group of nine answers the same nine times - so the reach is what a group is named by.
+    // group of six answers the same six times - so the reach is what a group is named by.
+    //
+    // NAMED BY ITS SMALLEST MEMBER, not by whichever conversation arrived first: the index
+    // holds its conversations in a `HashMap` and the order it offers them is a fact about the
+    // process, so a representative taken from that order changes between runs and so does
+    // every group id this prints.
     let mut groups: BTreeMap<BTreeSet<i32>, i32> = BTreeMap::new();
     for conversation in index.keys() {
         let reach: BTreeSet<i32> = discover_group(&index, *conversation).into_iter().collect();
-        groups.entry(reach).or_insert(*conversation);
+        groups
+            .entry(reach)
+            .and_modify(|named| *named = (*named).min(*conversation))
+            .or_insert(*conversation);
     }
 
-    let mut truncated: BTreeMap<String, Vec<i32>> = BTreeMap::new();
-    let mut counters = 0;
+    let mut observable: BTreeMap<String, Vec<i32>> = BTreeMap::new();
+    let mut harmless: BTreeMap<String, Vec<i32>> = BTreeMap::new();
+    let mut capped = 0;
+
     for start in groups.values() {
         let Ok((graph, _)) = build_group_graph(&index, *start) else {
             continue;
         };
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
         let symbols = graph.symbols().clone();
+        let compared = DataLayout::largest_compared(&graph);
+        let unbounded = DataLayout::unbounded_reads(&graph);
 
         // What the group can add to each slot, every site firing.
         let mut raised: BTreeMap<usize, i32> = BTreeMap::new();
@@ -90,31 +93,46 @@ fn the_counter_cap_truncates_two_slots_in_the_whole_game() {
             if !layout.saturates_at_cap(slot) || layout.slot(slot).is_none() {
                 continue;
             }
-            counters += 1;
-            if sum > COUNTER_CAP {
-                let name = symbols
-                    .name_of(slot)
-                    .map_or_else(|| format!("slot {slot}"), str::to_string);
-                truncated.entry(name).or_default().push(*start);
+            capped += 1;
+            if sum <= COUNTER_CAP {
+                continue;
             }
+
+            // A slot read in a shape no constant describes counts as distinguishing: nothing
+            // here can say where its distinctions stop, and a cap over an unknown is a guess.
+            let distinguishes = match compared.get(&slot) {
+                Some(high) => i32::try_from(*high).is_ok_and(|high| high >= COUNTER_CAP),
+                None => unbounded.contains(&slot),
+            };
+
+            let name = symbols
+                .name_of(slot)
+                .map_or_else(|| format!("slot {slot}"), str::to_string);
+            let into = if distinguishes {
+                &mut observable
+            } else {
+                &mut harmless
+            };
+            into.entry(name).or_default().push(*start);
         }
     }
 
-    let found: Vec<&str> = truncated.keys().map(String::as_str).collect();
     println!(
-        "{} groups, {counters} capped counter slot(s), {} truncated",
+        "{} groups, {capped} capped counter slot(s); {} raised past the cap, {} of them \
+         observable",
         groups.len(),
-        truncated.len(),
+        harmless.len() + observable.len(),
+        observable.len(),
     );
-    for (name, starts) in &truncated {
-        println!("  {name}: in {} group(s), from {starts:?}", starts.len());
+    for (name, starts) in &harmless {
+        println!("  raised past the cap but never compared near it: {name} in {starts:?}");
     }
 
-    assert_eq!(
-        found, KNOWN,
-        "the cap truncates a different set of slots than it did when this was measured - a \
-         slot here is one the dialogue can raise past {COUNTER_CAP}, so a guard comparing it \
-         above that is answered against a number the game would never hold. See de-qkng before \
-         changing this list",
+    assert!(
+        observable.is_empty(),
+        "these slots can be raised past {COUNTER_CAP} AND are compared against something at \
+         least that large, so the search is answering a guard against a number the game would \
+         never hold: {observable:?}. See de-qkng, and do not simply add them to a list - this \
+         is the condition the cap exists to avoid",
     );
 }
