@@ -32,7 +32,7 @@ namespace GlobalConversationTracker.Engine
         /// <c>lookahead_engine::index::FORMAT_VERSION</c>, which write and read the same
         /// line.
         /// </remarks>
-        public const int FormatVersion = 4;
+        public const int FormatVersion = 5;
 
         private const char LastPrintableAscii = '~';
 

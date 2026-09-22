@@ -133,7 +133,7 @@ pub const PLAYER_ACTOR: &str = "396";
 /// The extractor is C# and cannot share a constant with this, so `tests/shipped_index.rs`
 /// checks the two against each other instead: for every name here, an entry that has it in
 /// the full index must still have it in the trimmed one.
-pub const ENTRY_FIELDS_READ: [&str; 16] = [
+pub const ENTRY_FIELDS_READ: [&str; 36] = [
     ACTOR_FIELD,
     PASSIVE_FIELD,
     ANTIPASSIVE_FIELD,
@@ -150,7 +150,46 @@ pub const ENTRY_FIELDS_READ: [&str; 16] = [
     COST_ONCE_FIELD,
     HIDDEN_NOT_ENOUGH_FIELD,
     SEQUENCE_FIELD,
+    // A CHECK'S TARGET MODIFIERS, in the order `IndexFields.Read` spells them: ten
+    // expressions, then the bonus each is worth. See [`MODIFIER_SLOTS`].
+    "variable1",
+    "variable2",
+    "variable3",
+    "variable4",
+    "variable5",
+    "variable6",
+    "variable7",
+    "variable8",
+    "variable9",
+    "variable10",
+    "modifier1",
+    "modifier2",
+    "modifier3",
+    "modifier4",
+    "modifier5",
+    "modifier6",
+    "modifier7",
+    "modifier8",
+    "modifier9",
+    "modifier10",
 ];
+
+/// How many target modifiers a check may carry, which is what the database has room for.
+///
+/// `CheckNodeUtil` reads `variable1` to `variable10` with `modifier1` to `modifier10` beside
+/// them, and stops there - a check with an eleventh would need a field the game never looks
+/// at, so ten is the database's limit rather than a bound this engine chose.
+pub const MODIFIER_SLOTS: usize = 10;
+
+/// The name of the nth modifier's expression field, counting from one.
+pub fn modifier_expression_field(slot: usize) -> String {
+    format!("variable{slot}")
+}
+
+/// The name of the nth modifier's bonus field, counting from one.
+pub fn modifier_bonus_field(slot: usize) -> String {
+    format!("modifier{slot}")
+}
 
 /// The header line's version property, as the extractor writes it.
 ///
@@ -163,7 +202,7 @@ pub const FORMAT_PROPERTY: &str = "format";
 /// game"; this answers "is this an index this engine can read" - and an index from an
 /// older build would pass its content hash while missing fields the engine has since
 /// started reading, which is a cache hit on a file that cannot answer the question.
-pub const FORMAT_VERSION: i32 = 4;
+pub const FORMAT_VERSION: i32 = 5;
 
 /// A shipped index's header, which is its first line.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]

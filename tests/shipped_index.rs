@@ -21,9 +21,11 @@
 
 use std::collections::HashMap;
 
+use lookahead_engine::core::types::DialogueCheckKind;
 use lookahead_engine::index::journal::Journal;
 use lookahead_engine::index::{
-    ENTRY_FIELDS_READ, build_group_graph, conversation_fields_read, discover_group, read_index,
+    ENTRY_FIELDS_READ, MODIFIER_SLOTS, build_group_graph, conversation_fields_read, determine_kind,
+    discover_group, modifier_bonus_field, modifier_expression_field, read_index,
 };
 
 use gct_measure::common;
@@ -168,6 +170,70 @@ fn the_trimmed_index_keeps_every_field_the_engine_reads() {
         "only {} of the engine's fields were seen at all; is the trim keeping anything?",
         kept.len(),
     );
+}
+
+/// The shipped index carries every white check's target modifiers.
+///
+/// THE NAMES ARE THE WHOLE RISK, which is the failure this file was written for: a field name
+/// spelled wrong is a field no entry has, and a test that only compares the two indexes
+/// against each other passes on it happily, since there is nothing on either side to compare.
+/// So this asks the database's own population instead - every white check has at least one
+/// modifier, and the bonus beside it is a number.
+///
+/// 126 white checks in the database this was written against, and not one without a modifier.
+#[test]
+fn the_shipped_index_carries_the_white_checks_modifiers() {
+    let Some(trimmed) = common::shipped_index() else {
+        return;
+    };
+    let trimmed = read_index(&trimmed).expect("the trimmed index reads");
+
+    let mut checks = 0usize;
+    let mut modifiers = 0usize;
+    for (id, conversation) in &trimmed {
+        for entry in &conversation.entries {
+            if determine_kind(&entry.fields) != DialogueCheckKind::White {
+                continue;
+            }
+            checks += 1;
+
+            let mut carried = 0usize;
+            for slot in 1..=MODIFIER_SLOTS {
+                let Some(expression) = entry.fields.get(&modifier_expression_field(slot)) else {
+                    continue;
+                };
+                if expression.trim().is_empty() {
+                    continue;
+                }
+                carried += 1;
+
+                let bonus = entry
+                    .fields
+                    .get(&modifier_bonus_field(slot))
+                    .map(|text| text.trim().to_string())
+                    .unwrap_or_default();
+                assert!(
+                    bonus.parse::<i32>().is_ok(),
+                    "{id}:{} modifier {slot} is worth '{bonus}', which is not a number",
+                    entry.id,
+                );
+            }
+
+            assert!(
+                carried > 0,
+                "{id}:{} is a white check carrying no modifier, so either the database has \
+                 gained one of those or the field names here no longer match it",
+                entry.id,
+            );
+            modifiers += carried;
+        }
+    }
+
+    assert!(
+        checks > 100,
+        "only {checks} white checks in the shipped index, which is too few to be the game's",
+    );
+    eprintln!("{checks} white checks carry {modifiers} modifiers");
 }
 
 /// The shipped index carries the whole journal, and only the fields the engine reads for it.

@@ -45,6 +45,32 @@ namespace GlobalConversationTracker.Engine
             // scheduled with '@' - takes a continue that the entry's links do not predict.
             // See de-oaaq and lookahead_engine::index::SEQUENCE_FIELD.
             "Sequence",
+            // A CHECK'S TARGET MODIFIERS, ten expressions and the bonus each is worth when
+            // it holds. The game adds the bonuses of whichever are true to the check's
+            // difficulty, and reopens a FAILED white check when that total falls below what
+            // it was at the failure - see CheckNodeUtil.GetCheckModifierList and
+            // FailedWhiteChecks.IsFailedWhiteCheckPossible. Every one of the game's 126
+            // white checks carries at least one.
+            "variable1",
+            "variable2",
+            "variable3",
+            "variable4",
+            "variable5",
+            "variable6",
+            "variable7",
+            "variable8",
+            "variable9",
+            "variable10",
+            "modifier1",
+            "modifier2",
+            "modifier3",
+            "modifier4",
+            "modifier5",
+            "modifier6",
+            "modifier7",
+            "modifier8",
+            "modifier9",
+            "modifier10",
         };
 
         /// <summary>

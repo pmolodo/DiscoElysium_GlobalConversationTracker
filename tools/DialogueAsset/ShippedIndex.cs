@@ -45,7 +45,7 @@ namespace GlobalConversationTracker.DialogueAsset
         /// engine has since started reading. That is a cache hit on a file that cannot
         /// answer the question, which is worse than a miss.
         /// </remarks>
-        public const int FormatVersion = 4;
+        public const int FormatVersion = 5;
 
         /// <summary>The header line's version property.</summary>
         /// <remarks>
