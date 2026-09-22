@@ -956,8 +956,8 @@ mod branch_tests {
             .build();
         assert!(!DataLayout::clock_can_move(&still, &unlocked));
 
-        // AND THE READ SIDE, which is what most time-passing groups fail: 27 of the 35 ask
-        // the hour nowhere, and a register they cannot look at is pure cost.
+        // AND THE READ SIDE, which is what most time-passing groups fail: 29 of the 38 ask the
+        // hour nowhere, and a register they cannot look at is pure cost.
         let unread = GraphBuilder::new()
             .add(Entry::new(0).script("PassTime()").links(&[1]))
             .add(Entry::new(1))

@@ -1321,10 +1321,10 @@ impl DataLayout {
     ///
     /// AND SOMETHING HAS TO BE ABLE TO READ IT, which is the same principle
     /// [`Self::keeping_only_read`] applies to slots: a register nothing looks at is pure cost.
-    /// Only 8 of those 35 groups ask the hour anywhere in them, so the other 27 would be
-    /// spending bits on a value they cannot observe. Sound by construction - where no guard
-    /// asks the hour there is nothing for a register to answer, and `GuardCompiler`'s
-    /// world-answered path gives the identical result.
+    /// Of the 1,422 groups the engine builds, 38 can move the clock and 9 of those can read
+    /// it, so 29 would be spending bits on a value they cannot observe. Sound by construction
+    /// - where no guard asks the hour there is nothing for a register to answer, and
+    /// `GuardCompiler`'s world-answered path gives the identical result.
     ///
     /// NOTHING ELSE READS IT, and that is settled rather than pending. Passing time also bakes
     /// thoughts and wears substances off, either of which moves a skill a passive check
