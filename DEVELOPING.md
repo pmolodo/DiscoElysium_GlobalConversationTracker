@@ -510,6 +510,23 @@ folder.
 A single file's tests are still one command: the file name is a module, so
 `cargo test --test suite corpus::` runs the whole of `tests/corpus.rs` and nothing else.
 
+## A warning fails the build
+
+**Both languages, every project.** `[workspace.lints.rust] warnings = "deny"` in `Cargo.toml`,
+which each package opts into with `[lints] workspace = true`; `TreatWarningsAsErrors` in
+`Directory.Build.props`, which covers the test projects that were the only ones without it and
+so the only ones that could carry a warning.
+
+The reasoning is the same on both sides and is written out beside each setting: a warning
+nobody has to clear is one that accumulates, and a tree with forty of them is one where the
+forty-first is invisible. Denying is the only thing that has ever kept a count at zero.
+
+**What it costs, and it is real:** a toolchain or analyzer that ships a new rule can fail a
+build for somebody who changed nothing. The way out is to set that one lint back to `warn`
+beside the setting, clear it, and take the line out again - a short job for one developer, and
+cheaper than a count that only ever rises. Both halves were checked by deliberately
+introducing a warning and watching the build fail (de-g6ml).
+
 ## Safety rules baked into the scripts
 
 - **The repo's reference material is never written to.** `deploy.ps1` refuses any target

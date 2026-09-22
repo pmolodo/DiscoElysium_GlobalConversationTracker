@@ -8,6 +8,21 @@
 [workspace]
 members = ["crates/*"]
 
+# A WARNING NOBODY HAS TO CLEAR IS A WARNING THAT ACCUMULATES, and a tree with forty of them
+# is one where the forty-first is invisible. So a warning fails the build here, which is the
+# only thing that has ever kept a count at zero.
+#
+# The argument against is real and worth writing down: a toolchain upgrade can invent a lint
+# overnight and fail a build for somebody who changed nothing. That is a thirty-second fix in
+# a repository with one developer and no fleet - set the offending lint back to "warn" beside
+# this comment, fix it, and take the line out again - and it is cheaper than the alternative,
+# which is a count that only ever rises.
+#
+# Applies to OUR crates alone. A dependency's warnings are not ours to clear, and Cargo does
+# not apply a lints table to one.
+[workspace.lints.rust]
+warnings = "deny"
+
 # Optimized correctness checks reuse compiler work after an edit. This is a test profile:
 # shipped engine builds and performance measurements still use `--release`, whose smaller
 # codegen-unit count is the artefact we ship and measure.
@@ -101,3 +116,6 @@ gct_measure = { path = "crates/gct-measure" }
 # For the tests that open a packed save and look inside it. The packer itself lives with the
 # formats and brings its own copy; this is the reader a test uses to check what it wrote.
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+
+[lints]
+workspace = true

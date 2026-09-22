@@ -21,7 +21,6 @@
           .xml is a by-product nobody ships - only the DLL is deployed.
         -->
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
-        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <!-- BepInEx resolves plugin dependencies itself; a deps.json only confuses it. -->
         <GenerateDependencyFile>false</GenerateDependencyFile>
         <!--

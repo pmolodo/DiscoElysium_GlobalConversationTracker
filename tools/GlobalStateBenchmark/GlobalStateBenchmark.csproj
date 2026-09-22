@@ -14,7 +14,6 @@
     <CheckEolTargetFramework>false</CheckEolTargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <IsPackable>false</IsPackable>
     <RootNamespace>GlobalStateBenchmark</RootNamespace>
     <AssemblyName>GlobalStateBenchmark</AssemblyName>

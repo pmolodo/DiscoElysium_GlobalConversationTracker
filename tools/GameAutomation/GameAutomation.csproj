@@ -35,7 +35,6 @@
     <CheckEolTargetFramework>false</CheckEolTargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <RootNamespace>GlobalConversationTracker.Automation</RootNamespace>
     <AssemblyName>GameAutomation</AssemblyName>

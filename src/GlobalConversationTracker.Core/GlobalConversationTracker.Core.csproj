@@ -10,7 +10,6 @@
     <TargetFramework>netstandard2.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <RootNamespace>GlobalConversationTracker</RootNamespace>
     <AssemblyName>GlobalConversationTracker.Core</AssemblyName>

@@ -36,3 +36,6 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 # LOCAL TIME, with UTC as the answer where the offset cannot be had - a save stamped in the
 # wrong zone is odd to read, and one that refuses to pack is a stopped run.
 time = { version = "0.3", features = ["local-offset"] }
+
+[lints]
+workspace = true

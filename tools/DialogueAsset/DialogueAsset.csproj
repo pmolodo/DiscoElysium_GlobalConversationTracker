@@ -12,7 +12,6 @@
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <IsPackable>false</IsPackable>
     <RootNamespace>GlobalConversationTracker.DialogueAsset</RootNamespace>
     <AssemblyName>DialogueAsset</AssemblyName>

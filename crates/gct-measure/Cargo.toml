@@ -32,3 +32,6 @@ gct_save_files = { path = "../gct-save-files" }
 
 [lib]
 path = "src/lib.rs"
+
+[lints]
+workspace = true

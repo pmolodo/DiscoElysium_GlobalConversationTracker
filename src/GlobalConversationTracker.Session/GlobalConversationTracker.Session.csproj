@@ -13,7 +13,6 @@
     <CheckEolTargetFramework>false</CheckEolTargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <RootNamespace>GlobalConversationTracker.Session</RootNamespace>
     <AssemblyName>GlobalConversationTracker.Session</AssemblyName>

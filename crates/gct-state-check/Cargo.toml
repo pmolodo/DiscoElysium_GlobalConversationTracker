@@ -26,3 +26,6 @@ path = "src/lib.rs"
 # game, so the split that keeps the linked library small does not apply to it.
 gct_save_files = { path = "../gct-save-files" }
 thiserror = "1.0"
+
+[lints]
+workspace = true

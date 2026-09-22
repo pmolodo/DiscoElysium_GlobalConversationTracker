@@ -13,7 +13,6 @@
     <CheckEolTargetFramework>false</CheckEolTargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <IsPackable>false</IsPackable>
     <RootNamespace>GlobalConversationTracker.CrashHarness</RootNamespace>
     <AssemblyName>GlobalConversationTracker.CrashHarness</AssemblyName>

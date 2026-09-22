@@ -548,7 +548,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         /// fifty milliseconds apart against a hold of one hundred.</para>
         /// </remarks>
         [Fact]
-        public void SaveWhoseFileIsBrieflyHeldElsewhere_RetriesAndLands()
+        public async Task SaveWhoseFileIsBrieflyHeldElsewhere_RetriesAndLands()
         {
             using var temp = new TempDirectory();
             GlobalStateStore store = temp.CreateStore();
@@ -571,7 +571,7 @@ namespace GlobalConversationTracker.Persistence.Tests
             // Would throw without the retry: the rotation cannot move a file another
             // handle holds with FileShare.None.
             store.Save(NewGeneration());
-            holder.GetAwaiter().GetResult();
+            await holder;
 
             AssertSameEntries(NewGeneration(), store.Load().RequireState());
         }
@@ -587,7 +587,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         /// that failed cannot do that, and this says so out loud.
         /// </remarks>
         [Fact]
-        public void RetryAfterTheRotation_DoesNotRotateASecondTime()
+        public async Task RetryAfterTheRotation_DoesNotRotateASecondTime()
         {
             using var temp = new TempDirectory();
             GlobalStateStore store = temp.CreateStore();
@@ -605,7 +605,7 @@ namespace GlobalConversationTracker.Persistence.Tests
 
             Assert.True(locked.Wait(TimeSpan.FromSeconds(5)), "the holder never took the file");
             store.Save(NewGeneration());
-            holder.GetAwaiter().GetResult();
+            await holder;
 
             // One rotation happened, so the backup holds the generation that was live -
             // not the one before it, and not the new one.

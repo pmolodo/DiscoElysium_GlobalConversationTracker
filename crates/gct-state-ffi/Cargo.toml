@@ -23,3 +23,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 gct_formats = { path = "../gct-formats" }
+
+[lints]
+workspace = true

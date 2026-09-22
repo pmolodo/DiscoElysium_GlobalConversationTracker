@@ -18,7 +18,6 @@
     <CheckEolTargetFramework>false</CheckEolTargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <RootNamespace>GlobalConversationTracker.Persistence</RootNamespace>
     <AssemblyName>GlobalConversationTracker.Persistence</AssemblyName>
