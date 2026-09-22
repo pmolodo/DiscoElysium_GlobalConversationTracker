@@ -30,7 +30,7 @@
 #   tools/run-logged.sh tools/measure-menus.py all   # kind from the tool's own header
 #   tools/run-logged.sh --kind performance cargo residue -- \
 #     cargo run --release -p gct_measure --example search_residue
-#   tools/run-logged.sh --kind testing cargo corpus -- cargo test --test corpus
+#   tools/run-logged.sh --kind testing cargo corpus -- cargo test --test suite corpus::
 #   tools/run-logged.sh --kind testing dotnet unit -- dotnet test
 #   DISCO_ELYSIUM_GCT_INGAME_TESTS=1 \
 #     tools/run-logged.sh --kind testing dotnet in-game -- dotnet test tools/GameAutomation.Tests

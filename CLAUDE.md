@@ -11,7 +11,7 @@ it would be.
 Genuinely instant things - `ls`, `git status`, reading a file - do not need it.
 
 ```sh
-tools/run-logged.sh --kind testing cargo full-suite -- cargo test --release
+tools/run-logged.sh --kind testing cargo full-suite -- cargo test --profile release-incremental
 tools/run-logged.sh --kind performance cargo menu-761 -- \
   cargo run --release -p gct_measure --example menu_matrix -- --conversation 761
 ```

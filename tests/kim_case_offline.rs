@@ -15,7 +15,7 @@
 //! Run it with the output showing:
 //!
 //! ```text
-//! cargo test --profile release-incremental --test kim_case_offline -- --nocapture
+//! cargo test --profile release-incremental --test suite kim_case_offline:: -- --nocapture
 //! ```
 
 use std::collections::HashSet;

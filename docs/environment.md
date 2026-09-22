@@ -108,5 +108,5 @@ drifted too.
 
 ```bash
 tools/smoke.sh                                  # does not run this - it is an integration test
-cargo test --release --test environment_table   # does
+cargo test --profile release-incremental --test suite environment_table::  # does
 ```

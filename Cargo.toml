@@ -20,6 +20,11 @@ name = "lookahead_engine"
 version = "0.1.0"
 edition = "2024"
 
+# THE TEST TARGETS ARE NAMED HERE, not found by their file names. Cargo's default is one
+# binary per `tests/*.rs`, which is 45 links against a thirty-megabyte library for any change
+# at all; `tests/suite.rs` gathers them into one and says why. See de-83ae.
+autotests = false
+
 [lib]
 # rlib, and only rlib: for the tests, the benches, the CLI and the engine host. There was
 # a cdylib here for the plugin to DllImport, which is how the look-ahead first got back
@@ -35,6 +40,23 @@ crate-type = ["rlib"]
 [[bin]]
 name = "gct-engine-host"
 path = "src/host_main.rs"
+
+# EVERY INTEGRATION TEST THAT CAN SHARE A PROCESS. The roll of files is in the target's own
+# source, so adding a test means editing one file rather than two.
+[[test]]
+name = "suite"
+path = "tests/suite.rs"
+
+# THE TWO THAT CANNOT, and the reason is the same for both: a `#[global_allocator]` is one per
+# binary, and each of these installs its own. `out_of_memory` caps the heap so the refusal path
+# can be provoked in milliseconds, and `manager_memory` counts what is live.
+[[test]]
+name = "out_of_memory"
+path = "tests/out_of_memory.rs"
+
+[[test]]
+name = "manager_memory"
+path = "tests/manager_memory.rs"
 
 [dependencies]
 ahash = "0.8"

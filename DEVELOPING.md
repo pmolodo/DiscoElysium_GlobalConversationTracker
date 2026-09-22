@@ -423,7 +423,7 @@ dotnet run --project tools/GameHarness/GameHarness.csproj -- look-ahead
 neither is ours to modify:
 
 ```bash
-tools/run-logged.sh --kind testing cargo corpus -- cargo test --test corpus
+tools/run-logged.sh --kind testing cargo corpus -- cargo test --test suite corpus::
 tools/run-logged.sh --kind testing dotnet unit -- dotnet test
 DISCO_ELYSIUM_GCT_INGAME_TESTS=1 \
   tools/run-logged.sh --kind testing dotnet in-game -- dotnet test tools/GameAutomation.Tests
@@ -469,22 +469,46 @@ reaches for it. The command above is what says so. See `performance/README.md`.
 Measured by touching a library source and asking for a verdict - the first two rows on
 2026-09-19, the last on 2026-09-21:
 
-| what was run                      | edit to verdict | what it covers                   |
-| --------------------------------- | --------------- | -------------------------------- |
-| `tools/smoke.sh` - debug, `--lib` | 6 s             | 471 unit tests                   |
-| release, `--lib`                  | 58 s            | the same 471                     |
-| `cargo test --release`            | 4m05s           | 48 binaries, 68 s of it in tests |
+| what was run                      | edit to verdict | what it covers                  |
+| --------------------------------- | --------------- | ------------------------------- |
+| `tools/smoke.sh` - debug, `--lib` | 6 s             | 471 unit tests                  |
+| release, `--lib`                  | 58 s            | the same 471                    |
+| the full suite, as above          | 52 s            | 6 binaries, 41 s of it in tests |
 
 Picking fewer TESTS is not the lever: every test here finishes in under twelve seconds and
-most in under one, so execution is a minute and the other four are compiling and linking
-twenty-nine integration binaries. `--lib` needs one binary and the debug profile makes
-building it seconds - the middle row is what leaving either lever unpulled costs.
+most in under one, so execution is most of that last row and building is ten seconds of it.
+The links were the rest, and they are gone - see below.
 
 The smoke run is **every unit test**, a category rather than a list, so a test added to the
 library is in it from the moment it is written. It cannot answer anything the integration
 tests ask - the oracle, the committed saves, the wire schema, the scenario suites - which is
 why it is the loop and not the gate. The two are told apart in the logs by name:
 `..._cargo_smoke.txt` against `..._cargo_full-suite.txt`.
+
+## One test binary, not forty-five
+
+Cargo's default is a separate test binary per `tests/*.rs`, each linking the whole engine
+again. At 45 files that dominated what the suite cost, so `autotests` is off in `Cargo.toml`
+and **`tests/suite.rs` names the files it gathers, by `#[path]`**. Measured 2026-09-21, both
+sides on `release-incremental`: an edit under `src/` went from 20-25 s of rebuilding to 10 s,
+and building the root package from nothing went from 160 s to 122 s.
+
+**A NEW TEST FILE HAS TO BE ADDED TO THAT ROLL**, and this is the cost of the arrangement:
+`tests/` is no longer a category Cargo reads, so a file in neither `tests/suite.rs` nor
+`Cargo.toml` is built by nothing and run by nobody, silently. The compensation is that the
+roll is one list in one file.
+
+**Tests in one binary share a process**, and Cargo runs binaries one after another while a
+binary runs its own tests in parallel - so two tests that used to be in different files can
+now overlap. Anything left in a fixed place needs a name no two tests can collide on;
+`convert_verb` is the pattern, with both the process id and the test's own name in its scratch
+folder.
+
+`out_of_memory` and `manager_memory` keep their own targets, because each installs a
+`#[global_allocator]` and a binary gets one.
+
+A single file's tests are still one command: the file name is a module, so
+`cargo test --test suite corpus::` runs the whole of `tests/corpus.rs` and nothing else.
 
 ## Safety rules baked into the scripts
 
