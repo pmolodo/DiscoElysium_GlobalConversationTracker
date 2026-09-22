@@ -419,8 +419,14 @@ impl ILookAheadWorld for SaveWorld {
         self.day_counter
     }
 
+    /// LOCKED, as the plugin sends it and as `save_world` builds it.
+    ///
+    /// A measurement is worth having because it measures what ships, and what ships is a
+    /// crawl whose clock does not move: the plugin locks it whatever the game reads, so a
+    /// world here that left it unlocked would carry a clock register no player's search
+    /// carries and move time no player's search moves. See de-gh1o for the lock itself.
     fn is_clock_locked(&self) -> bool {
-        false
+        true
     }
 
     /// Every roll is left free to succeed. This world does not read what the save's thoughts
