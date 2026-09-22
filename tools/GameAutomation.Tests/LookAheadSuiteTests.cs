@@ -295,10 +295,10 @@ namespace GlobalConversationTracker.Automation.Tests
             // An absent file is the pristine case and passes; a file saying a state was
             // built is the failure. Asks are NOT the failure - the engine records one for
             // every option it is handed, including the ones it refuses to search - so the
-            // fixture reads states rather than crawls. See LookAheadSuites.NoCrawls.
+            // fixture reads entries reached rather than crawls. See LookAheadSuites.NoCrawls.
             Assert.Null(statistics.Check(null));
-            Assert.Null(statistics.Check(Statistics(crawls: 4, states: 0)));
-            Assert.NotNull(statistics.Check(Statistics(crawls: 1, states: 1)));
+            Assert.Null(statistics.Check(Statistics(crawls: 4, reached: 0)));
+            Assert.NotNull(statistics.Check(Statistics(crawls: 1, reached: 1)));
         }
 
         /// <summary>
@@ -343,7 +343,7 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.Equal(MarkerPolicy.Named, Assert.Single(scenario.Stops).Markers);
             Assert.Equal("true", suite.PluginSettings["KeepLookAheadStates"]);
             Assert.Null(statistics.Check(null));
-            Assert.NotNull(statistics.Check(Statistics(crawls: 1, states: 1)));
+            Assert.NotNull(statistics.Check(Statistics(crawls: 1, reached: 1)));
         }
 
         [Fact]
@@ -594,7 +594,16 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         /// <summary>The part of a statistics file the no-crawl fixture reads.</summary>
-        private static string Statistics(int crawls, int states) =>
-            $"{{\"crawls\":{crawls},\"states\":{{\"total\":{states}}}}}";
+        /// <summary>A statistics artefact naming what a run cost.</summary>
+        /// <param name="crawls">How many searches were asked for.</param>
+        /// <param name="reached">How many entries those searches walked.</param>
+        /// <remarks>
+        /// REACHED RATHER THAN STATES, which is what this said until de-c7do: the
+        /// engine never fills <c>states_explored</c> in, so a fixture built on it
+        /// agreed with a policy that could not fail. <c>entriesReached</c> is the
+        /// counter the engine actually sets.
+        /// </remarks>
+        private static string Statistics(int crawls, int reached) =>
+            $"{{\"crawls\":{crawls},\"entriesReached\":{{\"total\":{reached}}}}}";
     }
 }

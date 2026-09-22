@@ -972,12 +972,22 @@ namespace GlobalConversationTracker.Harness
     /// a pristine profile the file is legitimately absent. A file that IS there must
     /// report that no state was ever built.</para>
     ///
-    /// <para>STATES RATHER THAN CRAWLS, since the marker moved to the bridge (de-i5xj.6).
-    /// The shortcut that makes this suite's claim true now fires inside the engine, past
-    /// the point where the plugin has counted an ask - so the ask is recorded either way
-    /// and counting asks would fail a suite that is behaving perfectly. What the shortcut
-    /// still shows, and what this suite is really about, is that the search cost nothing:
-    /// zero states explored, over however many options were asked about.</para>
+    /// <para>NOT CRAWLS, since the marker moved to the bridge (de-i5xj.6). The shortcut that
+    /// makes this suite's claim true now fires inside the engine, past the point where the
+    /// plugin has counted an ask - so the ask is recorded either way and counting asks would
+    /// fail a suite that is behaving perfectly. What the shortcut still shows, and what this
+    /// suite is really about, is that the search COST NOTHING.</para>
+    ///
+    /// <para>AND NOT STATES EITHER, which is what this asked until de-c7do. The same move to
+    /// the bridge that made crawls the wrong number is what stopped the engine filling
+    /// <c>states_explored</c> in: every answer is built by <c>bridge::unanswered</c>, which
+    /// sets it to zero, and nothing writes it again. So the assertion was rewritten onto a
+    /// field the new engine never sets, and passed unconditionally for as long as it stood.
+    /// Nothing it ever reported is evidence of anything.</para>
+    ///
+    /// <para>ENTRIES REACHED is the live counter: the engine sets <c>nodes_reached</c> to the
+    /// backward passes a marking performed, and a refused search performs none. It is written
+    /// as <c>entriesReached.total</c>.</para>
     /// </remarks>
     private static string? NoCrawls(string? json)
     {
@@ -987,17 +997,17 @@ namespace GlobalConversationTracker.Harness
         }
 
         using JsonDocument document = JsonDocument.Parse(json);
-        long states = document.RootElement
-            .GetProperty("states").GetProperty("total").GetInt64();
-        if (states == 0)
+        long reached = document.RootElement
+            .GetProperty("entriesReached").GetProperty("total").GetInt64();
+        if (reached == 0)
         {
             return null;
         }
 
         long crawls = document.RootElement.GetProperty("crawls").GetInt64();
-        return $"{states} states were explored over {crawls} crawls, but none should have "
-            + "been - nothing here outranks any option, so every search should have been "
-            + "refused before it built a state";
+        return $"{reached} entr(y/ies) were reached over {crawls} crawls, but none should "
+            + "have been - nothing here outranks any option, so every search should have "
+            + "been refused before it walked anything";
     }
 
     /// <summary>Checks the overflow log names the conversation that ran out.</summary>
