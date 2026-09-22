@@ -11,7 +11,24 @@ use lookahead_engine::bridge::{LookAheadRequest, NodeRef, WorldRawData, answer};
 use lookahead_engine::core::types::DialogueCheckKind;
 use lookahead_engine::index::{build_group_graph, read_index};
 
+use lookahead_engine::core::types::{DialogueNodeId, Ternary};
+use lookahead_engine::graph::LookAheadGraph;
+use lookahead_engine::symbolic::backward::{Backward, SettledPass};
+use lookahead_engine::symbolic::budget::DiagramBudget;
+use lookahead_engine::symbolic::data_layout::DataLayout;
+use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::reachability::seed_of;
+use lookahead_engine::symbolic::vars::DataVars;
+use lookahead_engine::world::GameWorld;
+
 use gct_measure::common;
+use gct_measure::{prepared, save_world};
+
+/// What a counter saturates at, which none of this turns on.
+const CAP: i32 = 16;
+
+/// The save that failed the mirror's check, in a real playthrough.
+const SAVE: &str = "at-evart";
 
 /// A world that decides nothing, so every check is open and both its branches are live.
 fn undecided() -> WorldRawData {
@@ -328,4 +345,106 @@ fn an_outcome_on_the_top_rung_is_not_searched() {
             rolled.entry,
         );
     }
+}
+
+/// The mirror's white check, which `at-evart` failed, is offered again because the group can
+/// lower its target.
+///
+/// ## Why this conversation, and why this pair
+///
+/// `10:3` subdues *The Expression* against a target of 6, and one of its six modifiers is
+/// worth -2 when `whirling.mirror_expression_source_located` holds - which is the FLAG OF THE
+/// OTHER WHITE CHECK in the same menu, `10:423`. So the game's rule closes on itself inside one
+/// conversation: fail the first, pass the second, and the first is worth trying again. A save
+/// the game wrote has both of them failed.
+///
+/// ## What makes the assertion mean something
+///
+/// `10:5` is a node guarded on `whirling.mirror_subdued_expression`, the first check's own pass
+/// flag, and NO SCRIPT IN THE DATABASE WRITES THAT NAME - the check passing is the only thing
+/// that sets it. So reaching 10:5 from the conversation's start means the search passed a check
+/// the save had already failed, which it can only do if something reopened it.
+///
+/// The second half is the same question with this check's reopening taken away, on the same
+/// graph and the same world. Without it the search must not reach 10:5 - which is what the
+/// engine did before de-vdy9, and what it would do again if the rule were lost.
+#[test]
+fn a_shipped_failed_white_check_is_offered_again_when_its_target_can_fall() {
+    let Some(path) = common::shipped_index() else {
+        return;
+    };
+    let Some(index) = index() else {
+        return;
+    };
+
+    const MIRROR: i32 = 10;
+    let check = DialogueNodeId::new(MIRROR, 3);
+    let start = DialogueNodeId::new(MIRROR, 0);
+    // Guarded on the check's pass flag, which nothing but the check writes.
+    let behind = DialogueNodeId::new(MIRROR, 5);
+
+    let (graph, _) = build_group_graph(&index, MIRROR).expect("conversation 10 builds a group");
+    assert!(
+        !graph
+            .get(check)
+            .expect("the mirror's check is in its own group")
+            .reopen_when
+            .is_empty(),
+        "{check:?} kept no way to be reopened, so this test is asking nothing",
+    );
+
+    let shipped = prepared::Shipped::at(path, Default::default());
+    let raw = save_world::of_save(&graph, MIRROR, &shipped, SAVE);
+    let world = GameWorld::declaring(raw, common::declared());
+
+    // THE SAVE HAS FAILED IT, which is the premise. A world where the check is open would
+    // reach what is behind it whatever this engine does about reopening.
+    let failed = format!(
+        "whirling.mirror_subdued_expression{}",
+        lookahead_engine::index::FAILED_FLAG_SUFFIX,
+    );
+    assert_eq!(
+        world.variable(&failed).as_condition(),
+        Ternary::True,
+        "{SAVE} has not failed the mirror's check, so there is nothing to reopen",
+    );
+
+    assert!(
+        reaches(&graph, &world, start, behind),
+        "the search never passed the reopened check",
+    );
+
+    let mut closed = graph.clone();
+    closed
+        .get_mut(check)
+        .expect("the check is there")
+        .reopen_when
+        .clear();
+    assert!(
+        !reaches(&closed, &world, start, behind),
+        "the check's pass flag was set without anything to reopen it, so reaching {behind:?} \
+         says nothing about the reopening",
+    );
+}
+
+/// Whether the backward search reaches `target` from `start` in this world.
+fn reaches(
+    graph: &LookAheadGraph,
+    world: &GameWorld,
+    start: DialogueNodeId,
+    target: DialogueNodeId,
+) -> bool {
+    let layout = DataLayout::for_group(graph, world, CAP);
+    let symbols = graph.symbols().clone();
+    let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
+    let mut compiler = GuardCompiler::new(&vars)
+        .with_world(world)
+        .with_constant_clock(DataLayout::group_passes_time(graph));
+    let seed = seed_of(graph, world, &vars).expect("room for a seed");
+    let backward = Backward::reaching(graph, target, &mut compiler, world, CAP as u32);
+    assert!(
+        backward.stats().reached_fixed_point,
+        "the backward pass did not settle, so its answer is a floor rather than an answer",
+    );
+    backward.reachable_from(start, &seed)
 }
