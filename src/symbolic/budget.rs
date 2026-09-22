@@ -45,9 +45,10 @@ impl DiagramBudget {
     ///
     /// ## NOW MEASURED, and 32 was an undercount (de-mnrb)
     ///
-    /// `crates/gct-measure/examples/manager_memory.rs` fills one manager and reads the allocator as it
-    /// grows, so the MARGINAL cost of a node - the table's share, which construction cannot
-    /// show - is measured rather than reasoned:
+    /// `manager_memory` filled one manager and read the allocator as it
+    /// grew, so the MARGINAL cost of a node - the table's share, which construction cannot
+    /// show - is measured rather than reasoned. `performance/removed_tools.md` says how to
+    /// fill one again:
     ///
     /// ```text
     ///        nodes     held MB      grown MB  marginal B/node

@@ -168,7 +168,9 @@ measurement it ran, and runs a symbolic measurement ONE CONVERSATION PER PROCESS
     tools/measure-symbolic.sh backward_support 368 631
     tools/measure-symbolic.sh layout_shape slots 14
 
-The first argument is the example's name. A measurement with several stages behind one
+The first argument is the example's name, and it is required - the script runs whichever
+driver it is given, so no one of them is the obvious default, and it lists what there is
+when called without one. A measurement with several stages behind one
 `main` takes the stage second; anything that looks like a number is read as a conversation,
 so the stage can be left out.
 

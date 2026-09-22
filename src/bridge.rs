@@ -1642,8 +1642,8 @@ where
 /// THE SHAPE IS BUILT HERE, ONCE FOR THE MENU. The parent map and the SCC decomposition are
 /// facts about the links, which trimming is what changes; every option below wants the same
 /// ones. Each option used to build its own: twenty-four Tarjan passes over conversation 631's
-/// 4,514 entries for one answer, which `crates/gct-measure/examples/per_start_setup.rs` priced at 246 ms a
-/// menu. See `GroupShape`.
+/// 4,514 entries for one answer, which `per_start_setup` priced at 246 ms a menu -
+/// `performance/removed_tools.md` says how to price it again. See `GroupShape`.
 pub fn walkable_menu(
     graph: &LookAheadGraph,
     compiler: &mut GuardCompiler<'_>,

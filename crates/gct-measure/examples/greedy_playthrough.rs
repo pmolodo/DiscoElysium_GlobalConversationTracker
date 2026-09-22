@@ -325,7 +325,7 @@ fn main() {
         if graph.get(DialogueNodeId::new(conversation, 0)).is_none() {
             continue;
         }
-        // THE TEMPLATE UNLESS `--save` NAMES ANOTHER, as `target_cost` reads it. A walk is
+        // THE TEMPLATE UNLESS `--save` NAMES ANOTHER. A walk is
         // only as good as the world it walks, and the template is the fair common denominator
         // rather than a state anyone reached - on 761 it leaves 2,219 of 2,263 entries
         // unreachable. Naming a save taken from a real playthrough asks the same question of a

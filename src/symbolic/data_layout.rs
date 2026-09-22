@@ -623,7 +623,8 @@ impl DataLayout {
     /// structurally reach is carried for nothing.
     ///
     /// Narrowing per START would save slightly more, and cannot be had.
-    /// `crates/gct-measure/examples/start_relative_layout.rs` measured all three granularities:
+    /// `start_relative_layout` measured all three granularities, and
+    /// `performance/removed_tools.md` says how to measure them again:
     ///
     /// ```text
     ///  conv   whole   per start   per menu   per conversation

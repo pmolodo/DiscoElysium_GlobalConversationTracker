@@ -4,8 +4,9 @@
 //! ## What this is for
 //!
 //! [`crate::bridge::answer`] builds everything from scratch per request: the group graph,
-//! the layout, the manager, the compiled guards and the seed. `crates/gct-measure/examples/repeat_question.rs`
-//! prices that at eighteen to twenty-seven milliseconds a request, and
+//! the layout, the manager, the compiled guards and the seed. `repeat_question` priced that
+//! at eighteen to twenty-seven milliseconds a request - `performance/removed_tools.md` says
+//! how to price it again - and
 //! `crates/gct-measure/examples/manager_reuse.rs` found a second cost nobody had looked for - the FIRST
 //! request against a fresh manager takes ninety-eight milliseconds where later ones against
 //! the same manager take fifty-three, because an empty apply cache and an untouched node

@@ -12,9 +12,10 @@
 //!
 //! So this checks the FLOOR - what construction alone costs, and that a budget covers it
 //! and is mostly spent by it. What a node costs once the table has grown is the other half
-//! of the question and cannot be answered by building empty managers; it is measured in
-//! `crates/gct-measure/examples/manager_memory.rs`, and `DiagramBudget::BYTES_PER_NODE` is derived from
-//! that rather than from anything here.
+//! of the question and cannot be answered by building empty managers; `manager_memory`
+//! measured it by filling one, and `DiagramBudget::BYTES_PER_NODE` is derived from that
+//! rather than from anything here. `performance/removed_tools.md` says how to fill one
+//! again.
 
 use lookahead_engine::symbolic::budget::DiagramBudget;
 

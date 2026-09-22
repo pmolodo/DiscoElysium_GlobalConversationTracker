@@ -1,27 +1,37 @@
 # Measurements that were removed, and where to find them
 
-Each of these answered a question once. The number it produced is in its beads issue and in
-its run log under `performance/logs`, which is why those logs are kept; the driver that
-produced it was referred to by nothing but `Cargo.toml`.
+Each of these answered a question once. The number it produced is in its beads issue, in the
+comment that states it, and in its run log under `performance/logs`, which is why those logs
+are kept. What went is the recipe, and it is in git.
 
-**To get one back**, take it out of the last commit that held it, and put its `[[example]]`
-entry back in `Cargo.toml`:
+**To get one back**, take it out of the commit named in its row and put it under
+`crates/gct-measure/examples/`, where Cargo finds an example unasked:
 
 ```sh
-git show 596a427:performance/<name>.rs > performance/<name>.rs
+git show <commit>:<path> > crates/gct-measure/examples/<name>.rs
 ```
 
-`596a427` is the commit before the removal. Everything below existed there, working.
+Every path below existed and worked at the commit beside it.
 
 ## What went, and what it had answered
 
-| measurement | what it asked |
-|---|---|
-| `bound_slack.rs` | Where the structural bound's slack is, and what refusals and dominance can take off it. |
-| `live_ranges.rs` | How much of the state is dead at the average entry. |
-| `profile_closure.rs` | Whether a profile's globally-unseen set is a state any number of playthroughs could leave - de-5sdm, which asked whether a row taken on a fresh-save profile measures a world or a fiction. |
+| measurement | what it asked | take it from |
+|---|---|---|
+| `bidirectional_headroom` | What a forward front costs per layer, against the backward one the search already walks - the argument for meeting in the middle. | `58bb39f:crates/gct-measure/examples/bidirectional_headroom.rs` |
+| `bound_slack` | Where the structural bound's slack is, and what refusals and dominance can take off it. | `596a427:performance/bound_slack.rs` |
+| `group_census` | How many DISTINCT groups the game has: 1,372 of 1,422 are one conversation, and the other 50 carry fifty-five per cent of the entries. | `58bb39f:crates/gct-measure/examples/group_census.rs` |
+| `guard_depth` | How deeply nested the deepest guard in the shipped database is. Eleven levels, of 26,210. | `58bb39f:crates/gct-measure/examples/guard_depth.rs` |
+| `live_ranges` | How much of the state is dead at the average entry. | `596a427:performance/live_ranges.rs` |
+| `manager_memory` | What a diagram node really costs once the unique table has grown - the figure `DiagramBudget::BYTES_PER_NODE` is derived from. About 15.7 bytes, flat from six million nodes to twenty-three. | `58bb39f:crates/gct-measure/examples/manager_memory.rs` |
+| `onward_or_back` | Whether an option reaches unread content WITHOUT coming back through the menu - a binary marking, proposed against the exact-distance one. | `58bb39f:crates/gct-measure/examples/onward_or_back.rs` |
+| `per_start_setup` | What a menu pays PER OPTION for work that depends on the graph alone. 246 ms a menu of 24 starts on conversation 631. | `58bb39f:crates/gct-measure/examples/per_start_setup.rs` |
+| `profile_closure` | Whether a profile's globally-unseen set is a state any number of playthroughs could leave - de-5sdm. | `596a427:performance/profile_closure.rs` |
+| `repeat_question` | What a SECOND question about the same group costs, split three ways: the graph, the diagram side, the search. Eighteen to twenty-seven milliseconds of setup a request. | `58bb39f:crates/gct-measure/examples/repeat_question.rs` |
+| `start_relative_layout` | How much smaller a layout would be if built from where a query starts, at all three granularities. | `58bb39f:crates/gct-measure/examples/start_relative_layout.rs` |
+| `target_cost` | What it costs to prove ONE target unreachable, a target at a time. | `58bb39f:crates/gct-measure/examples/target_cost.rs` |
+| `unread_slots` | How many of the slots a search carries anything ever READS. Between a quarter and nearly a half are never read. | `58bb39f:crates/gct-measure/examples/unread_slots.rs` |
 
-## What was kept, and why, though only `Cargo.toml` names it
+## What was kept, and why, though only a comment names it
 
 A measurement is worth keeping where the question comes back. These do:
 
@@ -35,3 +45,15 @@ A measurement is worth keeping where the question comes back. These do:
 - **`graph_dot.rs`** draws a group as graphviz with nothing elided, for the questions whose
   answer is a shape rather than a number. `tools/render-dot.py` turns what it writes into a
   picture.
+- **`guard_stack.rs`** is not a measurement at all: it asks whether anything that walks a guard
+  still costs stack in proportion to depth, on a one-megabyte stack. A guard comes out of a
+  database a patch or another mod can change, and a stack overflow ends the process rather than
+  panicking. The suite cannot ask it - a test thread's stack is generous - so nothing else can
+  perform this check, and it comes back with every change to code that walks a guard.
+- **`permissive_census.rs`** is a live fixture of a settled design rather than an orphan.
+  `world::IVariableTable` keeps Unknown representable BECAUSE this tool needs a world that
+  constrains nothing, and de-m11s.5 closed on exactly that: the variant stays, and what holds
+  instead is that no NORMAL path produces one, which `tests/nothing_answers_unknown.rs` pins.
+
+This record says what was considered and kept, so the next audit does not make the same
+judgement from scratch.

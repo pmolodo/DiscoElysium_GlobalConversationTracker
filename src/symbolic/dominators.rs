@@ -25,8 +25,9 @@
 //!
 //! The iterative Cooper-Harvey-Kennedy fixed point rather than Lengauer-Tarjan. 1,372 of
 //! the game's 1,422 groups hold about forty-three entries and the largest is under five
-//! thousand (`crates/gct-measure/examples/group_census.rs`), and building every group's tree
-//! in the game plus every candidate list takes about a second and a half (de-kqgq).
+//! thousand - what `group_census` counted, and `performance/removed_tools.md` says how to
+//! count it again - and building every group's tree in the game plus every candidate list
+//! takes about a second and a half (de-kqgq).
 //! The fast algorithm is a page of machinery bought with nothing to spend it on.
 //!
 //! ## What it is worth

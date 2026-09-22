@@ -15,16 +15,15 @@
 #   tools/measure-symbolic.sh [--log-dir DIR] <measurement> [stage] [conversation ...]
 #
 # Examples:
-#   tools/measure-symbolic.sh symbolic_answers
-#   tools/measure-symbolic.sh shared_symbolic 631
+#   tools/measure-symbolic.sh backward_support
 #   tools/measure-symbolic.sh backward_support 368 631
 #   tools/measure-symbolic.sh layout_shape slots 14
 #
-# THE MEASUREMENT IS AN EXAMPLE under performance/, named the way Cargo.toml names it.
-# It used to be a test NAME plus a TEST_BINARY saying which binary to find it in; an
-# example is its own binary, so the two collapsed into one argument. That pairing had also
-# gone stale - its documented default named a test file that no longer exists, so running
-# this with no arguments could not work at all.
+# THE MEASUREMENT IS AN EXAMPLE under crates/gct-measure/examples, named by its file.
+#
+# IT IS REQUIRED, and there is no default. This runs whichever driver it is given, so no
+# one of them is the obvious answer - and a default naming a driver somebody later removed
+# is a trap that reports a build failure rather than a missing default.
 #
 # A measurement holding several stages behind one `main` - layout_shape is the one that
 # does - takes the stage name as a second argument. Anything that parses as a number is
@@ -49,8 +48,15 @@ while [ "$#" -gt 0 ]; do
 done
 set -- "${DEGCT_REST[@]+"${DEGCT_REST[@]}"}"
 
-DEGCT_MEASUREMENT="${1:-symbolic_answers}"
-shift || true
+DEGCT_MEASUREMENT="${1:-}"
+if [ -z "$DEGCT_MEASUREMENT" ]; then
+    echo "measure-symbolic.sh: name the measurement to run." >&2
+    echo "Usage: tools/measure-symbolic.sh [--log-dir DIR] <measurement> [stage] [conversation ...]" >&2
+    echo "The measurements are the files under crates/gct-measure/examples:" >&2
+    ls "$(dirname "$0")/../crates/gct-measure/examples" | sed 's/\.rs$//' | sed 's/^/  /' >&2
+    exit 2
+fi
+shift
 
 # An argument that is not a number is the stage to run; conversations are numbers.
 STAGE=""
@@ -90,7 +96,7 @@ for conversation in "${CONVERSATIONS[@]}"; do
     log="${DEGCT_LOG_DIR}/${DEGCT_RUN_NAME}-${conversation}.log"
     echo "=== conversation ${conversation} ==="
 
-    # NAMED ON THE COMMAND LINE, which every driver under performance/ now takes.
+    # NAMED ON THE COMMAND LINE, which every driver under crates/gct-measure/examples takes.
     #
     # A DRIVER THAT TAKES NO GROUP IS REFUSED HERE, loudly, by its own argument parser. That is
     # the right answer rather than a nuisance: this script runs one process PER CONVERSATION, so

@@ -4,7 +4,8 @@
 //! ## The gate on de-2wtl, and the only thing left unmeasured about it
 //!
 //! That issue would keep the diagram manager alive across requests. Splitting the setup
-//! (`repeat_question`) showed why that is the right thing to keep: the manager is nine or
+//! (`repeat_question`, which `performance/removed_tools.md` says how to bring back) showed
+//! why that is the right thing to keep: the manager is nine or
 //! ten milliseconds of the ten to fourteen, and `DataLayout::for_group` reads the world only
 //! through `money()`, so it survives everything else the world does - where the compiler,
 //! which bakes `is_seen`, does not and must be rebuilt per request at one to five.

@@ -15,7 +15,8 @@ edition = "2024"
 # The cost was that `tests/common` and `fixtures` - 2,566 lines - were compiled again in each
 # of the 31 examples and 37 integration tests that wanted them. Measured 2026-09-21: the
 # library takes 34 s to build and the examples on top of it took 2m29s, and touching
-# `tests/common/mod.rs` alone rebuilt `group_census` in 3.2 s and `menu_matrix` in 21 s.
+# `tests/common/mod.rs` alone rebuilt `group_census` - since removed, see
+# `performance/removed_tools.md` - in 3.2 s and `menu_matrix` in 21 s.
 #
 # A CRATE ANSWERS THE SAME NEED BETTER. One `prepared`, one `Shipped`, one compilation - and
 # the reason the includers had to agree is gone rather than worked around. See de-07kd.

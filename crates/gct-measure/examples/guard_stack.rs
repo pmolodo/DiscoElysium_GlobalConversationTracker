@@ -8,8 +8,9 @@
 //! only safe while nothing that walks the result overflows the smallest stack this code can
 //! find itself on - and a stack overflow aborts the process rather than panicking.
 //!
-//! The deepest guard in the shipped database is ELEVEN levels, of 26,210
-//! (crates/gct-measure/examples/guard_depth.rs). What is not known without measuring is the other end -
+//! The deepest guard in the shipped database is ELEVEN levels, of 26,210 - what
+//! `guard_depth` counted, and `performance/removed_tools.md` says how to count it again.
+//! What is not known without measuring is the other end -
 //! and it cannot be taken from a plain `cargo test` run, because a test thread's stack is
 //! generous. This code runs inside the game, on whatever thread the dialogue system calls
 //! it from.

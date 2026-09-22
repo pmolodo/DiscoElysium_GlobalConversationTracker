@@ -1042,7 +1042,8 @@ namespace GlobalConversationTracker
         ///
         /// <para>THAT IT IS OFF THIS FRAME IS THE POINT, and the cost it stays off is
         /// measured rather than assumed: reading the 14.4 MB index takes 173 to 244 ms
-        /// (crates/gct-measure/examples/repeat_question.rs, 2026-09-07) on top of the process launch, and
+        /// (repeat_question, 2026-09-07; performance/removed_tools.md says how to price it
+        /// again) on top of the process launch, and
         /// since de-2wtl the warm diagram manager for the group the player is standing in
         /// goes with the old process too - another sixty-odd milliseconds on the next menu
         /// (crates/gct-measure/examples/workspace_menus.rs). None of that may happen while a response menu

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 //! Every guard the shipped database contains still parses.
 //!
-//! The net under the guard parser. How deep real content actually goes is a number rather
-//! than a claim - it is measured in `crates/gct-measure/examples/guard_depth.rs` - and this checks the
-//! thing the figure is only a description of: that all of that content is still read.
+//! The net under the guard parser. How deep real content goes is only a description of the
+//! database; this checks the thing that description rests on, that all of that content is
+//! still read.
 
 use lookahead_engine::index::read_index;
 use lookahead_engine::parser::guard_parser::parse_guard;
@@ -12,16 +12,16 @@ use gct_measure::common;
 
 /// EVERY guard in the database parses.
 ///
-/// ## Why this is a test and the measurement beside it is not
+/// ## Why this is a test
 ///
 /// A guard the parser refuses is not an error anybody sees: it evaluates as Unknown, which
 /// is permissive, which is a marker that is wrong with nothing to say so. Whether real content
 /// parses is a claim about the database, which a game patch or another mod can change, and
 /// about the parser, which is rewritten from time to time.
 ///
-/// `crates/gct-measure/examples/guard_depth.rs` walks the same guards once, by hand, to describe them. This
-/// is the same walk with an assertion on the end, so a database or a parser that stopped
-/// accepting something real fails here instead of silently answering Unknown.
+/// So this walks every guard in the database with an assertion on the end, and a database or
+/// a parser that stopped accepting something real fails here instead of silently answering
+/// Unknown.
 ///
 /// ## What it does when there is no corpus
 ///

@@ -31,8 +31,9 @@
 //! way. Served, a request costs 53 to 60 milliseconds; unserved, 116 to 126. About sixty-four
 //! milliseconds a menu, and roughly a halving, on every menu after the first in a group.
 //!
-//! THAT IS FAR MORE THAN THE SETUP IT SAVES. `repeat_question` puts the graph and diagram
-//! setup at eighteen to twenty-seven milliseconds together; the rest is the warm-up
+//! THAT IS FAR MORE THAN THE SETUP IT SAVES. `repeat_question` put the graph and diagram
+//! setup at eighteen to twenty-seven milliseconds together - `performance/removed_tools.md`
+//! says how to put it there again; the rest is the warm-up
 //! `manager_reuse` found - an empty apply cache and an untouched node store, which the first
 //! request against a manager pays and every later one does not. Before this, every request
 //! got a fresh manager and so every request paid it.
