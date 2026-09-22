@@ -33,6 +33,7 @@ use std::collections::HashMap;
 use oxidd::BooleanFunction;
 use oxidd::bdd::BDDFunction;
 
+use crate::core::clock::ClockTime;
 use crate::core::guard::{Arguments, Guard, GuardExpression, GuardRef};
 use crate::core::guard_value::{GuardValue, GuardValueKind};
 use crate::core::state::{ITEM_PREFIX, THOUGHT_PREFIX};
@@ -176,6 +177,15 @@ pub struct GuardCompiler<'a> {
     /// the second is a budget at its limit. Nothing could tell them apart before, because
     /// running out of room here did not produce a fallback at all - it aborted the process.
     out_of_memory: bool,
+    /// How deep inside a guard being built out of SEVERAL sub-comparisons this is.
+    ///
+    /// A guard about the moving clock is answered hour by hour - see
+    /// [`Self::variable_against_moving_reading`] - and each hour asks the ordinary
+    /// comparison path for its own term. Those twenty-four answers are parts of one guard,
+    /// not twenty-four guards, so while this is raised the verdict is not counted and the
+    /// caller records one for the whole. Running out of room is NOT a verdict and is
+    /// recorded whatever this says.
+    quiet: usize,
     reasons: HashMap<&'static str, usize>,
     subjects: Vec<(&'static str, String)>,
     /// Queries answered as constants that a DECLARED decision writes.
@@ -226,6 +236,7 @@ impl<'a> GuardCompiler<'a> {
             clock_approximated: false,
             fallbacks: 0,
             compiled: 0,
+            quiet: 0,
             reasons: HashMap::new(),
             subjects: Vec::new(),
             out_of_memory: false,
@@ -489,11 +500,16 @@ impl<'a> GuardCompiler<'a> {
         self
     }
 
-    /// Answers clock questions from the world, as though the conversation never moved it.
+    /// Answers clock questions from the world, WHERE THE LAYOUT CARRIES NO CLOCK.
     ///
-    /// A DELIBERATE APPROXIMATION where the group can move the clock, and exact where it
-    /// cannot - `group_passes_time` says which, and it should be true exactly when some
-    /// action in the group is a `PassTime`.
+    /// Where it carries one, the questions are answered over the register instead and this
+    /// decides nothing; `DataLayout::clock_can_move` is what puts a clock in the layout, and
+    /// it does so exactly where a `PassTime` in the group can move an unlocked one.
+    ///
+    /// So this is the answer for the rest: a group with no `PassTime`, or one whose world
+    /// sends the clock locked, and in both the clock is a constant rather than an
+    /// approximation. `group_passes_time` says which of the two, since it is only the first
+    /// that leaves anything to be wrong about.
     ///
     /// Why it is worth taking. Modelling the clock means eleven more variables and
     /// magnitude comparisons against them, which is the classic way to make a decision
@@ -502,11 +518,12 @@ impl<'a> GuardCompiler<'a> {
     /// minutes per `PassTime` and by nothing else, so a conversation rarely moves it far
     /// enough to change what a coarse question like `IsNight()` answers.
     ///
-    /// What it costs. Where the group does move the clock, this can report a branch
-    /// CLOSED that the real search would walk - the unsafe direction, and the only place
-    /// in this compiler that is true. A guard that only opens once time has passed is
-    /// judged against the starting hour and refused. Accepted knowingly; the count is
-    /// exposed so the exposure is visible rather than assumed.
+    /// What it costs, WHERE IT IS STILL AN APPROXIMATION - a group that passes time whose
+    /// layout was built without a clock anyway, which is a caller varying the arm rather than
+    /// the shipped path. There it can report a branch CLOSED that the real search would walk,
+    /// the unsafe direction and the only place in this compiler that is true: a guard that
+    /// only opens once time has passed is judged against the starting hour and refused.
+    /// [`Self::clock_is_approximated`] is how such a caller sees that it is exposed.
     ///
     /// A separate and larger question hangs over this: the engine's clock may not match
     /// the GAME's, which is understood to advance about a minute per unseen entry. The
@@ -518,9 +535,17 @@ impl<'a> GuardCompiler<'a> {
     }
 
     /// Whether treating the clock as constant is an approximation for this group, rather
-    /// than exact - true when some action in the group advances it.
+    /// than exact.
+    ///
+    /// THREE THINGS HAVE TO LINE UP, and the third is what keeps this from crying wolf. The
+    /// clock has to be answered from the world at all; some action in the group has to be a
+    /// `PassTime`, or there is nothing to be wrong about; and the layout has to be carrying
+    /// no clock, because where it carries one the questions are answered over the register
+    /// and there is no approximation left to report. See [`DataLayout::clock_can_move`].
+    ///
+    /// [`DataLayout::clock_can_move`]: crate::symbolic::data_layout::DataLayout::clock_can_move
     pub fn clock_is_approximated(&self) -> bool {
-        self.constant_clock && self.clock_approximated
+        self.constant_clock && self.clock_approximated && self.vars.clock_ops().is_none()
     }
 
     /// How many sub-expressions the compiler could not read and had to call undecided.
@@ -587,13 +612,33 @@ impl<'a> GuardCompiler<'a> {
 
     /// A guard that is undecided everywhere: the permissive answer.
     fn undecided(&mut self, reason: &'static str, subject: String) -> MayBe {
-        self.fallbacks += 1;
-        *self.reasons.entry(reason).or_default() += 1;
-        self.subjects.push((reason, subject));
+        self.note_undecided(reason, subject);
         MayBe {
             may_be_true: self.top(),
             may_be_false: self.top(),
         }
+    }
+
+    /// Records a guard as undecided WITHOUT building the permissive rails.
+    ///
+    /// For a caller that has a formula already and only wants the verdict counted: an hour
+    /// by hour answer is a real formula even when some of its hours are undecided, and
+    /// throwing it away for a pair of tops would lose every hour that did decide.
+    fn note_undecided(&mut self, reason: &'static str, subject: String) {
+        if self.quiet > 0 {
+            return;
+        }
+        self.fallbacks += 1;
+        *self.reasons.entry(reason).or_default() += 1;
+        self.subjects.push((reason, subject));
+    }
+
+    /// Runs `build` without counting the verdicts it reaches. See [`Self::quiet`].
+    fn quietly<T>(&mut self, build: impl FnOnce(&mut Self) -> T) -> T {
+        self.quiet += 1;
+        let made = build(self);
+        self.quiet -= 1;
+        made
     }
 
     /// A guard nothing could be built for, because the manager has no room left.
@@ -632,7 +677,9 @@ impl<'a> GuardCompiler<'a> {
             return self.no_room("negating a compiled guard".to_string());
         };
 
-        self.compiled += 1;
+        if self.quiet == 0 {
+            self.compiled += 1;
+        }
         MayBe {
             may_be_true: holds,
             may_be_false: fails,
@@ -856,11 +903,11 @@ impl<'a> GuardCompiler<'a> {
                 }
             }
 
-            // The clock, held at whatever the world says and not moved by the
-            // conversation. See `with_constant_clock` for why, and what it costs: this is
-            // the one approximation here that can close a branch the search would walk.
+            // The clock, held at whatever the world says, for the groups whose layout carries
+            // none - see `with_constant_clock` for when that is and what it costs. The arm
+            // above takes every group that does carry one, so the two can never both apply.
             GuardExpression::Call(name, args)
-                if self.constant_clock && crate::core::clock::ClockTime::owns(name) =>
+                if self.clock_from_the_world() && ClockTime::owns(name) =>
             {
                 match self.clock_answer(name, args) {
                     Some(true) => {
@@ -1523,38 +1570,83 @@ impl<'a> GuardCompiler<'a> {
                 let holds = ops.compare(op, value as i64)?;
                 Some(self.decided(holds))
             }
-            // The hour, in minutes: `HourCount() >= 13` is `clock >= 13 * 60`. Exact for
-            // every operator, because the hour is the minute count divided by sixty and
-            // that division is monotone - `hours >= h` is `minutes >= 60h`, and
-            // `hours <= h` is `minutes <= 60h + 59`.
-            "HourCount" => {
-                let ops = self.vars.clock_ops()?;
-                let hour = value as i64;
-                let holds = match op {
-                    ">=" | ">" => {
-                        let first = if op == ">" { hour + 1 } else { hour };
-                        ops.compare(">=", first * 60)?
-                    }
-                    "<=" | "<" => {
-                        let last = if op == "<" { hour - 1 } else { hour };
-                        ops.compare("<=", last * 60 + 59)?
-                    }
-                    "==" => {
-                        let from = ops.compare(">=", hour * 60)?;
-                        let to = ops.compare("<=", hour * 60 + 59)?;
-                        from.and(&to).ok()?
-                    }
-                    "~=" | "!=" => {
-                        let from = ops.compare(">=", hour * 60)?;
-                        let to = ops.compare("<=", hour * 60 + 59)?;
-                        from.and(&to).ok()?.not().ok()?
-                    }
-                    _ => return None,
+            // The hour, over the register that carries it. `HourCount()` IS the hour, and
+            // `TotalHourCount()` is the hour plus a whole number of days - so both are a
+            // question about which hour of the day a state is at, once the days the world
+            // counts are taken off the literal.
+            "HourCount" | "TotalHourCount" => {
+                let base = match name.as_str() {
+                    "TotalHourCount" => i64::from(ClockTime::HOURS_IN_DAY) * (self.day() - 1),
+                    _ => 0,
                 };
+                let holds = self.hour_comparison(op, value as i64 - base)?;
                 Some(self.decided(holds))
             }
             _ => None,
         }
+    }
+
+    /// The story's day, which no search can move: a conversation is over long before midnight.
+    fn day(&self) -> i64 {
+        self.world.map_or(1, |world| i64::from(world.day_counter()))
+    }
+
+    /// Whether clock questions are answered from the world rather than over a register.
+    ///
+    /// The register wins wherever the layout has one, because it is the state's own hour
+    /// rather than the hour the search started at. See `DataLayout::clock_can_move` for when
+    /// a layout carries a clock, which is rarely.
+    fn clock_from_the_world(&self) -> bool {
+        self.constant_clock && self.vars.clock_ops().is_none()
+    }
+
+    /// The states at which `<the state's hour> op hour` holds.
+    ///
+    /// An hour outside the day is not a comparison the register can be asked for and does not
+    /// need to be: every state is on one side of it, and [`Self::hour_range`] clamps to that
+    /// answer rather than building a formula about a minute no clock holds.
+    fn hour_comparison(&self, op: &str, hour: i64) -> Option<BDDFunction> {
+        let last = i64::from(ClockTime::HOURS_IN_DAY) - 1;
+        match op {
+            ">=" => self.hour_range(hour, last),
+            ">" => self.hour_range(hour + 1, last),
+            "<=" => self.hour_range(0, hour),
+            "<" => self.hour_range(0, hour - 1),
+            "==" => self.hour_range(hour, hour),
+            "~=" | "!=" => self.hour_range(hour, hour)?.not().ok(),
+            _ => None,
+        }
+    }
+
+    /// The states whose hour lies in `lo..=hi`, as a formula over the clock register.
+    ///
+    /// EVERY HOUR QUESTION REDUCES TO THIS. The hour is the minute count divided by sixty
+    /// and that division is monotone, so a range of hours is a range of minutes: `lo..=hi`
+    /// is `60 * lo ..= 60 * hi + 59`. A range clamped to nothing is no state at all, which
+    /// is how an hour outside the day answers without being asked of the register.
+    fn hour_range(&self, lo: i64, hi: i64) -> Option<BDDFunction> {
+        let ops = self.vars.clock_ops()?;
+        let last = i64::from(ClockTime::HOURS_IN_DAY) - 1;
+        let (lo, hi) = (lo.max(0), hi.min(last));
+        if lo > hi {
+            return Some(self.bottom());
+        }
+
+        // A RANGE COVERING THE DAY IS EVERY STATE, and saying so is not the same as building
+        // `clock <= 1439`. Eleven bits hold 2,048 minutes and the day has 1,440, so that
+        // comparison leaves the 608 the clock can never be at on the other rail - and a guard
+        // every real state satisfies would read as undecided. Those minutes do not occur: the
+        // seed pins the register to a minute of the day and `PassTime` wraps within it.
+        if lo == 0 && hi == last {
+            return Some(self.top());
+        }
+
+        let to = ops.compare("<=", hi * 60 + 59)?;
+        if lo == 0 {
+            return Some(to);
+        }
+        let from = ops.compare(">=", lo * 60)?;
+        from.and(&to).ok()
     }
 
     /// Every minute of the day at which a clock question is true, as a formula.
@@ -1564,17 +1656,16 @@ impl<'a> GuardCompiler<'a> {
     /// single hour of nineteen - are stated in exactly one place. This port has already had
     /// them wrong once by restating them.
     fn clock_hours_formula(&mut self, name: &str, args: Arguments<'_>) -> Option<BDDFunction> {
-        use crate::core::clock::ClockTime;
-
         let values = Self::literal_arguments(args)?;
-        let ops = self.vars.clock_ops()?;
+        // Asked before the loop rather than left to the first hour that answers true: a
+        // question no hour satisfies would otherwise come back as "nowhere" from a compiler
+        // that carries no clock, which is a definite answer it has no right to.
+        self.vars.clock_ops()?;
+
         let mut holds = self.bottom();
         let mut answered = false;
-        for hour in 0..24i32 {
-            // The day counter is what the world says; it cannot change within a
-            // conversation, so it is the same at every hour.
-            let day = self.world.map_or(1, |world| world.day_counter());
-            let answer = ClockTime::answer(name, &values, hour * 60, day);
+        for hour in 0..i64::from(ClockTime::HOURS_IN_DAY) {
+            let answer = ClockTime::answer(name, &values, (hour * 60) as i32, self.day() as i32);
             if answer.kind() == GuardValueKind::Unknown {
                 return None;
             }
@@ -1584,9 +1675,7 @@ impl<'a> GuardCompiler<'a> {
                 continue;
             }
 
-            let from = ops.compare(">=", hour as i64 * 60)?;
-            let to = ops.compare("<=", hour as i64 * 60 + 59)?;
-            holds = holds.or(&from.and(&to).ok()?).ok()?;
+            holds = holds.or(&self.hour_range(hour, hour)?).ok()?;
         }
 
         if answered { Some(holds) } else { None }
@@ -1971,8 +2060,13 @@ impl<'a> GuardCompiler<'a> {
     /// time exactly as the conditions `IsNight()` and the like are - a number such as
     /// `TotalHourCount()` is the same approximation read as a value.
     fn fixed_value(&self, name: &str, args: Arguments<'_>) -> Option<GuardValue> {
-        if crate::core::clock::ClockTime::owns(name) {
-            if !self.constant_clock {
+        if ClockTime::owns(name) {
+            // NOT ONE VALUE WHERE THE CLOCK MOVES. Every question `owns` covers is a question
+            // about the hour, so where the layout carries a clock the answer differs between
+            // states and there is no constant to hand back. `owns_day` is the other half -
+            // the day cannot change within a conversation - and it goes through
+            // `constant_value` below, which stays exact either way.
+            if !self.clock_from_the_world() {
                 return None;
             }
             let world = self.world?;
@@ -2024,8 +2118,76 @@ impl<'a> GuardCompiler<'a> {
                 _ => return None,
             },
         };
+        // A READING THAT MOVES has no one value to compare against, so it is answered hour by
+        // hour instead. This has to be tried first: `fixed_value` refuses such a query, and
+        // refusing here would send the whole guard to the fallback path.
+        if ClockTime::owns(&query) && self.vars.clock_ops().is_some() {
+            return self.variable_against_moving_reading(op, &name, &query, args);
+        }
+
         let value = self.fixed_value(&query, args)?;
         Some(self.comparison(op, &name, &value))
+    }
+
+    /// `Variable[name] op query()` where the query reads a clock the search can move.
+    ///
+    /// ## Hour by hour, because neither side is a constant
+    ///
+    /// The deadline shape is `TotalHourCount() >= Variable["..."]`, and with a carried clock
+    /// both sides are things a state decides: the variable through its slot, the reading
+    /// through the register. A comparison between two registers is not something the
+    /// arithmetic here offers, and it is not needed - THE READING TAKES ONE OF TWENTY-FOUR
+    /// VALUES. So the day is split into its hours, each hour's reading is the constant that
+    /// hour's states compare against, and the answers are gathered.
+    ///
+    /// ## Both rails, rather than one and its negation
+    ///
+    /// An hour whose term is undecided is undecided for the states at that hour and settled
+    /// elsewhere, so the two rails are not each other's complement and building one from the
+    /// other would lose exactly that. Gathering them separately keeps every hour that did
+    /// decide, which is the whole reason this is worth more than a fallback.
+    ///
+    /// The hours partition the day, so every state lies under exactly one term.
+    fn variable_against_moving_reading(
+        &mut self,
+        op: &str,
+        name: &str,
+        query: &str,
+        args: Arguments<'_>,
+    ) -> Option<MayBe> {
+        let values = Self::literal_arguments(args)?;
+        let day = self.day() as i32;
+
+        let mut may_be_true = self.bottom();
+        let mut may_be_false = self.bottom();
+        for hour in 0..i64::from(ClockTime::HOURS_IN_DAY) {
+            let reading = ClockTime::answer(query, &values, (hour * 60) as i32, day);
+            if reading.kind() == GuardValueKind::Unknown {
+                return None;
+            }
+
+            let at = self.hour_range(hour, hour)?;
+            // Through the ordinary comparison path, so a rebased slot, a dropped counter or
+            // a variable the layout does not carry are read here exactly as they are read
+            // anywhere else. Quietly, because these are twenty-four parts of one guard.
+            let term = self.quietly(|me| me.comparison(op, name, &reading));
+            may_be_true = may_be_true.or(&at.and(&term.may_be_true).ok()?).ok()?;
+            may_be_false = may_be_false.or(&at.and(&term.may_be_false).ok()?).ok()?;
+        }
+
+        let made = MayBe {
+            may_be_true,
+            may_be_false,
+        };
+        if made.is_decided() {
+            self.compiled += 1;
+        } else {
+            self.note_undecided(
+                "comparison: a variable against a moving clock reading",
+                format!("(Variable[{name}] {op} {query}(..))"),
+            );
+        }
+        Some(made)
     }
 
     /// What a constant query evaluates to, as a value rather than as a truth.
@@ -2928,6 +3090,152 @@ mod tests {
         assert_eq!(compiler.fallbacks(), 1);
     }
 
+    /// The states at one minute of the day, for asking what a formula says there.
+    fn at_minute(vars: &DataVars<'_>, minutes: u32) -> BDDFunction {
+        vars.clock_ops()
+            .expect("this layout carries a clock")
+            .equals(minutes)
+            .expect("the manager has room to pin it")
+    }
+
+    /// Whether a formula holds at a particular minute of the day.
+    fn holds_at(vars: &DataVars<'_>, formula: &BDDFunction, minutes: u32) -> bool {
+        formula
+            .and(&at_minute(vars, minutes))
+            .expect("the manager has room")
+            .satisfiable()
+    }
+
+    /// With the clock carried, a clock question is answered at the STATE's hour rather than
+    /// at the world's - so one question decides both ways over the day.
+    #[test]
+    fn a_clock_question_is_answered_at_the_states_hour() {
+        let (graph, symbols) = fixture(&["a"], None);
+        let layout = DataLayout::for_graph(&graph, 16, None, true);
+        // Two in the morning, which is where the world stands and where the answer must NOT
+        // be pinned.
+        let night = crate::world::GameWorld::blank().with_day_minutes(2 * 60);
+
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(&night)
+            .with_constant_clock(true);
+        let compiled = compiler.compile(&Guard::call("IsNight".to_string(), vec![]));
+
+        assert!(compiled.is_decided());
+        assert_eq!(compiler.fallbacks(), 0);
+        assert!(holds_at(&vars, &compiled.may_be_true, 2 * 60));
+        assert!(!holds_at(&vars, &compiled.may_be_true, 14 * 60));
+        assert!(holds_at(&vars, &compiled.may_be_false, 14 * 60));
+    }
+
+    /// A clock NUMBER against a literal is a question about the hour, over the register.
+    ///
+    /// On day 2 the total hour is 24 plus the hour of the day, so `TotalHourCount() >= 30`
+    /// is `the hour is 6 or later` - and the boundary is what a stale reading gets wrong.
+    #[test]
+    fn a_clock_number_is_compared_over_the_carried_clock() {
+        let (graph, symbols) = fixture(&["a"], None);
+        let layout = DataLayout::for_graph(&graph, 16, None, true);
+        let day_two = crate::world::GameWorld::blank()
+            .with_day_counter(2)
+            .with_day_minutes(10 * 60);
+
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(&day_two)
+            .with_constant_clock(true);
+        let late = compiler.compile(&Guard::comparison(
+            ">=".to_string(),
+            call("TotalHourCount", vec![]),
+            number(30.0),
+        ));
+
+        assert!(late.is_decided());
+        assert_eq!(compiler.fallbacks(), 0);
+        assert!(!holds_at(&vars, &late.may_be_true, 5 * 60 + 59));
+        assert!(holds_at(&vars, &late.may_be_true, 6 * 60));
+    }
+
+    /// An hour no clock can be at is answered rather than asked of the register.
+    #[test]
+    fn an_hour_outside_the_day_settles_without_a_comparison() {
+        let (graph, symbols) = fixture(&["a"], None);
+        let layout = DataLayout::for_graph(&graph, 16, None, true);
+        let world = crate::world::GameWorld::blank();
+
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(&world)
+            .with_constant_clock(true);
+
+        let never = compiler.compile(&Guard::comparison(
+            ">=".to_string(),
+            call("HourCount", vec![]),
+            number(30.0),
+        ));
+        assert!(!never.may_be_true.satisfiable());
+
+        let always = compiler.compile(&Guard::comparison(
+            "<".to_string(),
+            call("HourCount", vec![]),
+            number(30.0),
+        ));
+        assert!(!always.may_be_false.satisfiable());
+        assert_eq!(compiler.fallbacks(), 0);
+    }
+
+    /// THE DEADLINE SHAPE, with both sides moving: the slot holds the hour a script wrote
+    /// down and the register holds the hour the state is at.
+    ///
+    /// The variable is set to 28, and on day 2 the total hour is 24 plus the hour - so the
+    /// deadline is reached at four in the morning and not before.
+    #[test]
+    fn a_deadline_is_read_against_the_carried_clock() {
+        let mut symbols = StateSymbols::new();
+        let slot = symbols.variable("plaza.alice_serial_next_meeting_time");
+        let node = LookAheadNode {
+            actions: vec![DialogueAction::assign(slot, 28, "s".to_string())],
+            links: vec![DialogueNodeId::new(1, 0)],
+            ..LookAheadNode::new(DialogueNodeId::new(1, 0))
+        };
+        let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
+        let symbols = graph.symbols().clone();
+
+        let layout = DataLayout::for_graph(&graph, 16, None, true);
+        let day_two = crate::world::GameWorld::blank().with_day_counter(2);
+
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(&day_two)
+            .with_constant_clock(true);
+        let due = compiler.compile(&Guard::comparison(
+            ">=".to_string(),
+            call("TotalHourCount", vec![]),
+            Guard::variable("plaza.alice_serial_next_meeting_time".to_string()),
+        ));
+
+        // The slot has to be pinned too: a state the search has not reached the assignment
+        // in holds nothing, and the question is about the ones that have.
+        let written = vars
+            .slot_equals(
+                vars.slot_of("plaza.alice_serial_next_meeting_time")
+                    .expect("the layout carries it"),
+                28,
+            )
+            .expect("the manager has room");
+        let reached = due.may_be_true.and(&written).expect("the manager has room");
+        let missed = due
+            .may_be_false
+            .and(&written)
+            .expect("the manager has room");
+
+        assert!(!holds_at(&vars, &reached, 3 * 60));
+        assert!(holds_at(&vars, &reached, 4 * 60));
+        assert!(holds_at(&vars, &missed, 3 * 60));
+        assert_eq!(compiler.fallbacks(), 0);
+    }
+
     /// The approximation is only an approximation where the group can move the clock.
     #[test]
     fn holding_the_clock_is_exact_unless_the_group_passes_time() {
@@ -2946,6 +3254,15 @@ mod tests {
             .with_world(&world)
             .with_constant_clock(true);
         assert!(approximate.clock_is_approximated());
+
+        // AND NOT AN APPROXIMATION AT ALL where the layout carries a clock, however the
+        // group behaves: the questions are answered over the register, not at a fixed hour.
+        let carried = DataLayout::for_graph(&graph, 16, None, true);
+        let vars = DataVars::new(&carried, &symbols, DiagramBudget::modest());
+        let exact = GuardCompiler::new(&vars)
+            .with_world(&world)
+            .with_constant_clock(true);
+        assert!(!exact.clock_is_approximated());
     }
 
     /// A graph with a PassTime action is one where holding the clock is an approximation.

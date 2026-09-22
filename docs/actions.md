@@ -63,7 +63,7 @@ today; `verdict` is how that compares with the game for the writes a downstream 
 | CancelTask                         | journal         |   280 |    39 | cancel unless done                         | ported                                 |
 | GainItem                           | items           |   242 |    93 | `item:<name>` = 1                          | ported; autoequip unsettles passives   |
 | DamageVolition                     | damage          |   220 |    32 | damage amount += n                         | ported                                 |
-| PassTime                           | clock           |   207 |    72 | clock +15 min unless locked; plugin locks  | held by decision: clock not modelled   |
+| PassTime                           | clock           |   207 |    72 | clock +15 min unless locked; plugin locks  | ported; what it bakes is not           |
 | ReputationLowers                   | reputation      |   178 |    32 | once-decrement `reputation.<name>`         | ported                                 |
 | LoseItem                           | items           |   177 |   108 | `item:<name>` = 0, `unequipped:<name>` = 1 | ported                                 |
 | XPMinorSetBool                     | variables       |   172 |    32 | assign the variable 1                      | ported                                 |
@@ -358,11 +358,19 @@ game. 32 `DamageVolition` and 8 `HealVolition` call sites have a downstream `Has
 **GAME.** `PassTime` is `SunshineClock.Clang`, `NormalTimeForward(15)` unless time is locked,
 which also bakes cooking thoughts (`ThoughtManager.BakeThoughts`) and substances.
 
-**ENGINE.** `PassTime` adds 15 minutes unless the world's clock is locked, and the plugin always
-sends it locked, so time stands still for a crawl. 72 call sites are live - 50 through a clock
-question and 45 through a cabinet question, since baking can turn a cooking thought fixed. Held
-by that approximation, as a decision: thought baking is infrequent, and a moving clock would
-change state on every unseen option, which a search would pay for everywhere.
+**ENGINE.** `PassTime` adds 15 minutes unless the world's clock is locked. Both executors model
+it: `core::action` moves `day_minutes`, and a symbolic search carries the clock in eleven
+variables and answers every hour question over them - but only where a `PassTime` in the group
+can move an unlocked clock, since otherwise the hour is a constant and a register would spend
+bits restating it. `DataLayout::clock_can_move` is that decision.
+
+**AND THE PLUGIN ALWAYS SENDS IT LOCKED**, so time stands still for the crawls a player actually
+gets. That is a decision of its own with its own reasons - see de-gh1o - and it is what keeps
+the engine's modelling off the screen rather than anything the engine lacks.
+
+72 call sites are live - 50 through a clock question and 45 through a cabinet question, since
+baking can turn a cooking thought fixed. THE BAKING IS NOT MODELLED: the clock moves and the
+thoughts do not follow it, which is de-m11s.3.3 and de-m11s.3.4.
 
 ## Party
 
@@ -422,7 +430,7 @@ from one-off queries over the same index rather than from the survey.
 | `LoseItem`                                                    | equipment, which it unequips                                                                                            | PFC `Inventory.DeleteItem`                                       | tracked - see [Items](#items)                                                                                                                                                                                                                                      |
 | `DamageVolition`, `HealVolition` and the endurance forms      | the skill value itself, since `DAMAGE` is one of its modifiers                                                          | PFC `Modifiable.Recalc`                                          | the damage slot is tracked; a Volition or Endurance passive check is answered Unknown where the group's damage or healing can cross the margin the plugin sends for it (`core::skill_movers`)                                                                      |
 | `UseSubstanceInHand`                                          | `stats.uses_<group>`                                                                                                    | PFC `HudHeldPanelController.OnSubstanceUse`                      | excluded: no downstream reader                                                                                                                                                                                                                                     |
-| `PassTime`                                                    | cooking thoughts become fixed, substances wear off                                                                      | PFC `SunshineClock.Clang`, `ThoughtManager.BakeThoughts`         | held: the plugin sends the clock locked - see [Clock](#clock)                                                                                                                                                                                                      |
+| `PassTime`                                                    | cooking thoughts become fixed, substances wear off                                                                      | PFC `SunshineClock.Clang`, `ThoughtManager.BakeThoughts`         | held: the clock moves and these do not follow it - de-m11s.3.3 and de-m11s.3.4. See [Clock](#clock)                                                                                                                                                                |
 | `LetterSleep`, `SkipToDebriefLocation`                        | `auto.daychange_*` through `EnddayManager` property setters                                                             | PFC `EnddayManager`                                              | excluded; which variables each reaches is not traced                                                                                                                                                                                                               |
 | `SetAreaState`, `DestroyObject`, `GainItem("ledger_damaged")` | the `AreaState` Lua table                                                                                               | PFC `AreaStatePlaceholder.SwitchTo`, `Alterant.HandleItemPickup` | excluded: no guard reads it                                                                                                                                                                                                                                        |
 | `XP*SetBool`                                                  | experience                                                                                                              | PFC `TaskLuaFunctions.XPSetBool`                                 | not applied: no guard reads experience                                                                                                                                                                                                                             |

@@ -124,6 +124,17 @@ pub fn seed_of(
         set = set.and(&holds).ok()?;
     }
 
+    // AND THE HOUR, for the same reason and with more at stake. The layout carries a clock
+    // only where the group's `PassTime` can move one - see `DataLayout::clock_can_move` - and
+    // a register left free would start the search at every minute of the day at once, which
+    // makes every hour guard in the group passable down some path. `day_minutes` is already
+    // wrapped into the day by `LookAheadState`, so it needs no clamp: the register is eleven
+    // bits and the day is 1,440 minutes.
+    if let Some(clock) = vars.clock_ops() {
+        let holds = clock.equals(state.day_minutes().max(0) as u32)?;
+        set = set.and(&holds).ok()?;
+    }
+
     Some(set)
 }
 
@@ -824,5 +835,116 @@ mod branch_tests {
             reached(&graph, StartBranch::Fail).is_empty(),
             "a failure that does not exist reaches nothing, rather than passing twice",
         );
+    }
+
+    /// WHAT A CARRIED CLOCK BUYS, in the one shape it was carried for.
+    ///
+    /// Entering the start runs its `PassTime`, which is a quarter of an hour, so a world at
+    /// 02:45 is at 03:00 by the time the link past it is tested. `IsHour(3)` is the guard
+    /// that tells the two readings apart: held at the world's hour it is false and the branch
+    /// is refused, which is the unsafe direction - the search would have walked it.
+    #[test]
+    fn passing_time_opens_a_guard_the_held_clock_refuses() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).script("PassTime()").links(&[1]))
+            .add(Entry::new(1).guard("IsHour(3)"))
+            .build();
+
+        assert!(
+            !opens_at_three(&graph, false),
+            "held at the world's hour, a guard that opens a quarter of an hour later is refused",
+        );
+        assert!(opens_at_three(&graph, true));
+    }
+
+    /// Whether `IsHour(3)` can hold in the states entering the start leaves.
+    ///
+    /// `carried` is what the layout does with the clock, which is the only difference between
+    /// the two runs: the world, the graph and the compiler are the same.
+    fn opens_at_three(graph: &LookAheadGraph, carried: bool) -> bool {
+        let world = GameWorld::blank()
+            .with_day_minutes(2 * 60 + 45)
+            .with_clock_locked(false);
+        let symbols = graph.symbols().clone();
+        let layout = DataLayout::for_graph(graph, CAP, None, carried);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(&world)
+            .with_constant_clock(true);
+        let seed = seed_of(graph, &world, &vars).expect("room for a seed");
+
+        let entered = Reachability::entry_states(
+            graph,
+            node(0),
+            StartBranch::Either,
+            &seed,
+            &mut compiler,
+            &world,
+            CAP as u32,
+        )
+        .expect("room to enter the start");
+
+        let guard = compiler.compile(&crate::core::guard::Guard::call(
+            "IsHour".to_string(),
+            vec![crate::core::guard::Guard::literal(GuardValue::from_number(
+                3.0,
+            ))],
+        ));
+        guard
+            .may_be_true
+            .and(&entered)
+            .expect("room to ask the question")
+            .satisfiable()
+    }
+
+    /// The seed pins the hour, so a search starts at one time of day rather than all of them.
+    ///
+    /// A register nothing constrains is every value at once, which for the clock would make
+    /// every hour guard in the group passable down some path - the same failure the purse
+    /// has, and a louder one, since there are only twenty-four hours to be wrong about.
+    #[test]
+    fn the_seed_starts_the_search_at_the_worlds_minute() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).script("PassTime()").links(&[1]))
+            .add(Entry::new(1))
+            .build();
+
+        let world = GameWorld::blank()
+            .with_day_minutes(2 * 60 + 45)
+            .with_clock_locked(false);
+        let symbols = graph.symbols().clone();
+        let layout = DataLayout::for_graph(&graph, CAP, None, true);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+        let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
+
+        let at = |minutes: u32| {
+            vars.clock_ops()
+                .expect("this layout carries a clock")
+                .equals(minutes)
+                .expect("room to pin it")
+        };
+        assert!(seed.and(&at(2 * 60 + 45)).expect("room").satisfiable());
+        assert!(!seed.and(&at(3 * 60)).expect("room").satisfiable());
+    }
+
+    /// The layout carries a clock only where a `PassTime` can move an unlocked one.
+    #[test]
+    fn a_locked_clock_is_carried_by_nothing() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).script("PassTime()").links(&[1]))
+            .add(Entry::new(1))
+            .build();
+
+        let unlocked = GameWorld::blank().with_clock_locked(false);
+        assert!(DataLayout::clock_can_move(&graph, &unlocked));
+
+        let locked = GameWorld::blank().with_clock_locked(true);
+        assert!(
+            !DataLayout::clock_can_move(&graph, &locked),
+            "a PassTime on a locked clock moves nothing, so holding the clock is exact",
+        );
+
+        let still = GraphBuilder::new().add(Entry::new(0)).build();
+        assert!(!DataLayout::clock_can_move(&still, &unlocked));
     }
 }

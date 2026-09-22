@@ -675,7 +675,7 @@ impl DataLayout {
             graph,
             counter_cap,
             Self::money_ceiling(graph, world.money()),
-            false,
+            Self::clock_can_move(graph, world),
         )
         .keeping_only_read(graph.symbols(), &reads)
         .dropping_slots_written_too_late(graph)
@@ -1258,11 +1258,31 @@ impl DataLayout {
         }
     }
 
+    /// Whether a search over this group can move the clock, which is when carrying it in
+    /// eleven variables buys anything.
+    ///
+    /// TWO THINGS HAVE TO BE TRUE, and either alone leaves the clock a constant that a
+    /// register would spend bits restating. Some action in the group has to be a `PassTime`,
+    /// which is rare. And the world's clock has to be unlocked, since `PassTime` on a locked
+    /// clock moves nothing - `core::action` skips it - so holding the clock still is EXACT
+    /// there rather than an approximation.
+    ///
+    /// The second half is not hypothetical: the plugin sends the clock locked whatever the
+    /// game reads, so the shipped path carries no clock and pays nothing for this. See
+    /// de-gh1o for that decision and what reversing it would need.
+    pub fn clock_can_move(
+        graph: &LookAheadGraph,
+        world: &dyn crate::world::ILookAheadWorld,
+    ) -> bool {
+        Self::group_passes_time(graph) && !world.is_clock_locked()
+    }
+
     /// Whether any action in the group advances the clock.
     ///
-    /// What decides whether treating the clock as constant is exact or an approximation.
-    /// Rare in the shipped content: only 19 of the 8,339 distinct scripts in the database
-    /// contain a `PassTime` at all.
+    /// Half of [`Self::clock_can_move`], and the half that is a property of the dialogue
+    /// alone - which is why callers with no world can still ask it. Rare in the shipped
+    /// content: only 19 of the 8,339 distinct scripts in the database contain a `PassTime`
+    /// at all.
     ///
     /// This is about what the ENGINE models. Whether the GAME advances the clock by other
     /// means - it is thought to tick roughly a minute per unseen entry, which the engine

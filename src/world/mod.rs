@@ -241,8 +241,8 @@ pub trait ILookAheadWorld: Send + Sync {
 /// the entries behind it could never be marked. The answer now is the one the world states,
 /// which is right for a player who does not move the skill and wrong for one who does.
 ///
-/// WHICH WAY IT ERRS is the unsafe direction, the same trade `GuardCompiler::with_constant_clock`
-/// takes for the clock: a check the group would have flipped INTO passing is reported as
+/// WHICH WAY IT ERRS is the unsafe direction, the trade `GuardCompiler::with_constant_clock`
+/// describes for the clock: a check the group would have flipped INTO passing is reported as
 /// failing, so a branch the real game opens can be reported closed. Preferred anyway - a
 /// marker that is sometimes wrong beats one that is never right. It says so on stderr the
 /// first time each check is met, so the exposure is visible rather than assumed.
