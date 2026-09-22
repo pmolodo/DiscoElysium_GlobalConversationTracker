@@ -513,7 +513,7 @@ Assembly-CSharp/Sunshine/Metric/SkillType.cs";
 #[test]
 fn the_item_skill_table_matches_the_database() {
     use lookahead_engine::core::garment;
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeMap;
 
     let Some(path) = common::item_names() else {
         return;

@@ -462,13 +462,14 @@ several minutes a suite and costs one thing: a change to `crates/gct-measure/src
 library's public surface can leave a driver uncompilable and nothing says so until someone
 reaches for it. The command above is what says so. See `performance/README.md`.
 
-Measured 2026-09-19, by touching a library source and asking for a verdict:
+Measured by touching a library source and asking for a verdict - the first two rows on
+2026-09-19, the last on 2026-09-21:
 
 | what was run                      | edit to verdict | what it covers                   |
 | --------------------------------- | --------------- | -------------------------------- |
 | `tools/smoke.sh` - debug, `--lib` | 6 s             | 471 unit tests                   |
 | release, `--lib`                  | 58 s            | the same 471                     |
-| `cargo test --release`            | 4m50s           | 46 binaries, 57 s of it in tests |
+| `cargo test --release`            | 4m05s           | 48 binaries, 68 s of it in tests |
 
 Picking fewer TESTS is not the lever: every test here finishes in under twelve seconds and
 most in under one, so execution is a minute and the other four are compiling and linking

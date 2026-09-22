@@ -67,7 +67,7 @@ fn scene_answers(save: &str, asked: &Questions) -> [WireValue; 3] {
     let holdings = common::fixtures::holdings_in_save(save);
     let variables = common::fixtures::variables_sent(save, asked);
 
-    let mut snapshot = WorldRawData {
+    let snapshot = WorldRawData {
         data_values: holdings.data_for(&asked.data),
         ..Default::default()
     };
