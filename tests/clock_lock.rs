@@ -14,6 +14,9 @@
 //! reaches the locked half of the rule without editing a save the game wrote, which is the
 //! one thing this repository never does.
 
+use lookahead_engine::index::{build_group_graph, read_index};
+use lookahead_engine::symbolic::data_layout::DataLayout;
+
 use gct_measure::common;
 
 use common::fixtures;
@@ -30,6 +33,9 @@ const MINUTES_PER_HOUR: i32 = 60;
 
 /// The hour the game stops the clock at, per `SunshineClockTime.stopTickingHour`.
 const STOP_TICKING_HOUR: i32 = 2;
+
+/// Where an incremented slot saturates, which a layout needs and none of this turns on.
+const COUNTER_CAP: i32 = 16;
 
 #[test]
 fn every_committed_save_has_a_running_clock() {
@@ -90,4 +96,43 @@ fn the_small_hours_before_two_are_not_locked() {
             "{hour}:00 is before the hour the game stops the clock at",
         );
     }
+}
+
+/// A group of the SHIPPED database that passes time gets a clock, and one that cannot does
+/// not.
+///
+/// The unit tests either side of this are built on graphs written for them, so none of them
+/// says whether the wiring reaches real content. This does: 631 is one of the thirty-five
+/// groups holding a `PassTime`, and 29 is not.
+#[test]
+fn a_shipped_group_that_passes_time_carries_a_clock() {
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
+    let index = read_index(&path).expect("the index reads");
+    let world = lookahead_engine::world::GameWorld::blank()
+        .with_day_minutes(MORNING_HOUR * MINUTES_PER_HOUR)
+        .with_day_counter(MORNING_DAY)
+        .with_clock_locked(false);
+
+    let (ticking, _) = build_group_graph(&index, 631).expect("631 builds a group");
+    assert!(
+        DataLayout::clock_can_move(&ticking, &world),
+        "631 holds a PassTime and this save's clock runs, so a walk over it moves the hour",
+    );
+    assert!(
+        DataLayout::for_group(&ticking, &world, COUNTER_CAP)
+            .clock()
+            .is_some(),
+        "and the layout has to carry one, or nothing can move",
+    );
+
+    let (still, _) = build_group_graph(&index, 29).expect("29 builds a group");
+    assert!(!DataLayout::clock_can_move(&still, &world));
+    assert!(
+        DataLayout::for_group(&still, &world, COUNTER_CAP)
+            .clock()
+            .is_none(),
+        "a group with no PassTime spends no bits restating a constant",
+    );
 }
