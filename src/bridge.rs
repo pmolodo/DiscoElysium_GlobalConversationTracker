@@ -987,8 +987,14 @@ impl LookAheadRequest {
             };
         }
 
+        // ZERO IS NO LIMIT, as the plugin's setting tells the player: every clock unbounded,
+        // so the only thing that stops the search is the memory budget or an answer.
         if self.time_budget_ms == 0 {
-            return default;
+            return answer::Budget {
+                overall: std::time::Duration::MAX,
+                backwards: std::time::Duration::MAX,
+                each: std::time::Duration::MAX,
+            };
         }
 
         let whole = std::time::Duration::from_millis(self.time_budget_ms);
@@ -3723,12 +3729,11 @@ mod tests {
             DiagramBudget::DEFAULT_MEMORY_BUDGET,
         );
 
-        // No number of the player's, so every part of the search keeps its own pacing.
-        assert_eq!(
-            request.search_budget().backwards,
-            answer::Budget::default().backwards
-        );
-        assert_eq!(request.search_budget().each, answer::Budget::default().each);
+        // ZERO IS NO LIMIT, as the setting tells the player: no clock bounds any part of it.
+        let budget = request.search_budget();
+        assert_eq!(budget.overall, std::time::Duration::MAX);
+        assert_eq!(budget.backwards, std::time::Duration::MAX);
+        assert_eq!(budget.each, std::time::Duration::MAX);
     }
 
     /// A value's wire form is what the other side has to write, so it is pinned here.

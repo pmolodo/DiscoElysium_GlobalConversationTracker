@@ -296,7 +296,10 @@ struct Walk<'w, 'a> {
     /// between entries, but a layer's transition spreads every entry that arrived and every one
     /// of their parents before the loop is reached again - which on a deep group is minutes of
     /// diagram work past the wall. See de-j8eh.
-    deadline: std::time::Instant,
+    ///
+    /// NONE FOR A PASS WITH NO LIMIT: a time of `Duration::MAX` is past any moment the clock
+    /// can name, so it is no deadline rather than one that overflows.
+    deadline: Option<std::time::Instant>,
     /// How many parents have been spread since the clock was last read.
     ///
     /// A CLOCK READ IS NOT FREE and this is the hottest loop in the search: reading it for every
@@ -304,6 +307,14 @@ struct Walk<'w, 'a> {
     /// menu ever reaches. Reading it every [`CLOCK_EVERY`] parents costs a sixty-fourth of that
     /// and bounds the overrun to that many parents' work instead of a whole layer's.
     since_the_clock: usize,
+}
+
+impl Walk<'_, '_> {
+    /// Whether the pass's deadline has passed; never, for a pass with none.
+    fn out_of_time(&self) -> bool {
+        self.deadline
+            .is_some_and(|deadline| std::time::Instant::now() >= deadline)
+    }
 }
 
 /// How many parents one spread walks before it asks the time again. See [`Walk::since_the_clock`].
@@ -1057,7 +1068,7 @@ impl<'a> Backward<'a> {
             frontier: HashMap::new(),
             queue: Worklist::new(known.order()),
             distance: 0,
-            deadline: began + budget.time,
+            deadline: began.checked_add(budget.time),
             since_the_clock: 0,
         };
         let seed = this.pre_enter(node, &vars.top(), compiler, world, &mut walk.image);
@@ -1079,7 +1090,7 @@ impl<'a> Backward<'a> {
                 // At the target these states have arrived nowhere yet. Everywhere else they
                 // are a choice's, already asked about when the choice was reached, and what
                 // this layer buys is leaving it.
-                if std::time::Instant::now() >= walk.deadline {
+                if walk.out_of_time() {
                     return Nearest::Unfinished {
                         out_of_memory: false,
                     };
@@ -1180,7 +1191,7 @@ impl<'a> Backward<'a> {
             walk.since_the_clock += 1;
             if walk.since_the_clock >= CLOCK_EVERY {
                 walk.since_the_clock = 0;
-                if std::time::Instant::now() >= walk.deadline {
+                if walk.out_of_time() {
                     return Some(Nearest::Unfinished {
                         out_of_memory: false,
                     });
