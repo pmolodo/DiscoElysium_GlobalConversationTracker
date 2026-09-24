@@ -14,6 +14,11 @@
 //! the engine, per group, and the harness keeps a copy before the profile is restored;
 //! `kim_case_offline` writes the request it built. This diffs them.
 //!
+//! THE GAME'S SIDE IS READ FROM ITS BYTES, the `.pb` the mod writes beside its text rendering,
+//! through the decoder the engine host uses. The text is protobuf's spelling and the offline
+//! side is the engine's serde form; decoding the bytes puts both in the engine's, so a
+//! difference here is one in the world rather than in how a field is written down.
+//!
 //! ## What it is not
 //!
 //! NOT A CLAIM THAT THE TWO MUST MATCH. Some of what the game answers cannot be read out of a
@@ -62,11 +67,14 @@ fn the_world_the_game_answered_from_matches_the_one_the_fixtures_build() {
     let mut compared = 0;
     for entry in std::fs::read_dir(&theirs).expect("the captured folder reads") {
         let path = entry.expect("a captured file").path();
-        let Some(name) = path.file_name() else {
+        if path.extension().is_none_or(|extension| extension != "pb") {
+            continue;
+        }
+        let Some(stem) = path.file_stem() else {
             continue;
         };
 
-        let beside = mine.join(name);
+        let beside = mine.join(format!("{}.json", stem.to_string_lossy()));
         if !beside.exists() {
             eprintln!(
                 "{} has no offline counterpart at {}",
@@ -85,8 +93,8 @@ fn the_world_the_game_answered_from_matches_the_one_the_fixtures_build() {
 
 /// What differs between one captured pair, field by field.
 fn report(theirs: &std::path::Path, mine: &std::path::Path) {
-    let in_game: serde_json::Value = read(theirs);
-    let offline: serde_json::Value = read(mine);
+    let in_game = decoded(theirs);
+    let offline = read(mine);
 
     println!("\n{}", theirs.file_name().unwrap().to_string_lossy());
 
@@ -238,7 +246,20 @@ fn canonical(
     world
 }
 
-/// One captured request.
+/// The request the game sent, from its bytes, in the engine's serde form.
+fn decoded(path: &std::path::Path) -> serde_json::Value {
+    use prost::Message;
+
+    let bytes =
+        std::fs::read(path).unwrap_or_else(|why| panic!("{} does not read: {why}", path.display()));
+    let wire = lookahead_engine::wire::LookAheadRequest::decode(bytes.as_slice())
+        .unwrap_or_else(|why| panic!("{} is not a request: {why}", path.display()));
+    let request = lookahead_engine::wire_convert::read_look_ahead(wire)
+        .unwrap_or_else(|why| panic!("{} will not read: {why:?}", path.display()));
+    serde_json::to_value(&request).expect("a request serialises")
+}
+
+/// The request the offline report wrote, in the engine's serde form.
 fn read(path: &std::path::Path) -> serde_json::Value {
     let text = std::fs::read_to_string(path)
         .unwrap_or_else(|why| panic!("{} does not read: {why}", path.display()));
