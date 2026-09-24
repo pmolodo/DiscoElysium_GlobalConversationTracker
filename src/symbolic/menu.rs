@@ -722,9 +722,54 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
             // IN BOUND ORDER, one target at a time, stopping at the first whose bound cannot
             // beat the best distance proven this round - ties included, since a tie cannot
             // change which distance is least.
-            for &target in &in_play {
+            //
+            // A LEVEL AT A TIME FIRST. Link bounds are optimistic, and a guard can shut off
+            // hundreds of targets a few links away; asking each costs a whole backward pass
+            // to prove it unreachable. So the first time the loop reaches a bound with more
+            // than one target, one pass asks whether ANY of that level's remaining targets can
+            // be reached: where none can, the level is settled at once and skipped, and where
+            // one can, its targets are asked one at a time as before. Only targets proven
+            // unreachable are skipped, so the order and the answer are unchanged. Measured on
+            // the Wild Pines menu (de-yvue): 458 targets proven unreachable one at a time in
+            // 5.8 s took four such passes.
+            let mut level_asked = None;
+            for (at, &target) in in_play.iter().enumerate() {
                 if best.is_some_and(|(nearest, _, _)| bounds[&target] >= nearest) {
                     break;
+                }
+                let level = bounds[&target];
+                if level_asked != Some(level) {
+                    level_asked = Some(level);
+                    let group: Vec<DialogueNodeId> = in_play[at..]
+                        .iter()
+                        .copied()
+                        .take_while(|id| bounds[id] == level)
+                        .collect();
+                    if group.len() > 1 {
+                        let left = budget.wall.saturating_sub(began.elapsed());
+                        if left.is_zero() {
+                            failure = Some((StoppedBy::Time, false));
+                            break 'classes;
+                        }
+                        answer.passes += 1;
+                        let any = Backward::reaching_any_knowing(
+                            search.reborrow(),
+                            &group,
+                            &cut,
+                            &pass_budget(left),
+                            Some(&known),
+                        );
+                        if any.stats().met_at.is_none() {
+                            if !any.stats().reached_fixed_point {
+                                failure = Some((StoppedBy::Incomplete, any.stats().out_of_memory));
+                                break 'classes;
+                            }
+                            unreachable.extend(group);
+                        }
+                    }
+                }
+                if unreachable.contains(&target) {
+                    continue;
                 }
                 let left = budget.wall.saturating_sub(began.elapsed());
                 if left.is_zero() {
