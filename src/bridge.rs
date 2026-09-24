@@ -1828,11 +1828,14 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> SeenState>(
         }
     }
     let ration = request.search_budget();
-    let wall = request.menu_budget().min(
-        ration
-            .overall
-            .saturating_mul((contestants.len() + locked.len()) as u32),
-    );
+    // TWO LIMITS, AND NEITHER IS MADE OUT OF THE OTHER. The menu dial bounds everything this
+    // menu does, from `began`. The per-option dial bounds how long any one option's answer
+    // takes - so the ordinary options, which one marking answers together and which all wait
+    // for it, share ONE per-option allowance, and each locked half, searched on its own, gets
+    // one of its own. The per-option dial is never multiplied into a menu total: an option
+    // does not get longer because it has siblings.
+    let menu_left = || request.menu_budget().saturating_sub(began.elapsed());
+    let marking_began = std::time::Instant::now();
     // WHERE THE PLAYER HAS BEEN, as far as it bears on this menu - see [`passed_since_hub`].
     let encountered: Vec<DialogueNodeId> = request
         .encountered
@@ -1854,7 +1857,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> SeenState>(
         seen_state,
         &contestants,
         &menu::Budget {
-            wall: wall.saturating_sub(began.elapsed()),
+            wall: menu_left().min(ration.overall.saturating_sub(marking_began.elapsed())),
             each: ration.each,
         },
         shape,
@@ -1904,6 +1907,13 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> SeenState>(
             inner: world,
             locks: &branch_locks,
         };
+        // THIS HALF'S OWN ALLOWANCE, across every search it takes - it can ask again after
+        // blocking an entry a star already leads to, and all of that is this one option's time.
+        let half_began = std::time::Instant::now();
+        let half_budget = || menu::Budget {
+            wall: menu_left().min(ration.overall.saturating_sub(half_began.elapsed())),
+            each: ration.each,
+        };
         let alone = loop {
             let mut alone = menu::mark_menu_blocking(
                 Search {
@@ -1915,10 +1925,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> SeenState>(
                 },
                 seen_state,
                 std::slice::from_ref(&contestant),
-                &menu::Budget {
-                    wall: wall.saturating_sub(began.elapsed()),
-                    each: ration.each,
-                },
+                &half_budget(),
                 shape,
                 &blocked_here,
             );
@@ -1952,10 +1959,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> SeenState>(
                 &contestants,
                 &rivals,
                 witness,
-                &menu::Budget {
-                    wall: wall.saturating_sub(began.elapsed()),
-                    each: ration.each,
-                },
+                &half_budget(),
                 shape,
                 &returned,
             ) {

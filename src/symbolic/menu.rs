@@ -200,8 +200,16 @@ pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> SeenState>(
     // THE INERT ENTRIES ARE BLOCKED HERE AND ONLY HERE. `mark_menu_blocking` takes them as
     // entries neither walkable nor claimable, which is what an inert loop wants: it holds
     // nothing unread to claim, and a route through it arrives where it started.
-    let mut exact = mark_menu_blocking(search, seen_state, contestants, budget, shape, inert);
+    //
+    // ON THE SAME WALL, what step 1 left of it. The two steps answer one menu, so the time the
+    // cheap question spent - all of it, where it gave up - is time the exact one does not get.
+    let left = Budget {
+        wall: budget.wall.saturating_sub(onward.elapsed),
+        each: budget.each,
+    };
+    let mut exact = mark_menu_blocking(search, seen_state, contestants, &left, shape, inert);
     exact.passes += passes;
+    exact.elapsed += onward.elapsed;
     exact.fell_through = true;
     exact
 }
