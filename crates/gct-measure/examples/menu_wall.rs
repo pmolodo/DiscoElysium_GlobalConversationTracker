@@ -52,6 +52,7 @@ use lookahead_engine::service::Service;
 use gct_measure::common;
 
 use gct_measure::options;
+use gct_measure::plugin_defaults;
 
 use gct_measure::menu_profile;
 use menu_profile::MenuProfile;
@@ -72,10 +73,10 @@ const STARTS: usize = 24;
 const UNSEEN: usize = 10;
 
 /// The shipped per-option dial, so the row is the one a player would get.
-const TIME_BUDGET_MS: u64 = 1000;
+const TIME_BUDGET_MS: u64 = plugin_defaults::TIME_BUDGET_MS;
 
 /// The wall the plugin ships, reported beside each row rather than applied to it.
-const MENU_WALL_MS: u64 = 3000;
+const MENU_WALL_MS: u64 = plugin_defaults::MENU_TIME_BUDGET_MS;
 
 /// The host's read deadline, which is not a budget: crossing it kills the engine.
 const READ_DEADLINE_MS: u64 = 30000;

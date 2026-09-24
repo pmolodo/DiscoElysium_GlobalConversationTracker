@@ -28,6 +28,7 @@ pub mod counting_allocator;
 pub mod kept;
 pub mod menu_profile;
 pub mod options;
+pub mod plugin_defaults;
 pub mod prepared;
 pub mod save_world;
 pub mod seen_profile;

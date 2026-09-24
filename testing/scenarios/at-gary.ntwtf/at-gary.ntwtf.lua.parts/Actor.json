@@ -1,0 +1,27 @@
+{
+  "_format": "sparse-diff",
+  "_formatVersion": 2,
+  "_base": "../../at-evart.ntwtf/at-evart.ntwtf.lua.parts/Actor.json",
+  "_changes": {
+    "Gary,_the_Cryptofascist": {
+      "Bark_Index": 0
+    },
+    "Rosemary": {
+      "Bark_Index": 4
+    },
+    "Radio": {
+      "Bark_Index": 1
+    },
+    "Kim_Kitsuragi": {
+      "Position_Martinaise_ext": "125.7662,0.7756451,-110.5233,0,0.9708644,0,-0.2396295,Martinaise-ext"
+    },
+    "You": {
+      "Position_Whirling_int_f2": "0.111201,3.634719,0.2414019,0,0.9694118,0,0.2454401,Whirling-int-f2",
+      "Position_Martinaise_ext": "125.1014,0.7737722,-109.7765,0,0.9708644,0,-0.2396295,Martinaise-ext",
+      "Position_Second_home_int": "5.278403,0.44,-2.597291,0,0.05403,0,-0.9985393,Second-home-int"
+    },
+    "Abigail": {
+      "Bark_Index": 3
+    }
+  }
+}

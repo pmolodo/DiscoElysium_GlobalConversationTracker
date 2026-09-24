@@ -39,6 +39,12 @@ pub mod fixtures;
 /// and a second copy of the types is a second thing to keep agreeing with the file.
 pub mod suites;
 
+/// One suite scenario's world, staged from the fixtures the in-game run loads.
+///
+/// Its own module because the marker test and the scenario runner both stage scenarios, and
+/// two stagings of "the same fixture" would drift apart.
+pub mod staging;
+
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;

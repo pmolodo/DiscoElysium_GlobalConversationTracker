@@ -762,6 +762,45 @@
       "suite": "joyce-clock",
       "what": "a menu in a group the clock moves through is answered in the game, with the register carried",
       "why": "de-086x: the carried clock is checked offline three ways and the plugin sends the lock, but no in-game run had ever built a search state in a group that carries a clock - so the deployed host binary, where the budget, the threading and the process boundary all differ from a test, had never run the layout the register lives in. 631's group is one of the nine carriers, and with this save's world - unlocked, 15:00 on day three - its layout takes a seven-bit clock with a ceiling of 95 quarter-hour steps. A LOCKED CLOCK WOULD CARRY NO BITS AT ALL, which is why the save matters as much as the group. at-evart rather than at-joyce, and an empty global state rather than the recorded one, because a menu where everything is recorded is settled before a diagram is built: this save has been through Joyce's hub, so four of its seven options sit on the bottom rung with unread content behind them and the menu discriminates. WHAT THE MARKERS ARE DOING HERE is holding the answer to the same standard as every other suite - the clock is what the run is for, but a run that only counted diagram nodes could carry the register and still answer wrongly."
+    },
+    {
+      "inGame": {
+        "artefacts": [
+          {
+            "file": "look-ahead-budget-overflows.log",
+            "what": "which options of the menus on the way ran out of budget",
+            "check": "reportOverflows"
+          }
+        ],
+        "notInDefaultRun": "Its claim is checked offline by tests/scenario_suites.rs under the shipped budgets. In game it is worth running by name to set the game's own timing beside that one, since the overflow log is what a run reports and nothing in it fails the run."
+      },
+      "offline": {
+        "claim": "everyMenuFinishesInBudget",
+        "why": "Both menus settle offline in tens of milliseconds against a thousand per option and three thousand per menu, so the claim has a wide margin over load on the machine. A player's game logged 762 running out at two seconds on this menu, so if it holds here and fails there, the difference is in what the game sends and not in the search."
+      },
+      "scenarios": [
+        {
+          "conversation": 631,
+          "stops": [
+            {
+              "what": "Joyce's hub on the sloop, on the fourth morning: 1406, 1275, 1519, 741, 100, 960, 1434",
+              "inputs": []
+            },
+            {
+              "what": "the menu after 1519, 'Tell me about Wild Pines. What do you do?': 762 and 270",
+              "inputs": ["3"]
+            }
+          ],
+          "markers": "ignored",
+          "save": "at-joyce2"
+        }
+      ],
+      "settings": { "KeepLookAheadStats": "true", "LogLookAheadBudgetExceeded": "true" },
+      "settingsWhy": "The question is whether the menus finish inside the budget, so the run has to write down the ones that do not.",
+      "state": "global-state-at-joyce2.json",
+      "suite": "joyce-wild-pines",
+      "what": "the menu after asking Joyce about Wild Pines, on day four with the player's own global state",
+      "why": "From a real playthrough: on the fourth morning, choosing 'Tell me about Wild Pines. What do you do?' from Joyce's hub reaches a two-option menu, and the player's own overflow log recorded 762 running out at two seconds and 270 at none."
     }
   ]
 }

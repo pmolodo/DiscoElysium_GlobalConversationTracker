@@ -1,0 +1,11 @@
+--- ../at-evart.ntwtf/at-evart.states.lua.diff
++++ at-gary.states.lua
+@@ -52,3 +52,3 @@
+ AreaState["PLAZA_GASTON"]={LocationState=0};
+-AreaState["SUNKEN_CAR"]={LocationState=0};
++AreaState["SUNKEN_CAR"]={LocationState=1};
+ AreaState["WATERLOCK_GATE"]={LocationState=1};
+@@ -255,2 +255,3 @@
+ AreaState["Yard Box"]={emptied=true};
++AreaState["police-motor-carriage container"]={emptied=true};
+ ShownOrbs["WHIRLING F2 ORB / locked door"]={OrbSeen=1};

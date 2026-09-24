@@ -1,0 +1,7 @@
+--- ../at-gary.ntwtf/at-gary.states.lua.diff
++++ at-joyce2.states.lua
+@@ -50,3 +50,3 @@
+ AreaState["JOYCE"]={LocationState=0};
+-AreaState["PLAZA_DUDES"]={LocationState=0};
++AreaState["PLAZA_DUDES"]={LocationState=4};
+ AreaState["PLAZA_GASTON"]={LocationState=0};

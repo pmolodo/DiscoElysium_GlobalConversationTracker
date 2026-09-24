@@ -1,0 +1,19 @@
+{
+  "_format": "sparse-diff",
+  "_formatVersion": 2,
+  "_base": "../../at-gary.ntwtf/at-gary.ntwtf.lua.parts/Actor.json",
+  "_changes": {
+    "Racist_lorry_driver": {
+      "Bark_Index": 0
+    },
+    "Gaston_Martin": {
+      "Bark_Index": 0
+    },
+    "Kim_Kitsuragi": {
+      "Position_Martinaise_ext": "10.79413,1.032144,-129.7899,0,0.8541159,0,0.5200827,Martinaise-ext"
+    },
+    "You": {
+      "Position_Martinaise_ext": "10.38642,1.032144,-130.6052,0,0.8549417,0,0.5187241,Martinaise-ext"
+    }
+  }
+}
