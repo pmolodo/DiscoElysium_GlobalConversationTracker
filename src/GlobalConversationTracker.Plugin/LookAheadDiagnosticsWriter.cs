@@ -8,6 +8,7 @@ using System.Text.Json;
 using GlobalConversationTracker.Core;
 using GlobalConversationTracker.Engine;
 using GlobalConversationTracker.Session;
+using Google.Protobuf;
 
 namespace GlobalConversationTracker
 {
@@ -48,14 +49,23 @@ namespace GlobalConversationTracker
         /// </summary>
         private const int StatisticsWriteInterval = 200;
 
-        /// <summary>What a captured request is called, by the conversation it asks about.</summary>
+        /// <summary>
+        /// What a captured request is called, by the conversation it asks about, before its
+        /// extension.
+        /// </summary>
         /// <remarks>
-        /// ONE FILE PER GROUP, rewritten each time that group is asked. A journal of every
-        /// menu would be a bigger file saying the same thing: what is wanted from this is
-        /// the WORLD a group was crawled from, and that does not change between two menus
+        /// ONE PAIR OF FILES PER GROUP, rewritten each time that group is asked. A journal of
+        /// every menu would be a bigger file saying the same thing: what is wanted from this
+        /// is the WORLD a group was crawled from, and that does not change between two menus
         /// of the same group in the same place.
         /// </remarks>
-        internal const string RequestFileNameFormat = "look-ahead-request-{0}.json";
+        internal const string RequestFileStemFormat = "look-ahead-request-{0}";
+
+        /// <summary>The extension of the rendering a person reads.</summary>
+        internal const string RequestTextExtension = ".json";
+
+        /// <summary>The extension of the bytes the engine reads.</summary>
+        internal const string RequestBinaryExtension = ".pb";
 
         private readonly IGlobalStateLog _log;
         private readonly LookAheadStatistics _statistics = new LookAheadStatistics();
@@ -120,30 +130,35 @@ namespace GlobalConversationTracker
         /// down. This writes the game's side. The offline side writes its own, and the
         /// two are a diff apart.</para>
         ///
-        /// <para>THE MESSAGE THAT CROSSED, rendered to text. What crosses is binary, so a
-        /// person diffing two of these needs it readable; the rendering comes from the
-        /// generated code, so it cannot name a field the wire does not carry or leave one
-        /// out. It is built from the same message the engine is handed, which is what
-        /// makes this what was ASKED rather than what this assembly made of it
-        /// afterwards.</para>
+        /// <para>THE MESSAGE THAT CROSSED, written twice. Rendered to text, because a person
+        /// diffing two of these needs to read them; and as the bytes themselves, because the
+        /// engine reads binary and nothing on the Rust side reads the text rendering - so the
+        /// bytes are what lets an offline run answer exactly what the game asked
+        /// (crates/gct-measure/examples/replay_request.rs). Both come from the generated code,
+        /// so neither can name a field the wire does not carry or leave one out, and both are
+        /// built from the same message the engine is handed, which is what makes this what
+        /// was ASKED rather than what this assembly made of it afterwards.</para>
         /// </remarks>
         /// <param name="conversation">The group the request asks about.</param>
-        /// <param name="json">The request, as it crossed to the engine.</param>
-        internal void RecordRequest(int conversation, string json)
+        /// <param name="request">The request, as it crossed to the engine.</param>
+        internal void RecordRequest(int conversation, IMessage request)
         {
             if (!KeepRequests || _requestCaptureFailed)
             {
                 return;
             }
 
-            string path = Path.Combine(
+            string stem = Path.Combine(
                 _directoryPath,
                 string.Format(
-                    CultureInfo.InvariantCulture, RequestFileNameFormat, conversation));
+                    CultureInfo.InvariantCulture, RequestFileStemFormat, conversation));
+            string path = stem + RequestTextExtension;
 
             try
             {
-                File.WriteAllText(path, json);
+                File.WriteAllText(path, request.ToString());
+                path = stem + RequestBinaryExtension;
+                File.WriteAllBytes(path, request.ToByteArray());
             }
             catch (Exception ex)
             {

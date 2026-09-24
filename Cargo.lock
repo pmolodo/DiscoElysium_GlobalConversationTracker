@@ -359,6 +359,7 @@ dependencies = [
  "gct_save_files",
  "lookahead_engine",
  "oxidd",
+ "prost",
  "serde",
  "serde_json",
 ]

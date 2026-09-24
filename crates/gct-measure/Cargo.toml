@@ -29,6 +29,7 @@ bincode = "1.3"
 oxidd = "0.12.0"
 clap = { version = "4.5", features = ["derive"] }
 gct_save_files = { path = "../gct-save-files" }
+prost = "0.13"
 
 [lib]
 path = "src/lib.rs"

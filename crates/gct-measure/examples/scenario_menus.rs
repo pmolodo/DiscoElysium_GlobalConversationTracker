@@ -63,6 +63,10 @@ struct Options {
     /// Lift both time limits, to see what a search that gives up would really need
     #[arg(long, conflicts_with_all = ["time_budget_ms", "menu_time_budget_ms"])]
     nolimit: bool,
+    /// Write each stop's request here in the engine's serde form, one file per stop - the form
+    /// replay_request --write-json writes a game's capture in, so the two can be diffed
+    #[arg(long = "write-requests", value_name = "DIR")]
+    write_requests: Option<std::path::PathBuf>,
 }
 
 impl Options {
@@ -152,7 +156,22 @@ fn run(asked: &Options) -> Result<(), String> {
     for scenario in scenarios {
         let (staged, played) =
             staging::play_stops(&index, &texts, &path, suite, scenario, budgets)?;
-        for stop in played {
+        for (at, stop) in played.into_iter().enumerate() {
+            if let Some(folder) = &asked.write_requests {
+                let written = folder.join(format!(
+                    "look-ahead-request-{}-{}-stop{}.json",
+                    scenario.save,
+                    scenario.conversation,
+                    at + 1,
+                ));
+                std::fs::create_dir_all(folder)
+                    .map_err(|fault| format!("{}: {fault}", folder.display()))?;
+                let json = serde_json::to_string(&stop.request)
+                    .map_err(|fault| format!("the request will not serialise: {fault}"))?;
+                std::fs::write(&written, json)
+                    .map_err(|fault| format!("{}: {fault}", written.display()))?;
+                println!("\nwrote {}", written.display());
+            }
             if !stop.silent.is_empty() {
                 eprintln!(
                     "warning: the walk displays {:?}, which have no text, and whether the game \

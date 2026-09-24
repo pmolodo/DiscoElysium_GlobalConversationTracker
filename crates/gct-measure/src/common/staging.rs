@@ -35,6 +35,8 @@ pub struct PlayedStop<'a> {
     pub walk: Walkthrough,
     /// Lines the walk displayed that have no text - see [`silent`].
     pub silent: Vec<DialogueNodeId>,
+    /// What the engine was asked, as the plugin would have sent it.
+    pub request: LookAheadRequest,
     /// What the engine answered.
     pub response: LookAheadResponse,
     /// How long the whole menu took, as the caller waited for it.
@@ -85,8 +87,9 @@ pub fn play_stops<'a>(
             })?;
         let silent = silent(texts, &walk);
 
+        let request = budgets.apply(staged.asking(&walk));
         let began = Instant::now();
-        let response = service.answer_request(budgets.apply(staged.asking(&walk)));
+        let response = service.answer_request(request.clone());
         let took_ms = began.elapsed().as_millis();
         if let Some(error) = &response.error {
             return Err(format!(
@@ -99,6 +102,7 @@ pub fn play_stops<'a>(
             what: stop.what,
             walk,
             silent,
+            request,
             response,
             took_ms,
         });

@@ -627,12 +627,15 @@ namespace GlobalConversationTracker.Harness
         /// these with it. What they are for outlives the run: the world the game answered a
         /// group from, to be compared against the one an offline run assembles from the
         /// same save. Nothing is written unless a suite asked for the capture.
+        ///
+        /// EVERY RENDERING THE MOD WRITES: the text a person diffs, and the bytes
+        /// crates/gct-measure/examples/replay_request.rs answers again offline.
         /// </remarks>
         /// <param name="saveGames">The profile's SaveGames folder.</param>
         /// <param name="artifacts">Where the run's own output goes.</param>
         private static void KeepCapturedRequests(string saveGames, string artifacts)
         {
-            string[] captured = Directory.GetFiles(saveGames, "look-ahead-request-*.json");
+            string[] captured = Directory.GetFiles(saveGames, "look-ahead-request-*.*");
             if (captured.Length == 0)
             {
                 return;
@@ -646,7 +649,7 @@ namespace GlobalConversationTracker.Harness
             }
 
             Console.WriteLine(
-                $"        kept {captured.Length} captured request(s) in {kept}");
+                $"        kept {captured.Length} captured request file(s) in {kept}");
         }
 
         private static void ClearArtefacts(LookAheadSuite suite, string saveGames)
