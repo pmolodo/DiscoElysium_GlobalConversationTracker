@@ -2144,9 +2144,9 @@ fn stopped_name(stopped: seen_state_search::StoppedBy) -> &'static str {
         seen_state_search::StoppedBy::Targets => "states",
         seen_state_search::StoppedBy::Time => "time",
         // A pass that could not finish, which is either its own clock or the diagram
-        // running out of nodes. `out_of_nodes` tells them apart, and the wire has one word
-        // for the pair until something reads them apart.
-        seen_state_search::StoppedBy::Incomplete => "memory",
+        // running out of nodes. `record` names the second "memory" from `out_of_nodes`
+        // before it asks here, so what reaches this arm is the clock.
+        seen_state_search::StoppedBy::Incomplete => "time",
     }
 }
 

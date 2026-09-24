@@ -244,6 +244,7 @@ namespace GlobalConversationTracker.Engine
         {
             Wire.StoppedBy.States => "states",
             Wire.StoppedBy.Time => "time",
+            Wire.StoppedBy.Memory => "memory",
             _ => "none",
         };
 

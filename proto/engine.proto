@@ -343,6 +343,8 @@ enum StoppedBy {
   STOPPED_BY_NONE = 0;
   STOPPED_BY_STATES = 1;
   STOPPED_BY_TIME = 2;
+  // The diagram ran out of nodes under the memory budget.
+  STOPPED_BY_MEMORY = 3;
 }
 
 // One start's answer.

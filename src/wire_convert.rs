@@ -311,6 +311,7 @@ fn stopped_by_of(stopped_by: &str) -> wire::StoppedBy {
     match stopped_by {
         "states" => wire::StoppedBy::States,
         "time" => wire::StoppedBy::Time,
+        "memory" => wire::StoppedBy::Memory,
         _ => wire::StoppedBy::None,
     }
 }
@@ -484,6 +485,7 @@ mod tests {
         assert_eq!(stopped_by_of("none"), wire::StoppedBy::None);
         assert_eq!(stopped_by_of("states"), wire::StoppedBy::States);
         assert_eq!(stopped_by_of("time"), wire::StoppedBy::Time);
+        assert_eq!(stopped_by_of("memory"), wire::StoppedBy::Memory);
     }
 
     #[test]
