@@ -69,7 +69,7 @@ namespace GlobalConversationTracker.Harness
         /// <see cref="TestStateBudgetSetting"/> instead, which is the only budget that can
         /// stop one before it has looked at anything.
         /// </remarks>
-        public const int TestMemoryBudgetMb = 256;
+        public const int TestMemoryBudgetMb = 300;
 
         /// <summary>
         /// The suite key that starves a crawl: a state budget, and TEST-ONLY.

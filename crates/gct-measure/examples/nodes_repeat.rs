@@ -50,6 +50,7 @@ use lookahead_engine::symbolic::vars::DataVars;
 use gct_measure::common;
 
 use gct_measure::options;
+use gct_measure::plugin_defaults;
 
 use gct_measure::seen_profile;
 use seen_profile::candidates;
@@ -136,8 +137,8 @@ fn main() {
     // WHAT THE PLUGIN ASKS FOR, since the question is about a row of a matrix run and a
     // matrix row is answered at the player's own settings.
     let request = lookahead_engine::bridge::LookAheadRequest {
-        time_budget_ms: 1000,
-        memory_budget_mb: 256,
+        time_budget_ms: plugin_defaults::TIME_BUDGET_MS,
+        memory_budget_mb: plugin_defaults::MEMORY_BUDGET_MB,
         ..Default::default()
     };
     let _budget = request.search_budget();
