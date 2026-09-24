@@ -75,7 +75,7 @@
       "what": "a path spends as it walks, and the look-ahead has to spend with it",
       "why": "Conversation 451 gates a 0.50 real purchase behind a 50.00 one, and the staged global state leaves entry 80 - the only one a speaker buyer reaches - unseen. An option is therefore orange exactly when the crawl could afford both, which is what the three balances separate. The middle one is the point: a look-ahead that checked an option's price without subtracting what the path already spent would mark it.",
       "state": "global-conversation-state.json",
-      "settings": { "KeepLookAheadStates": "true" },
+      "settings": { "KeepLookAheadStats": "true" },
       "inGame": {
         "artefacts": [
           {
@@ -171,7 +171,7 @@
       "what": "a conversation read to the end earns no marker and needs no crawl",
       "why": "The bottom rung. Every entry is read in this save, so every option's own novelty and everything it can reach are both the lowest, and nothing can outrank anything. The global state and local save are both exhaustive, so the structural scan can prove that before any crawl state is built - which is what the statistics artefact distinguishes from crawls that ran and found nothing.",
       "state": "global-state-all-seen-elsewhere.json",
-      "settings": { "KeepLookAheadStates": "true" },
+      "settings": { "KeepLookAheadStats": "true" },
       "inGame": {
         "artefacts": [
           {
@@ -243,7 +243,7 @@
       "what": "an option that is itself unread anywhere is never marked, and never crawled",
       "why": "The rule that gives the feature its shape: nothing outranks where such an option already leads, so a marker would say nothing. On a profile that has recorded nothing at all - a first playthrough - no option in the game is ever marked, which is a strong claim and worth holding to. And it is decided WITHOUT crawling: the engine answers from the option's own novelty and returns before it builds a state, so a first playthrough pays nothing at all for the feature. That is why the statistics artefact asserts no STATE was built rather than no crawl was asked for. The four conversations are named for their shapes rather than at random: the ceiling fan has no purchase in it, Klaasje's note is small and heavily gated, the smoker is mid-sized, and Garte is one of the largest in the game. ONLY GARTE IS OPENED IN GAME. The other three make the same claim in the same words, and what they add is three more GROUPS for the offline executor, which asks the claim of every entry in each rather than of the options a menu offered - milliseconds there against a save load each in the game. Garte is the one kept because the claim is that even the largest group costs nothing.",
       "state": "global-state-empty.json",
-      "settings": { "KeepLookAheadStates": "true" },
+      "settings": { "KeepLookAheadStats": "true" },
       "inGame": {
         "artefacts": [
           {
@@ -329,7 +329,7 @@
       "why": "This suite used to be called headroom and used to be a measurement: the staged global state records every entry of every conversation, which was once the most expensive shape a crawl could take, because no option's own novelty is unseen-anywhere - so the early exit did not fire - and nothing reachable is unseen-anywhere either, so a crawl could not stop the instant it found something and had to explore everything. The no-potential-improvement short-circuit ended that: when every entry is recorded, nothing can outrank the option being asked about, so no walk can produce a marker and the crawl is skipped before any state is built. The expensive shape is now the near-opposite - a group with one unseen node, or a handful - and is measured elsewhere. What these five conversations are for now is the strongest available statement of the cheap case: they are the largest in the game, so if a crawl were going to run anywhere it would run here, and the claim is that not one does. FIVE OFFLINE AND ONE IN GAME. The claim is asked of every entry of all five groups by tests/scenario_suites.rs, which is where it is worth having five; the suite says nothing about markers - its policy is ignored - so the game has only one thing to show, and Joyce, the largest of them, shows it.",
       "_size": "The five are ranks two to six of the game's 1,501 conversations by entry count - 368, 14, 631, 28 and 1030, from 1,770 entries down to 1,476 - and tests/all_seen.rs holds them to that against the shipped index rather than taking it on trust. The largest, 362, is not among them. ENTRY COUNT IS NOT THE COST: the budget counts entry-and-state pairs, so what blows up is the state slots a conversation touches multiplied by its reachable entries, and the count turns out to be a poor proxy - 1030 is the sixth largest and its crawls peak at 201 states, a thousandth of Joyce's. It is still the only ordering available without running them.",
       "state": "global-state-worst-case.json",
-      "settings": { "KeepLookAheadStates": "true", "LogLookAheadBudgetExceeded": "true" },
+      "settings": { "KeepLookAheadStats": "true", "LogLookAheadBudgetExceeded": "true" },
       "settingsWhy": "Kept on so that a crawl WOULD leave a trace. The claim is that the files say nothing happened; that means nothing unless the run was configured to write them.",
       "inGame": {
         "artefacts": [
@@ -756,7 +756,7 @@
           "save": "at-evart"
         }
       ],
-      "settings": { "KeepLookAheadStates": "true" },
+      "settings": { "KeepLookAheadStats": "true" },
       "settingsWhy": "The artefact is the claim: the stats file has to be written for the run to be able to say a diagram was built.",
       "state": "global-state-empty.json",
       "suite": "joyce-clock",

@@ -490,9 +490,9 @@ namespace GlobalConversationTracker
                 + "distinct states - which is where a blow-up lives. Only an option that "
                 + "already overflowed is walked a second time to work this out, so menus that "
                 + "stay within budget cost the same as with it off.");
-            var keepLookAheadStates = Config.Bind(
+            var keepLookAheadStats = Config.Bind(
                 "Diagnostics",
-                "KeepLookAheadStates",
+                "KeepLookAheadStats",
                 false,
                 "Maintain " + LookAheadDiagnosticsWriter.StatisticsFileName + " in the SaveGames "
                 + "folder: how many diagram nodes and how long each look-ahead takes, as totals, "
@@ -620,7 +620,7 @@ namespace GlobalConversationTracker
                         store.DirectoryPath,
                         log,
                         logLookAheadBudgetExceeded.Value,
-                        keepLookAheadStates.Value,
+                        keepLookAheadStats.Value,
                         keepLookAheadRequests.Value)));
 
             // Not in the condition below: the band inset is presentation for a line that

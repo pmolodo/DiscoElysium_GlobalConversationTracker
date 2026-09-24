@@ -326,7 +326,7 @@ namespace GlobalConversationTracker.Automation.Tests
             LookAheadSuite suite = LookAheadSuites.AllSeen;
 
             Assert.Single(suite.Scenarios);
-            Assert.Equal("true", suite.PluginSettings["KeepLookAheadStates"]);
+            Assert.Equal("true", suite.PluginSettings["KeepLookAheadStats"]);
         }
 
         [Fact]
@@ -341,7 +341,7 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.Equal("global-state-all-seen-elsewhere.json", suite.GlobalStateFile);
             Assert.Equal("seen-here-all", scenario.SaveName);
             Assert.Equal(MarkerPolicy.Named, Assert.Single(scenario.Stops).Markers);
-            Assert.Equal("true", suite.PluginSettings["KeepLookAheadStates"]);
+            Assert.Equal("true", suite.PluginSettings["KeepLookAheadStats"]);
             Assert.Null(statistics.Check(null));
             Assert.NotNull(statistics.Check(Statistics(crawls: 1, reached: 1)));
         }
