@@ -726,8 +726,9 @@ mod branch_tests {
     ///
     /// A WINDOW RATHER THAN A CEILING, and it is narrow: wide enough to lay the seed out,
     /// since a run that cannot build one dies in `seed_of` and tests nothing here, and
-    /// narrow enough that pricing the purse does not fit. Measured at 8 KB the seed itself
-    /// cannot be built and at 64 KB the whole search completes.
+    /// narrow enough that pricing the purse does not fit. The seed always fits from 7 KB up,
+    /// and at 64 KB the whole search completes; see [`TOO_SQUEEZED`] for why the edge below
+    /// 7 KB is not one number.
     ///
     /// So a change to the layout, the register encoding or the manager can move this out
     /// from under the test, and the symptom is either a panic in `seed_of` or an assertion
@@ -735,13 +736,21 @@ mod branch_tests {
     /// what a full manager DOES, not about this number.
     const SQUEEZED: usize = 16 * 1024;
 
-    /// Half of [`SQUEEZED`], which is not enough to lay the seed out at all.
+    /// An eighth of [`SQUEEZED`], which is not enough to lay the seed out at all.
     ///
     /// The other side of the same window, and the reason [`SQUEEZED`] is a window: at this
     /// budget the manager fills while the purse's equality is being built, before the
-    /// search has a starting point to explore from. Re-tune it with [`SQUEEZED`] if a
-    /// layout change moves the boundary; the two are one measurement read at both ends.
-    const TOO_SQUEEZED: usize = SQUEEZED / 2;
+    /// search has a starting point to explore from.
+    ///
+    /// FAR BELOW THE BOUNDARY, NOT AT IT, because the boundary is not a number. The manager
+    /// collects garbage on a thread of its own, started when the store is 95 per cent full,
+    /// so whether a seed near the limit fits depends on whether that thread freed the dead
+    /// nodes before the next allocation. Measured over fifty fresh managers each: at 5 KB
+    /// the seed fitted 25 times, at 6 KB 46, at 7 KB every time and at 8 KB never - which
+    /// was this constant once, and failed one run in three hundred. Up to 4 KB it never fits,
+    /// because the seed's live nodes alone overflow the store and no collection can make room.
+    /// Re-tune it with [`SQUEEZED`] if a layout change moves that floor.
+    const TOO_SQUEEZED: usize = SQUEEZED / 8;
 
     /// A purse wide enough that arithmetic over it does not fit in [`SQUEEZED`].
     ///
