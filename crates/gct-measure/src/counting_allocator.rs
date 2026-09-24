@@ -6,20 +6,23 @@
 //! Resident size answers a different question, and answers it late - the operating system
 //! decides what to keep resident and when a page is first touched.
 //!
-//! ## Included by path, and deliberately not a child of `common`
+//! ## The type is here, and the attribute is in the binary
 //!
-//! `tests/common/mod.rs` is linked into most test binaries, and a `#[global_allocator]`
-//! declared there would be imposed on every one of them - every test in the suite would
-//! then be counting allocations it has no interest in. So this is a loose file that only
-//! the two callers that want it pull in:
+//! A `#[global_allocator]` is one per binary, and one declared in this crate would be imposed
+//! on every binary that links it - every test and measurement would then be counting
+//! allocations it has no interest in. So this only provides the type, and a caller that wants
+//! the count installs it itself:
 //!
-//!     #[path = "common/counting_allocator.rs"]            // from tests/
-//!     #[path = "../tests/common/counting_allocator.rs"]   // from performance/
-//!     mod counting_allocator;
+//! ```no_run
+//! use gct_measure::counting_allocator::{Counting, live};
 //!
-//! It lives under `tests/common/` rather than directly under `tests/`, where Cargo would
-//! take it for another integration test binary. Only direct children of `tests/` are
-//! targets.
+//! #[global_allocator]
+//! static ALLOCATOR: Counting = Counting;
+//!
+//! fn main() {
+//!     println!("{} bytes live", live());
+//! }
+//! ```
 //!
 //! ## One counter per process, and that is the point
 //!
