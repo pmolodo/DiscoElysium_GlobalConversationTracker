@@ -236,11 +236,22 @@ fn canonical(
             .remove(named)
             .and_then(|held| held.as_object().cloned())
             .unwrap_or_default();
+        // A NAMED ANSWER WINS, as it does in the engine - see `WorldRawData::resolve`. The
+        // failed-check locks arrive named, and the same flag asked positionally carries the Lua
+        // read, which knows nothing of the lock.
         for (key, answer) in keys.iter().zip(answers) {
-            by_name.insert(key.clone(), answer.clone());
+            by_name.entry(key.clone()).or_insert_with(|| answer.clone());
         }
 
         object.insert(named.to_string(), serde_json::Value::Object(by_name));
+    }
+
+    // SETS AS SETS. The engine holds these unordered, so the order either side wrote them in
+    // says nothing, and left alone it reads as a difference in the world.
+    for set in ["items", "thoughts"] {
+        if let Some(serde_json::Value::Array(members)) = object.get_mut(set) {
+            members.sort_by_key(ToString::to_string);
+        }
     }
 
     world

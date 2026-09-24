@@ -262,9 +262,9 @@ fn build_of_save(
         // read. The plugin reads the flag itself and sends the same answer, so a walk here
         // and a crawl in the game are in the same world. See de-gh1o.
         clock_locked: holdings.clock_locked,
-        data_values: holdings.data_for(&asked.data),
-        items: holdings.items.clone(),
-        thoughts: holdings.thoughts.clone(),
+        data_values: holdings.data_for(&asked),
+        items: holdings.items_asked(&asked),
+        thoughts: holdings.thoughts_asked(&asked),
         variables: crate::common::fixtures::variables_sent(save, &asked),
         // WHAT THIS SAVE HAS ALREADY SHOWN, which the engine seeds its `once` and `seen` slots
         // from: without it every one-time effect starts unfired and a route the save has

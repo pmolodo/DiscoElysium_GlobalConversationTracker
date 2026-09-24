@@ -68,7 +68,7 @@ fn scene_answers(save: &str, asked: &Questions) -> [WireValue; 3] {
     let variables = common::fixtures::variables_sent(save, asked);
 
     let snapshot = WorldRawData {
-        data_values: holdings.data_for(&asked.data),
+        data_values: holdings.data_for(asked),
         ..Default::default()
     };
     let mut world = GameWorld::declaring_nothing(snapshot);

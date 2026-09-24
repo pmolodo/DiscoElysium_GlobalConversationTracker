@@ -59,9 +59,12 @@ use gct_measure::plugin_defaults::Budgets;
 /// unless the scenario row fixes it.
 #[test]
 fn a_hardcore_completion_no_save_records_is_answered_from_the_row() {
-    let asked = [lookahead_engine::bridge::DataRequest::set(
-        DataKind::HardcorePlaythroughCompleted,
-    )];
+    let asked = lookahead_engine::bridge::Questions {
+        data: vec![lookahead_engine::bridge::DataRequest::set(
+            DataKind::HardcorePlaythroughCompleted,
+        )],
+        ..Default::default()
+    };
     let answered = |row: Option<bool>| {
         let answers = fixtures::holdings_in_save(COMPLETION_TEST_SAVE)
             .with_hardcore_playthrough_completed(row)

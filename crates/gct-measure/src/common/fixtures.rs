@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use lookahead_engine::bridge::{
-    CheckMargin, DataAnswer, DataKind, DataRequest, NodeRef, NodeSet, Questions, WireValue,
+    CheckMargin, DataAnswer, DataKind, NodeRef, NodeSet, Questions, WireValue,
 };
 use lookahead_engine::core::passive_check;
 use lookahead_engine::core::types::Ternary;
@@ -179,7 +179,50 @@ pub fn variables_in_save(save: &str) -> HashMap<String, WireValue> {
         );
     }
 
+    // THE TUTORIAL SWITCH AS THE GAME LOADS IT, from the settings rather than the save.
+    // Measured 2026-09-24 on at-trashcan, whose save holds the variable false: loaded under
+    // the settings the in-game run stages, with the tutorial off, the game answered it true;
+    // with the tutorial on, false. Final Cut names both `tc.turn_off_tutorial_node` and
+    // `tutorialEnabled` in its code, and no dialogue line writes the variable. What is modelled
+    // is what was proven - the tutorial off turns it on. Whether the tutorial on turns off a
+    // save's TRUE is unmeasured, since that save held false already, so it is left as saved.
+    if !tutorial_enabled_in_staged_settings() {
+        variables.insert(TUTORIAL_OFF.to_string(), WireValue::Bool { value: true });
+    }
+
     variables
+}
+
+/// The dialogue variable the game sets from the tutorial setting when a save loads.
+const TUTORIAL_OFF: &str = "tc.turn_off_tutorial_node";
+
+/// Whether the settings the in-game run stages switch the tutorial on.
+///
+/// `testing/Settings.json`, which `GameHarness` installs unless told otherwise, so the offline
+/// world is the one a default in-game run loads into.
+///
+/// # Panics
+///
+/// If the file will not read or holds no `tutorialEnabled` setting - a world built without it
+/// would be a different one from the run it stands for.
+fn tutorial_enabled_in_staged_settings() -> bool {
+    let path = testing().join("Settings.json");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|fault| panic!("{}: {fault}", path.display()));
+    let settings: serde_json::Value = serde_json::from_str(&text)
+        .unwrap_or_else(|fault| panic!("{} will not parse: {fault}", path.display()));
+    find_setting(&settings, "tutorialEnabled")
+        .and_then(|setting| setting["boolValue"].as_bool())
+        .unwrap_or_else(|| panic!("{} holds no tutorialEnabled setting", path.display()))
+}
+
+/// The first value named `name` anywhere in a settings document, which nests its settings by
+/// section.
+fn find_setting<'a>(node: &'a serde_json::Value, name: &str) -> Option<&'a serde_json::Value> {
+    let object = node.as_object()?;
+    object
+        .get(name)
+        .or_else(|| object.values().find_map(|child| find_setting(child, name)))
 }
 
 /// The dialogue variables a look-ahead request over this save carries, as the plugin sends
@@ -201,10 +244,18 @@ pub fn variables_in_save(save: &str) -> HashMap<String, WireValue> {
 /// on the way in, so they are added here the same way.
 pub fn variables_sent(save: &str, questions: &Questions) -> HashMap<String, WireValue> {
     let loaded = variables_in_save(save);
+    // EVERY NAME ASKED, as the plugin sends it: a variable the save's Lua table does not hold
+    // reads as nil there, and the plugin answers that false (`GameFacts.ReadVariable`).
     let mut sent: HashMap<String, WireValue> = questions
         .variables
         .iter()
-        .filter_map(|name| Some((name.clone(), loaded.get(name)?.clone())))
+        .map(|name| {
+            let value = loaded
+                .get(name)
+                .cloned()
+                .unwrap_or(WireValue::Bool { value: false });
+            (name.clone(), value)
+        })
         .collect();
 
     lookahead_engine::bridge::lock_failed_white_checks(
@@ -439,9 +490,10 @@ pub fn checks_in_save(save: &str, conversations: &[i32]) -> Option<Checks> {
             let Some(name) = speakers.get(actor) else {
                 continue;
             };
-            let Some(skill) = skill_of_actor(name) else {
+            let Some(named) = skill_of_actor(name) else {
                 continue;
             };
+            let skill = on_sheet(named);
 
             let value = skills.get(skill).copied().unwrap_or_else(|| {
                 panic!("{save}'s character sheet has no {skill}, which {node:?} tests")
@@ -459,7 +511,7 @@ pub fn checks_in_save(save: &str, conversations: &[i32]) -> Option<Checks> {
                 // them: damage moves two skills, and a garment can move any of the rest.
                 found.margins.push(CheckMargin {
                     node,
-                    skill: skill.to_string(),
+                    skill: named.to_string(),
                     margin: value + passive_check::SKILL_BONUS - moved,
                 });
                 passive_check::outcome(value, moved, antipassive) == Ternary::True
@@ -676,10 +728,10 @@ fn threshold_of(difficulty: &str, node: NodeRef) -> i32 {
 /// the same table in the form the extractor can write, and they are the game's own
 /// `Skill.actorSkillNames`. `None` for every actor that is a person rather than a skill.
 ///
-/// THE SUB-SKILLS COLLAPSE, because the character sheet has no separate entry for them:
-/// `CharacterSheet.GetSkill` answers all four Perceptions with the one Perception and
-/// Convalescence with Endurance, so a check spoken by Perception (Sight) is decided by the
-/// Perception the sheet holds.
+/// THE `SkillType` NAME, as the plugin sends it (`PassiveCheckRule.SkillName`): the four
+/// Perceptions are skills of their own there, and a garment can move Sight where it does not
+/// move Perception - see `core::garment`. Convalescence is folded into Endurance, as the plugin
+/// folds it. The VALUE is another matter - see [`on_sheet`].
 fn skill_of_actor(name: &str) -> Option<&'static str> {
     const SKILLS: [(&str, &str); 29] = [
         ("Logic", "LOGIC"),
@@ -703,10 +755,10 @@ fn skill_of_actor(name: &str) -> Option<&'static str> {
         ("Shivers", "SHIVERS"),
         ("Hand/Eye Coordination", "HE_COORDINATION"),
         ("Perception", "PERCEPTION"),
-        ("Perception (Hearing)", "PERCEPTION"),
-        ("Perception (Sight)", "PERCEPTION"),
-        ("Perception (Smell)", "PERCEPTION"),
-        ("Perception (Taste)", "PERCEPTION"),
+        ("Perception (Hearing)", "HEARING"),
+        ("Perception (Sight)", "SIGHT"),
+        ("Perception (Smell)", "SMELL"),
+        ("Perception (Taste)", "TASTE"),
         ("Reaction Speed", "REACTION"),
         ("Savoir Faire", "SAVOIR_FAIRE"),
         ("Interfacing", "INTERFACING"),
@@ -717,6 +769,19 @@ fn skill_of_actor(name: &str) -> Option<&'static str> {
         .iter()
         .find(|(actor, _)| *actor == name)
         .map(|(_, skill)| *skill)
+}
+
+/// The skill the character sheet holds a check's value under.
+///
+/// THE SUB-SKILLS COLLAPSE, because the sheet has no separate entry for them:
+/// `CharacterSheet.GetSkill` answers all four Perceptions with the one Perception, so a check
+/// spoken by Perception (Sight) is decided by the Perception the sheet holds - and the game's
+/// margins agree, Sight's and Perception's measuring the same.
+fn on_sheet(skill: &str) -> &str {
+    match skill {
+        "HEARING" | "SIGHT" | "SMELL" | "TASTE" => "PERCEPTION",
+        other => other,
+    }
 }
 
 /// Every actor's name, by the id an entry's `Actor` field carries.
@@ -1191,12 +1256,22 @@ impl Holdings {
     ///
     /// An equipment slot, from `inventoryViewState.equipment`, which is the game's own
     /// `InventoryViewData.equipment` table written out by slot name.
-    pub fn data_for(&self, asked: &[DataRequest]) -> Vec<DataAnswer> {
+    ///
+    /// THE CABINET'S SETS NAME ONLY THE THOUGHTS THE GROUP ASKS ABOUT, as the plugin's
+    /// `ThoughtsWhere` builds them - see [`Self::thoughts_asked`] for why that matters.
+    pub fn data_for(&self, asked: &Questions) -> Vec<DataAnswer> {
+        let in_state = |state| -> Vec<String> {
+            self.thoughts_in(state)
+                .into_iter()
+                .filter(|thought| asked.thoughts.contains(thought))
+                .collect()
+        };
         asked
+            .data
             .iter()
             .map(|request| match request.kind {
-                DataKind::ThoughtsCooking => DataAnswer::of_names(self.thoughts_in(COOKING)),
-                DataKind::ThoughtsFixed => DataAnswer::of_names(self.thoughts_in(FIXED)),
+                DataKind::ThoughtsCooking => DataAnswer::of_names(in_state(COOKING)),
+                DataKind::ThoughtsFixed => DataAnswer::of_names(in_state(FIXED)),
                 DataKind::EquippedInSlot => DataAnswer::of_value(WireValue::Text {
                     value: self
                         .equipment
@@ -1242,6 +1317,32 @@ impl Holdings {
     }
 
     /// The thoughts the cabinet holds in one state.
+    /// The held items the group asks `CheckItem` about, as the plugin sends them.
+    ///
+    /// NARROWED TO THE QUESTIONS, because that is what the plugin sends: it runs the query for
+    /// each name the engine asks about and sends the ones that answer yes (`FillMembers`). An
+    /// item nobody asks about changes no answer, but a request carrying it is not the request
+    /// the game sends, and a comparison between the two then reports it as a difference.
+    pub fn items_asked(&self, asked: &Questions) -> HashSet<String> {
+        asked
+            .items
+            .iter()
+            .filter(|item| self.items.contains(*item))
+            .cloned()
+            .collect()
+    }
+
+    /// The thoughts present that the group asks `IsTHCPresent` about, as the plugin sends
+    /// them - see [`Self::items_asked`].
+    pub fn thoughts_asked(&self, asked: &Questions) -> HashSet<String> {
+        asked
+            .thoughts
+            .iter()
+            .filter(|thought| self.thoughts.contains(*thought))
+            .cloned()
+            .collect()
+    }
+
     fn thoughts_in(&self, state: &str) -> Vec<String> {
         let mut found: Vec<String> = self
             .thought_states

@@ -226,9 +226,9 @@ fn report(
                 holdings.day_counter,
             ),
             // WHAT THE ENGINE ASKED TO HAVE READ, positionally, as the plugin sends it.
-            data_values: holdings.data_for(&asked.data),
-            items: holdings.items,
-            thoughts: holdings.thoughts,
+            data_values: holdings.data_for(&asked),
+            items: holdings.items_asked(&asked),
+            thoughts: holdings.thoughts_asked(&asked),
             variables: fixtures::variables_sent(&scenario.save, &asked),
             // WHAT THIS SAVE HAS ALREADY SHOWN, which the engine seeds its seen slots from
             // and which no offline run has ever sent. The same set the seen state rungs are

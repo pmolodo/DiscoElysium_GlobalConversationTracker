@@ -317,9 +317,9 @@ pub fn stage(
                 // WHAT THE ENGINE ASKED TO HAVE READ, positionally, as the plugin sends it -
                 // see `bridge::DataRequest`. No query keys: a save cannot answer a call, and
                 // `every_question_the_suites_ask_is_answered_offline` fails if a group asks one.
-                data_values: holdings.data_for(&asked.data),
-                items: holdings.items,
-                thoughts: holdings.thoughts,
+                data_values: holdings.data_for(&asked),
+                items: holdings.items_asked(&asked),
+                thoughts: holdings.thoughts_asked(&asked),
                 // FROM THE SAVE, and the difference between a run and no run. An ordinary
                 // option is often guarded on a dialogue variable - 451:86 is guarded on
                 // whether Siileng has the sneakers to sell - and a world that cannot answer
