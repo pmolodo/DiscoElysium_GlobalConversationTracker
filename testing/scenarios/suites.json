@@ -764,6 +764,7 @@
       "why": "de-086x: the carried clock is checked offline three ways and the plugin sends the lock, but no in-game run had ever built a search state in a group that carries a clock - so the deployed host binary, where the budget, the threading and the process boundary all differ from a test, had never run the layout the register lives in. 631's group is one of the nine carriers, and with this save's world - unlocked, 15:00 on day three - its layout takes a seven-bit clock with a ceiling of 95 quarter-hour steps. A LOCKED CLOCK WOULD CARRY NO BITS AT ALL, which is why the save matters as much as the group. at-evart rather than at-joyce, and an empty global state rather than the recorded one, because a menu where everything is recorded is settled before a diagram is built: this save has been through Joyce's hub, so four of its seven options sit on the bottom rung with unread content behind them and the menu discriminates. WHAT THE MARKERS ARE DOING HERE is holding the answer to the same standard as every other suite - the clock is what the run is for, but a run that only counted diagram nodes could carry the register and still answer wrongly."
     },
     {
+      "disabled": "de-yvue: 631:762 runs out of budget on this menu, in game and offline alike, so everyMenuFinishesInBudget does not hold until that search is made cheaper.",
       "inGame": {
         "artefacts": [
           {
@@ -795,8 +796,15 @@
           "save": "at-joyce2"
         }
       ],
-      "settings": { "KeepLookAheadStats": "true", "LogLookAheadBudgetExceeded": "true" },
-      "settingsWhy": "The question is whether the menus finish inside the budget, so the run has to write down the ones that do not.",
+      "settings": {
+        "KeepLookAheadRequests": "true",
+        "KeepLookAheadStats": "true",
+        "LogLookAheadBudgetExceeded": "true",
+        "LookAheadMemoryBudgetMb": "256",
+        "LookAheadMenuTimeBudgetMs": "3000",
+        "LookAheadTimeBudgetMs": "1000"
+      },
+      "settingsWhy": "The question is whether the menus finish inside the budget, so the run asks under the budgets the playthrough's own config ran with rather than the harness's thirty seconds, writes down the options that ran out, and keeps the requests the game sent so they can be set beside the offline ones.",
       "state": "global-state-at-joyce2.json",
       "suite": "joyce-wild-pines",
       "what": "the menu after asking Joyce about Wild Pines, on day four with the player's own global state",

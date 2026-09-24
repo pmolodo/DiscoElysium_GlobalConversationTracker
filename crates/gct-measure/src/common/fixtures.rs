@@ -22,8 +22,9 @@ use lookahead_engine::bridge::{
 };
 use lookahead_engine::core::passive_check;
 use lookahead_engine::core::types::Ternary;
+use lookahead_engine::formats::expanded_save::{self, OnDisk};
 use lookahead_engine::formats::global_state::{self, GlobalState, Status};
-use lookahead_engine::formats::runs;
+use lookahead_engine::formats::{lua_parts, runs, sparse};
 use serde::Deserialize;
 
 use super::repo_root;
@@ -78,110 +79,24 @@ fn folder_of(save: &str) -> PathBuf {
     testing().join(format!("{save}.ntwtf"))
 }
 
-/// What a save folder's archive says it was built on top of.
-#[derive(Debug, Deserialize)]
-struct Archive {
-    /// The next save down, by path relative to this folder. Absent at the bottom.
-    #[serde(default)]
-    base: Option<String>,
-}
-
-/// The save folders one save is made of, BASE-MOST FIRST.
+/// One of a save's Lua tables, by name, whole.
 ///
-/// A scenario save in this repository is a diff over a base, which is a diff over another,
-/// down to `save_template` - so what a save holds is only knowable by walking the chain.
-/// Reading the leaf alone was enough while the only question asked of a save was which
-/// entries it had displayed, because no base records any; it is not enough for the
-/// variables, which is exactly where the base does the work.
+/// A save that changes a table writes a sparse diff over the one beneath it, and
+/// `lua_parts::read_table` applies every diff down to the whole table, as packing the save
+/// for the game does. A diff can say a run GAINED ids, or lost them, as well as what a value
+/// became, so only that reader knows what a table holds - picking the diffs apart by hand
+/// takes the first kind of change for nothing at all.
 ///
 /// # Panics
 ///
-/// If a folder is missing, its archive will not read, or the chain loops. A loop would
-/// otherwise be an out-of-memory rather than a message.
-fn chain(save: &str) -> Vec<PathBuf> {
-    let mut folders = Vec::new();
-    let mut seen = HashSet::new();
-    let mut current = folder_of(save);
-
-    loop {
-        assert!(
-            current.is_dir(),
-            "{save}'s chain reaches {}, which is not a save folder",
-            current.display(),
-        );
-        assert!(
-            seen.insert(current.clone()),
-            "{save}'s chain of bases loops back to {}",
-            current.display(),
-        );
-
-        folders.push(current.clone());
-
-        let archive = current.join("_archive.json");
-        let Some(base) = read_json::<Archive>(&archive).and_then(|a| a.base) else {
-            break;
-        };
-
-        // Relative to the folder that named it, and normalised, because a chain that walks
-        // out of the scenarios folder - as every one of them does, to save_template -
-        // produces a path with `..` in it that no `is_dir` would answer for on its own.
-        current = normalise(&current.join(base));
-    }
-
-    folders.reverse();
-    folders
-}
-
-/// A path with its `.` and `..` steps applied, without touching the filesystem.
-fn normalise(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for part in path.components() {
-        match part {
-            std::path::Component::ParentDir => {
-                out.pop();
-            }
-            std::path::Component::CurDir => {}
-            other => out.push(other),
-        }
-    }
-
-    out
-}
-
-/// One of a save folder's Lua parts, or None where the save does not change it.
-///
-/// The part files sit under `<save>.ntwtf.lua.parts`, named for the Lua table they carry.
-fn part(folder: &Path, name: &str) -> Option<serde_json::Value> {
-    let stem = folder.file_name()?.to_str()?;
-    let path = folder.join(format!("{stem}.lua.parts")).join(name);
-    read_json(&path)
-}
-
-/// A JSON document, or None where it is not there.
-///
-/// # Panics
-///
-/// If it is there and will not parse. A fixture that has become unreadable is a thing to
+/// If the table's chain will not resolve. A fixture that has become unreadable is a thing to
 /// stop for, not to treat as absent.
-fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
-    if !path.exists() {
-        return None;
-    }
-
-    let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-    Some(
-        serde_json::from_str(&text)
-            .unwrap_or_else(|e| panic!("{} will not parse: {e}", path.display())),
-    )
-}
-
-/// The changes a part carries, whether it is a full table or a diff over one.
-///
-/// A base writes its table out whole and a diff writes only what it changes under
-/// `_changes`. Both are read the same way here, since the merge that follows does not care
-/// which it was - only the order does, and that is what [`chain`] fixes.
-fn changes(document: &serde_json::Value) -> Option<&serde_json::Map<String, serde_json::Value>> {
-    document.get("_changes").unwrap_or(document).as_object()
+fn resolved_part(save: &str, name: &str) -> serde_json::Value {
+    let folder = folder_of(save);
+    let table = lua_parts::read_table(&OnDisk, &folder, name)
+        .unwrap_or_else(|fault| panic!("{save}'s {name} table: {fault}"));
+    serde_json::from_str(&sparse::write(&table))
+        .unwrap_or_else(|fault| panic!("{save}'s {name} table is not JSON: {fault}"))
 }
 
 /// Keys a part carries that are about the FILE rather than about the world.
@@ -191,10 +106,9 @@ fn changes(document: &serde_json::Value) -> Option<&serde_json::Map<String, serd
 /// is a dialogue variable, and a world that answered one as though it were would be
 /// answering a question no guard asks.
 ///
-/// `_base` says which file a diff is a diff of, and only a diff carries it - so it never
-/// reaches the loop below, which reads a diff's `_changes` rather than its top level. It is
-/// named anyway, because that is a fact about where it sits rather than a rule, and the
-/// reader should not depend on it.
+/// `_base` says which file a diff is a diff of, and only a diff carries it - so a resolved
+/// table has none. It is named anyway, because that is a fact about what the resolver leaves
+/// rather than a rule, and the reader should not depend on it.
 const NOT_A_VARIABLE: [&str; 4] = ["_format", "_formatVersion", "_base", "_derived_simx"];
 
 /// Where the game keeps the rain, in the table it keeps every dialogue variable in.
@@ -231,31 +145,21 @@ const SNOW: &str = "SNOW";
 pub fn variables_in_save(save: &str) -> HashMap<String, WireValue> {
     let mut variables: HashMap<String, WireValue> = HashMap::new();
 
-    for folder in chain(save) {
-        let Some(document) = part(&folder, "Variable.json") else {
+    let document = resolved_part(save, "Variable");
+    let Some(entries) = document.as_object() else {
+        panic!("{save}'s variables are not a table");
+    };
+
+    for (name, value) in entries {
+        if NOT_A_VARIABLE.contains(&name.as_str()) {
             continue;
-        };
-        let Some(entries) = changes(&document) else {
-            panic!("{}'s variables are not a table", folder.display());
-        };
+        }
 
-        for (name, value) in entries {
-            if NOT_A_VARIABLE.contains(&name.as_str()) {
-                continue;
-            }
-
-            match wire(value) {
-                Some(answer) => {
-                    variables.insert(name.clone(), answer);
-                }
-                // A TABLE OR A NULL, which no guard can compare against. Left unanswered
-                // rather than guessed at, which reads as Unknown and is the permissive
-                // answer - the same thing the plugin sends for a variable it could not
-                // read.
-                None => {
-                    variables.remove(name);
-                }
-            }
+        // A TABLE OR A NULL, which no guard can compare against, is left unanswered rather
+        // than guessed at, which reads as Unknown and is the permissive answer - the same
+        // thing the plugin sends for a variable it could not read.
+        if let Some(answer) = wire(value) {
+            variables.insert(name.clone(), answer);
         }
     }
 
@@ -428,16 +332,13 @@ fn read_state(state_file: &str) -> GlobalState {
 /// copy was not.
 ///
 /// A scenario save is a diff over a base, and only the entries it CHANGES are written
-/// down. THE WHOLE CHAIN IS WALKED, base-most first, and the last folder to say anything
-/// about a conversation wins - which is what a diff means. It used to read the leaf alone,
-/// on the documented grounds that no base in this repository records a displayed entry.
-/// That was true, and it was an assumption where walking the chain is a fact; the chain has
-/// to be resolved for the variables anyway (see [`variables_in_save`]), so there is nothing
-/// left to buy by assuming it.
+/// down - often as the ids a run GAINED since the save beneath it, not as the run it became.
+/// So the Conversation table is resolved whole, as packing the save for the game resolves it
+/// (see [`resolved_part`]), and the runs are read from that.
 ///
-/// ONE WALK FOR EVERY CONVERSATION OF THE GROUP: the base writes out the whole Conversation
-/// table, and re-reading it once per conversation would be re-parsing a megabyte per
-/// question. See [`recorded_elsewhere_in_group`] for why the group rather than the open
+/// ONE RESOLUTION FOR EVERY CONVERSATION OF THE GROUP: the base writes out the whole
+/// Conversation table, and resolving it once per conversation would be re-parsing a megabyte
+/// per question. See [`recorded_elsewhere_in_group`] for why the group rather than the open
 /// conversation is what a look-ahead is asked about.
 ///
 /// # Panics
@@ -445,35 +346,23 @@ fn read_state(state_file: &str) -> GlobalState {
 /// If the save is not there, or a Conversation part will not parse.
 pub fn read_in_save_group(save: &str, conversations: &[i32]) -> HashSet<(i32, i32)> {
     let mut displayed: HashSet<(i32, i32)> = HashSet::new();
+    let table = resolved_part(save, "Conversation");
 
-    for folder in chain(save) {
-        let Some(document) = part(&folder, "Conversation.json") else {
+    for conversation in conversations {
+        let Some(runs) = table
+            .get(conversation.to_string())
+            .and_then(|entry| entry.get("Dialog"))
+            .and_then(|dialog| dialog.get("WasDisplayed"))
+            .and_then(|runs| runs.as_str())
+        else {
             continue;
         };
-        let Some(entries) = changes(&document) else {
-            continue;
-        };
 
-        for conversation in conversations {
-            let Some(runs) = entries
-                .get(&conversation.to_string())
-                .and_then(|entry| entry.get("Dialog"))
-                .and_then(|dialog| dialog.get("WasDisplayed"))
-                .and_then(|runs| runs.as_str())
-            else {
-                continue;
-            };
-
-            // THE LAST FOLDER TO SAY ANYTHING WINS, per conversation, which is what a
-            // diff means: a later save replacing the list replaces it, and says nothing
-            // about the conversations it left alone.
-            displayed.retain(|(had, _)| had != conversation);
-            displayed.extend(
-                parse_runs(runs)
-                    .into_iter()
-                    .map(|entry| (*conversation, entry)),
-            );
-        }
+        displayed.extend(
+            parse_runs(runs)
+                .into_iter()
+                .map(|entry| (*conversation, entry)),
+        );
     }
 
     displayed
@@ -566,13 +455,13 @@ pub fn checks_in_save(save: &str, conversations: &[i32]) -> Option<Checks> {
                 !antipassive
             } else {
                 let moved = threshold + thoughts.threshold_shift(skill);
-                if DAMAGEABLE_SKILLS.contains(&skill) {
-                    found.margins.push(CheckMargin {
-                        node,
-                        skill: skill.to_string(),
-                        margin: value + passive_check::SKILL_BONUS - moved,
-                    });
-                }
+                // EVERY CHECK NO THOUGHT FORCES THROUGH, as `PassiveCheckRule.MarginOf` sends
+                // them: damage moves two skills, and a garment can move any of the rest.
+                found.margins.push(CheckMargin {
+                    node,
+                    skill: skill.to_string(),
+                    margin: value + passive_check::SKILL_BONUS - moved,
+                });
                 passive_check::outcome(value, moved, antipassive) == Ternary::True
             };
             if fires {
@@ -744,13 +633,9 @@ pub struct Checks {
     pub pass: NodeSet,
     /// Entries whose check does not, so the line is one they never will be.
     pub fail: NodeSet,
-    /// Each Volition or Endurance check's margin, as the plugin sends it - see
-    /// `core::skill_movers`.
+    /// Each check's margin, as the plugin sends it - see `core::skill_movers`.
     pub margins: Vec<CheckMargin>,
 }
-
-/// The skills damage moves, whose checks carry a margin.
-const DAMAGEABLE_SKILLS: [&str; 2] = ["VOLITION", "ENDURANCE"];
 
 /// The field whose presence makes an entry a passive check.
 const PASSIVE_FIELD: &str = "DifficultyPass";
@@ -1164,17 +1049,16 @@ fn scene_state(save: &str, member_name: &str) -> serde_json::Value {
 }
 
 fn document_member(save: &str, suffix: &str, member_name: &str) -> serde_json::Value {
-    let mut document = serde_json::Value::Null;
-    for folder in chain(save) {
-        let Some(member) = member(&folder, suffix) else {
-            continue;
-        };
-
-        // A base writes the blob out whole and a diff writes only what it changes, the same
-        // arrangement the Lua parts use - and the same reading: overlay them in order.
-        let changes = member.get("_changes").unwrap_or(&member).clone();
-        overlay(&mut document, &changes);
-    }
+    // RESOLVED AS PACKING RESOLVES IT: the nearest save in the chain that holds the member,
+    // with every diff beneath it applied - removals as well as changes.
+    let folder = folder_of(save);
+    let path = expanded_save::member_beneath(&OnDisk, &folder, suffix)
+        .unwrap_or_else(|fault| panic!("{save}'s chain will not walk: {fault}"))
+        .unwrap_or_else(|| panic!("{save}'s chain holds no {suffix}"));
+    let bytes = expanded_save::resolved(&OnDisk, &path)
+        .unwrap_or_else(|fault| panic!("{}: {fault}", path.display()));
+    let document: serde_json::Value = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|fault| panic!("{} is not JSON: {fault}", path.display()));
 
     document
         .get(member_name)
@@ -1854,32 +1738,4 @@ fn thought_states(cabinet: &serde_json::Value) -> HashMap<String, String> {
             ))
         })
         .collect()
-}
-
-/// One of a save folder's top-level members, by the suffix it is named with.
-fn member(folder: &Path, suffix: &str) -> Option<serde_json::Value> {
-    let stem = folder.file_stem()?.to_str()?;
-    read_json(&folder.join(format!("{stem}{suffix}")))
-}
-
-/// Applies `from` over `into`, key by key, all the way down.
-///
-/// Two objects merge; anything else replaces, which is what a diff over a list or a number
-/// means. Recursive rather than a top-level merge because a diff carries only the leaves it
-/// changed - one skill's value, not the skill - so a shallow merge would drop the rest of
-/// whatever it touched.
-fn overlay(into: &mut serde_json::Value, from: &serde_json::Value) {
-    match (into.as_object_mut(), from.as_object()) {
-        (Some(target), Some(source)) => {
-            for (key, value) in source {
-                match target.get_mut(key) {
-                    Some(existing) => overlay(existing, value),
-                    None => {
-                        target.insert(key.clone(), value.clone());
-                    }
-                }
-            }
-        }
-        _ => *into = from.clone(),
-    }
 }

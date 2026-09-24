@@ -108,27 +108,34 @@ pub fn directory_in(save: &Path) -> PathBuf {
 /// a whole table does not say it is one, where a diff will not apply, or where nothing in
 /// the chain holds one of the five tables.
 pub fn read(files: &impl Files, save: &Path) -> Result<Parts, PartsFault> {
-    let named = |what: &str| PartsFault::Missing(shown(save), what.to_string());
-    let mut found = Vec::with_capacity(TABLE_NAMES.len());
-
-    for name in TABLE_NAMES {
-        // THE CHAIN SAYS WHERE TO LOOK, and the file says what it is a diff of. A save that
-        // changes no table has no split directory at all, so the nearest one holding this
-        // table can be several links up - but once found, it is followed from itself.
-        let file = format!("{name}.json");
-        let path = expanded_save::table_beneath(files, save, &file, directory_in)?
-            .ok_or_else(|| named(name))?;
-        found.push(tree(files, &path, &mut HashSet::new(), &mut Vec::new())?);
-    }
+    let tables = TABLE_NAMES
+        .iter()
+        .map(|name| read_table(files, save, name))
+        .collect::<Result<Vec<_>, _>>()?;
 
     let trailing = expanded_save::table_beneath(files, save, TRAILING_NAME, directory_in)?
         .and_then(|path| files.read(&path))
-        .ok_or_else(|| named(TRAILING_NAME))?;
+        .ok_or_else(|| PartsFault::Missing(shown(save), TRAILING_NAME.to_string()))?;
 
-    Ok(Parts {
-        tables: found,
-        trailing,
-    })
+    Ok(Parts { tables, trailing })
+}
+
+/// One of a save's tables, by name, with every diff between it and a whole table applied.
+///
+/// For a reader that wants one table and not the blob: the Conversation table alone is most
+/// of a save's size, and a caller asking about the variables should not pay for it.
+///
+/// # Errors
+///
+/// As [`read`], for this table alone.
+pub fn read_table(files: &impl Files, save: &Path, name: &str) -> Result<SparseMap, PartsFault> {
+    // THE CHAIN SAYS WHERE TO LOOK, and the file says what it is a diff of. A save that
+    // changes no table has no split directory at all, so the nearest one holding this table
+    // can be several links up - but once found, it is followed from itself.
+    let file = format!("{name}.json");
+    let path = expanded_save::table_beneath(files, save, &file, directory_in)?
+        .ok_or_else(|| PartsFault::Missing(shown(save), name.to_string()))?;
+    tree(files, &path, &mut HashSet::new(), &mut Vec::new())
 }
 
 /// One table's tree, with every diff between it and a whole tree applied.
