@@ -26,8 +26,10 @@
 //!
 //! ## What closes an entry
 //!
-//! An ordinary entry whose compiled guard may hold in NO state at all - not only the one the
-//! search starts from, since a write on the way can open a guard the seed does not satisfy.
+//! An ordinary entry whose compiled guard may hold in no state the request can be in. Not only
+//! the one the search starts from, since a write on the way can open a guard the seed does not
+//! satisfy - but a slot nothing on the way CAN change is pinned where it starts, and a guard that
+//! needs it elsewhere is shut. See [`pinned`] for which slots those are.
 //!
 //! NOT A CHECK OF ANY KIND. A passive check whose condition fails is stepped over onto its
 //! links rather than refusing them, and a rolled check's guard is what offers it; neither is a
@@ -37,20 +39,30 @@
 //! offered; a compiled guard that says otherwise is a gap in the compiler, and closing a start
 //! on it would draw a menu the player is looking at as unreachable.
 //!
-//! ## One round
+//! ## To a fixed point
 //!
-//! Closing entries removes the writes behind them, and a slot left with no writer is a constant
-//! of the world that could close more guards. Seeing that needs the guards recompiled over a
-//! layout without those slots, which this does not do: one round, sound, and less tight than a
-//! fixed point would be.
+//! Closing entries removes the writes behind them, so a slot one round could still change can be
+//! pinned the next, and that can close more. So the walk repeats, each round pinning what the
+//! entries the last one reached cannot change, until the reachable set stops shrinking. It only
+//! ever shrinks: a round's writers are the last round's reachable entries, fewer writers pin more
+//! slots, and more pins close more guards.
+//!
+//! PINNED IN THE DIAGRAM, NOT DROPPED FROM THE LAYOUT. Dropping a pinned slot and recompiling
+//! over the smaller layout would say the same thing, and would rebuild the manager the
+//! conversation's workspace keeps - see `DataLayout::for_group_entered_at`. A conjunction of
+//! slot equalities asks the same question of the guards already compiled.
 
 use std::collections::{HashSet, VecDeque};
 
 use oxidd::BooleanFunction;
+use oxidd::bdd::BDDFunction;
 
 use super::guard_formula::GuardCompiler;
+use super::reachability::seed_slot_value;
+use crate::core::action::DialogueActionKind;
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, SeenState};
 use crate::graph::LookAheadGraph;
+use crate::world::ILookAheadWorld;
 
 /// A request's view of its group.
 pub struct Trimmed {
@@ -85,39 +97,26 @@ impl Trimmed {
     }
 }
 
-/// The group as a request starting at `starts` can walk it. See the module doc.
+/// The group as a request starting at `starts` can walk it, in `world`. See the module doc.
 pub fn trimmed(
     graph: &LookAheadGraph,
     compiler: &mut GuardCompiler<'_>,
+    world: &dyn ILookAheadWorld,
     starts: &[DialogueNodeId],
 ) -> Trimmed {
     let before = reached(graph, starts);
+    let state = crate::core::state::seed_state(graph, world);
 
-    let mut closed = HashSet::new();
-    let mut reachable = HashSet::new();
-    let mut pending: VecDeque<DialogueNodeId> = starts.iter().copied().collect();
-    while let Some(id) = pending.pop_front() {
-        if !reachable.insert(id) {
-            continue;
+    // THE FIRST ROUND'S WRITERS are everything the links reach, which can only over-count.
+    let mut writers = before.clone();
+    let (reachable, closed) = loop {
+        let pins = pinned(graph, compiler, &state, &writers, starts);
+        let (reachable, closed) = walk(graph, compiler, starts, &pins);
+        if reachable.len() == writers.len() {
+            break (reachable, closed);
         }
-        let Some(node) = graph.get(id) else { continue };
-        for &child in &node.links {
-            if reachable.contains(&child) || closed.contains(&child) {
-                continue;
-            }
-            let Some(entry) = graph.get(child) else {
-                continue;
-            };
-            if entry.kind == DialogueCheckKind::None
-                && !starts.contains(&child)
-                && holds_nowhere(compiler, child, &entry.guard)
-            {
-                closed.insert(child);
-                continue;
-            }
-            pending.push_back(child);
-        }
-    }
+        writers = reachable;
+    };
 
     let mut walkable = graph.clone();
     let ids: Vec<DialogueNodeId> = graph.nodes().map(|node| node.id).collect();
@@ -142,22 +141,140 @@ pub fn trimmed(
     }
 }
 
-/// Whether a guard holds in no state.
+/// One round: the entries the starts reach with every guard that cannot hold under `pins`
+/// closed, and the entries closed.
+fn walk(
+    graph: &LookAheadGraph,
+    compiler: &mut GuardCompiler<'_>,
+    starts: &[DialogueNodeId],
+    pins: &BDDFunction,
+) -> (HashSet<DialogueNodeId>, HashSet<DialogueNodeId>) {
+    let mut closed = HashSet::new();
+    let mut reachable = HashSet::new();
+    let mut pending: VecDeque<DialogueNodeId> = starts.iter().copied().collect();
+    while let Some(id) = pending.pop_front() {
+        if !reachable.insert(id) {
+            continue;
+        }
+        let Some(node) = graph.get(id) else { continue };
+        for &child in &node.links {
+            if reachable.contains(&child) || closed.contains(&child) {
+                continue;
+            }
+            let Some(entry) = graph.get(child) else {
+                continue;
+            };
+            if entry.kind == DialogueCheckKind::None
+                && !starts.contains(&child)
+                && holds_nowhere(compiler, child, &entry.guard, pins)
+            {
+                closed.insert(child);
+                continue;
+            }
+            pending.push_back(child);
+        }
+    }
+    (reachable, closed)
+}
+
+/// Every slot no entry of `writers` can change, held at its starting value, as one set.
+///
+/// A SLOT IS PINNED WHERE NO WRITE CAN MOVE IT: nothing in `writers` writes it, or every write
+/// there leaves it where it starts - an assignment of the value it already holds, or entering
+/// an entry whose flag is already set. Only a write can change a slot, so one no write can
+/// change holds its starting value on every route, which is what makes pinning sound.
+///
+/// NOT A START'S LOCK. A locked option is answered with its locks lifted - see
+/// `bridge::answer_starts` - and its failure slot is what a lifted failed check reads; pinning
+/// it here would close what the lifted search has to walk.
+///
+/// THE WHOLE SET WHERE THE MANAGER HAS NO ROOM for the conjunction, which pins nothing and so
+/// closes only what the unpinned guards close.
+fn pinned(
+    graph: &LookAheadGraph,
+    compiler: &GuardCompiler<'_>,
+    state: &crate::core::state::LookAheadState,
+    writers: &HashSet<DialogueNodeId>,
+    starts: &[DialogueNodeId],
+) -> BDDFunction {
+    let vars = compiler.vars();
+    let start_value = |slot: usize| seed_slot_value(vars, state, slot);
+
+    let mut movable = HashSet::new();
+    for node in writers.iter().filter_map(|id| graph.get(*id)) {
+        for action in node.all_actions() {
+            let Ok(slot) = usize::try_from(action.slot()) else {
+                continue;
+            };
+            let moves = match action.kind() {
+                DialogueActionKind::Assign => u32::try_from(action.value())
+                    .map_or(true, |value| Some(value) != start_value(slot)),
+                DialogueActionKind::Increment => action.value() != 0,
+                _ => true,
+            };
+            if moves {
+                movable.insert(slot);
+            }
+        }
+        // ENTERING SETS THESE, to one.
+        for slot in [
+            node.seen_slot,
+            node.once_slot,
+            node.flag_slot,
+            node.failed_flag_slot,
+        ] {
+            if let Ok(slot) = usize::try_from(slot)
+                && start_value(slot) != Some(1)
+            {
+                movable.insert(slot);
+            }
+        }
+    }
+    for start in starts.iter().filter_map(|id| graph.get(*id)) {
+        if let Ok(slot) = usize::try_from(start.failed_flag_slot) {
+            movable.insert(slot);
+        }
+    }
+
+    let mut pins = vars.top();
+    for slot in (0..vars.layout().slot_count()).filter(|slot| !movable.contains(slot)) {
+        let Some(value) = start_value(slot) else {
+            continue;
+        };
+        let Some(pinned) = vars
+            .slot_equals(slot, value)
+            .and_then(|holds| pins.and(&holds).ok())
+        else {
+            return vars.top();
+        };
+        pins = pinned;
+    }
+    pins
+}
+
+/// Whether a guard holds in no state `pins` allows.
 ///
 /// A REPUTATION QUESTION IS COMPILED WITHOUT BEING KEPT. The compiler settles reputation ranges
 /// on the trimmed graph, after this has run, and a guard kept from before would keep its
 /// per-state answer after its range settled.
+///
+/// A CONJUNCTION THE MANAGER HAS NO ROOM FOR SAYS THE GUARD MAY HOLD, which keeps the entry: an
+/// entry kept open is only a looser trim, where one closed wrongly would be a wrong answer.
 fn holds_nowhere(
     compiler: &mut GuardCompiler<'_>,
     id: DialogueNodeId,
     guard: &crate::core::guard::Guard,
+    pins: &BDDFunction,
 ) -> bool {
     let compiled = if GuardCompiler::asks_reputation(guard) {
         compiler.compile(guard)
     } else {
         compiler.compile_for(id, guard)
     };
-    !compiled.may_be_true.satisfiable()
+    compiled
+        .may_be_true
+        .and(pins)
+        .is_ok_and(|held| !held.satisfiable())
 }
 
 /// Every entry the links reach from `starts`.
@@ -189,11 +306,78 @@ mod tests {
 
     /// The group trimmed from entry 0, in a world where the door variable is shut.
     fn trim(graph: &LookAheadGraph) -> Trimmed {
-        let world = GameWorld::blank().set_variable("door", GuardValue::from_boolean(false));
+        trim_in(
+            graph,
+            &GameWorld::blank().set_variable("door", GuardValue::from_boolean(false)),
+        )
+    }
+
+    /// The group trimmed from entry 0, in `world`.
+    fn trim_in(graph: &LookAheadGraph, world: &GameWorld) -> Trimmed {
         let layout = DataLayout::for_graph(graph, 16, None, false);
         let vars = DataVars::new(&layout, graph.symbols(), DiagramBudget::modest());
-        let mut compiler = GuardCompiler::new(&vars).with_world(&world);
-        trimmed(graph, &mut compiler, &[node(0)])
+        let mut compiler = GuardCompiler::new(&vars).with_world(world);
+        trimmed(graph, &mut compiler, world, &[node(0)])
+    }
+
+    /// A door whose only write leaves it where it already is stays shut: the write cannot open
+    /// it, so the slot is pinned and the guard asks for a value it never has.
+    #[test]
+    fn a_door_a_write_cannot_move_closes() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1, 2]))
+            .add(
+                Entry::new(1)
+                    .guard(r#"Variable["door"] == false"#)
+                    .links(&[3]),
+            )
+            .add(
+                Entry::new(2)
+                    .script(r#"SetVariableValue("door", true)"#)
+                    .links(&[1]),
+            )
+            .add(Entry::new(3))
+            .build();
+        let world = GameWorld::blank().set_variable("door", GuardValue::from_boolean(true));
+        let trimmed = trim_in(&graph, &world);
+
+        assert_eq!(
+            trimmed.closed, 1,
+            "only ever set to what it holds, so never false"
+        );
+        assert!(!trimmed.reachable.contains(&node(3)));
+    }
+
+    /// A write behind a door that closes is no write at all, so the door it would have opened
+    /// closes on the next round.
+    #[test]
+    fn a_door_whose_only_opener_is_shut_closes_too() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1, 2]))
+            .add(Entry::new(1).guard(DOOR).links(&[3]))
+            .add(
+                Entry::new(2)
+                    .guard(r#"Variable["latch"] == true"#)
+                    .links(&[4]),
+            )
+            .add(Entry::new(3))
+            .add(
+                Entry::new(4)
+                    .script(r#"SetVariableValue("door", true)"#)
+                    .links(&[1]),
+            )
+            .build();
+        let world = GameWorld::blank()
+            .set_variable("door", GuardValue::from_boolean(false))
+            .set_variable("latch", GuardValue::from_boolean(false));
+        let trimmed = trim_in(&graph, &world);
+
+        assert_eq!(
+            trimmed.closed, 2,
+            "the latch shuts 2, and with 4 gone nothing opens 1"
+        );
+        assert!(!trimmed.reachable.contains(&node(3)));
+        assert!(!trimmed.reachable.contains(&node(4)));
     }
 
     /// A door the world keeps shut and nothing opens closes, and what only it led to is cut

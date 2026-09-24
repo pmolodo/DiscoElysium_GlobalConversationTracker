@@ -1663,9 +1663,10 @@ where
 pub fn walkable_menu(
     graph: &LookAheadGraph,
     compiler: &mut GuardCompiler<'_>,
+    world: &dyn ILookAheadWorld,
     starts: &[DialogueNodeId],
 ) -> (crate::symbolic::trim::Trimmed, GroupShape) {
-    let trimmed = crate::symbolic::trim::trimmed(graph, compiler, starts);
+    let trimmed = crate::symbolic::trim::trimmed(graph, compiler, world, starts);
     // ON THE TRIMMED GRAPH, so a reputation write behind a shut door is not counted - see
     // `GuardCompiler::settle_reputation`.
     compiler.settle_reputation(&trimmed.graph, starts);
@@ -1709,7 +1710,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> SeenState>(
     let nodes_before = compiler.diagram_nodes();
     // THE GROUP AS THIS MENU CAN WALK IT, and what there is to find in it - see
     // [`walkable_menu`]. Every search below sees the trimmed links and the trimmed seen state.
-    let (trimmed, shape) = walkable_menu(group, compiler, &starts_of(request));
+    let (trimmed, shape) = walkable_menu(group, compiler, world, &starts_of(request));
     let graph = &trimmed.graph;
     let shape = &shape;
     let reachable_states = trimmed.seen_state(seen_state);

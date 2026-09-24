@@ -776,7 +776,7 @@ where
         // THE GROUP AS THIS MENU CAN WALK IT, and its shape, through the call the bridge makes,
         // so a row pays what a player's menu pays for it. See `bridge::walkable_menu`.
         let (trimmed, shape) =
-            lookahead_engine::bridge::walkable_menu(graph, &mut compiler, starts);
+            lookahead_engine::bridge::walkable_menu(graph, &mut compiler, &world, starts);
         // THE ONE RULE, off the world just built and the set the profile supplied - see
         // `world::seen_state`.
         let whole_states = lookahead_engine::world::seen_states(&world, seen_any_game);

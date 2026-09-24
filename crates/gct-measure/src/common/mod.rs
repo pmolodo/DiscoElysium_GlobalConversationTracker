@@ -745,7 +745,7 @@ pub fn compiled_guards(
     // THE MENU AS `answer_starts` PREPARES IT, which compiles guards of its own and settles the
     // reputation ranges; only what the entries below add is counted.
     let (trimmed, _) =
-        lookahead_engine::bridge::walkable_menu(&graph, &mut compiler, &starts_of(request));
+        lookahead_engine::bridge::walkable_menu(&graph, &mut compiler, &world, &starts_of(request));
     let (from_world, fallbacks) = (compiler.reputation_from_world(), compiler.fallbacks());
 
     for &entry in entries {

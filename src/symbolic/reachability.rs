@@ -63,6 +63,27 @@ pub fn never_displays(node: &LookAheadNode, world: &dyn ILookAheadWorld) -> bool
         && crate::world::passive_outcome(node, world) == Ternary::False
 }
 
+/// The value a slot holds where a search starts, as [`seed_of`] encodes it, or `None` for a
+/// slot the layout does not carry.
+///
+/// A REBASED SLOT STARTS AT NOTHING, because it holds the distance the search has travelled
+/// rather than where it started - see `DataLayout::lay_out_counters`. The save's value is not
+/// lost; it moves into the guards, which are rebased by it. Every value is clamped to what the
+/// slot can hold, as the seed lays it out.
+pub fn seed_slot_value(
+    vars: &DataVars<'_>,
+    state: &crate::core::state::LookAheadState,
+    slot: usize,
+) -> Option<u32> {
+    let ceiling = vars.slot_ceiling(slot)?;
+    let value = if vars.layout().is_delta(slot) {
+        0
+    } else {
+        state.get(slot).max(0) as u32
+    };
+    Some(value.min(ceiling))
+}
+
 /// The single data state a search starts in, as a set of one.
 ///
 /// Mirrors nothing: it ENCODES [`crate::core::state::seed_state`]'s answer, so every search
@@ -98,18 +119,10 @@ pub fn seed_of(
     let mut set = vars.top();
 
     for slot in 0..vars.layout().slot_count() {
-        let Some(ceiling) = vars.slot_ceiling(slot) else {
+        let Some(value) = seed_slot_value(vars, &state, slot) else {
             continue;
         };
-        // A REBASED SLOT STARTS AT NOTHING, because it holds the distance the search has
-        // travelled rather than where it started - see `DataLayout::lay_out_counters`. The
-        // save's value is not lost; it moves into the guards, which are rebased by it.
-        let value = if vars.layout().is_delta(slot) {
-            0
-        } else {
-            state.get(slot).max(0) as u32
-        };
-        let holds = vars.slot_equals(slot, value.min(ceiling))?;
+        let holds = vars.slot_equals(slot, value)?;
         set = set.and(&holds).ok()?;
     }
 
