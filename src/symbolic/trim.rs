@@ -31,9 +31,10 @@
 //! satisfy - but a slot nothing on the way CAN change is pinned where it starts, and a guard that
 //! needs it elsewhere is shut. See [`pinned`] for which slots those are.
 //!
-//! NOT A CHECK OF ANY KIND. A passive check whose condition fails is stepped over onto its
+//! NOT A CHECK BY ITS GUARD. A passive check whose condition fails is stepped over onto its
 //! links rather than refusing them, and a rolled check's guard is what offers it; neither is a
-//! door in the sense this needs.
+//! door in the sense this needs. A rolled check whose roll is RECORDED for good is closed,
+//! though - see [`recorded_for_good`].
 //!
 //! NOT A START. The menu was composed from this world, so a start's guard held when it was
 //! offered; a compiled guard that says otherwise is a gap in the compiler, and closing a start
@@ -52,7 +53,7 @@
 //! conversation's workspace keeps - see `DataLayout::for_group_entered_at`. A conjunction of
 //! slot equalities asks the same question of the guards already compiled.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use oxidd::BooleanFunction;
 use oxidd::bdd::BDDFunction;
@@ -141,13 +142,13 @@ pub fn trimmed(
     }
 }
 
-/// One round: the entries the starts reach with every guard that cannot hold under `pins`
+/// One round: the entries the starts reach with every door that cannot open under `pins`
 /// closed, and the entries closed.
 fn walk(
     graph: &LookAheadGraph,
     compiler: &mut GuardCompiler<'_>,
     starts: &[DialogueNodeId],
-    pins: &BDDFunction,
+    pins: &Pins,
 ) -> (HashSet<DialogueNodeId>, HashSet<DialogueNodeId>) {
     let mut closed = HashSet::new();
     let mut reachable = HashSet::new();
@@ -164,9 +165,10 @@ fn walk(
             let Some(entry) = graph.get(child) else {
                 continue;
             };
-            if entry.kind == DialogueCheckKind::None
-                && !starts.contains(&child)
-                && holds_nowhere(compiler, child, &entry.guard, pins)
+            if !starts.contains(&child)
+                && ((entry.kind == DialogueCheckKind::None
+                    && holds_nowhere(compiler, child, &entry.guard, &pins.set))
+                    || recorded_for_good(entry, pins))
             {
                 closed.insert(child);
                 continue;
@@ -175,6 +177,18 @@ fn walk(
         }
     }
     (reachable, closed)
+}
+
+/// Whether a rolled check's roll is recorded and nothing can unrecord it.
+///
+/// A CHECK ALREADY ROLLED IS CLOSED, passed or failed - neither kind can be retried once the
+/// roll is recorded, which is how the searches treat it (`Reachability::rolled_cases`). A flag
+/// pinned set is one recorded on every route, so the check can never be entered: the failed
+/// white check the game keeps locked, most often. Its guard is not asked, which is why this is
+/// the one kind of check the trim closes.
+fn recorded_for_good(entry: &crate::graph::node::LookAheadNode, pins: &Pins) -> bool {
+    entry.is_rolled()
+        && (pins.set_for_good(entry.flag_slot) || pins.set_for_good(entry.failed_flag_slot))
 }
 
 /// Every slot no entry of `writers` can change, held at its starting value, as one set.
@@ -189,14 +203,15 @@ fn walk(
 /// it here would close what the lifted search has to walk.
 ///
 /// THE WHOLE SET WHERE THE MANAGER HAS NO ROOM for the conjunction, which pins nothing and so
-/// closes only what the unpinned guards close.
+/// closes only what the unpinned guards close. The values stand either way: they are facts
+/// about the writes, not about the manager.
 fn pinned(
     graph: &LookAheadGraph,
     compiler: &GuardCompiler<'_>,
     state: &crate::core::state::LookAheadState,
     writers: &HashSet<DialogueNodeId>,
     starts: &[DialogueNodeId],
-) -> BDDFunction {
+) -> Pins {
     let vars = compiler.vars();
     let start_value = |slot: usize| seed_slot_value(vars, state, slot);
 
@@ -236,20 +251,39 @@ fn pinned(
         }
     }
 
-    let mut pins = vars.top();
-    for slot in (0..vars.layout().slot_count()).filter(|slot| !movable.contains(slot)) {
-        let Some(value) = start_value(slot) else {
-            continue;
-        };
-        let Some(pinned) = vars
+    let values: HashMap<usize, u32> = (0..vars.layout().slot_count())
+        .filter(|slot| !movable.contains(slot))
+        .filter_map(|slot| Some((slot, start_value(slot)?)))
+        .collect();
+    let mut set = vars.top();
+    for (&slot, &value) in &values {
+        match vars
             .slot_equals(slot, value)
-            .and_then(|holds| pins.and(&holds).ok())
-        else {
-            return vars.top();
-        };
-        pins = pinned;
+            .and_then(|holds| set.and(&holds).ok())
+        {
+            Some(pinned) => set = pinned,
+            None => {
+                set = vars.top();
+                break;
+            }
+        }
     }
-    pins
+    Pins { set, values }
+}
+
+/// What a round pins: the slots no write can move, and the set of states that holds them.
+struct Pins {
+    /// Every state with each pinned slot at its value.
+    set: BDDFunction,
+    /// Each pinned slot's value.
+    values: HashMap<usize, u32>,
+}
+
+impl Pins {
+    /// Whether `slot` is pinned set, so an entry it records has been passed through for good.
+    fn set_for_good(&self, slot: i32) -> bool {
+        usize::try_from(slot).is_ok_and(|slot| self.values.get(&slot) == Some(&1))
+    }
 }
 
 /// Whether a guard holds in no state `pins` allows.
@@ -420,10 +454,37 @@ mod tests {
         assert!(trimmed.reachable.contains(&node(3)));
     }
 
+    /// A white check the save has already failed, and nothing can unfail, is closed, and what
+    /// only it led to is cut off; the same check unfailed stays open.
+    #[test]
+    fn a_check_failed_for_good_closes() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1, 3]))
+            .add(
+                Entry::new(1)
+                    .kind(DialogueCheckKind::White)
+                    .flag("wc")
+                    .links(&[2]),
+            )
+            .add(Entry::new(2))
+            .add(Entry::new(3))
+            .build();
+        let failed = GameWorld::blank().set_variable("wc_failed", GuardValue::from_boolean(true));
+        let open = GameWorld::blank().set_variable("wc_failed", GuardValue::from_boolean(false));
+
+        let trimmed = trim_in(&graph, &failed);
+        assert_eq!(trimmed.closed, 1);
+        assert!(!trimmed.reachable.contains(&node(2)));
+
+        let trimmed = trim_in(&graph, &open);
+        assert_eq!(trimmed.closed, 0);
+        assert!(trimmed.reachable.contains(&node(2)));
+    }
+
     /// A check whose guard cannot hold is stepped over rather than refused, so it closes
     /// nothing.
     #[test]
-    fn a_check_never_closes() {
+    fn a_check_never_closes_on_its_guard() {
         let graph = GraphBuilder::new()
             .add(Entry::new(0).links(&[1]))
             .add(
