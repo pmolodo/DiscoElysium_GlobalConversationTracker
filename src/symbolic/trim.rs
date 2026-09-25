@@ -255,8 +255,18 @@ fn pinned(
         .filter(|slot| !movable.contains(slot))
         .filter_map(|slot| Some((slot, start_value(slot)?)))
         .collect();
+    // DEEPEST SLOT FIRST, and in an order fixed by the layout rather than by the map. The
+    // conjunction is the same whatever the order, but the diagrams built on the way to it are
+    // not, and they stay in the manager: a hash map's order differs from one process to the
+    // next, and taken in it so would the node count. Taken from the bottom of the variable
+    // order up, every step is a suffix of the finished cube, so the way there builds almost
+    // nothing extra.
+    let mut deepest_first: Vec<(usize, u32)> = values.iter().map(|(&s, &v)| (s, v)).collect();
+    deepest_first.sort_by_key(|&(slot, _)| {
+        std::cmp::Reverse((vars.layout().slot(slot).map(|(base, _)| base), slot))
+    });
     let mut set = vars.top();
-    for (&slot, &value) in &values {
+    for (slot, value) in deepest_first {
         match vars
             .slot_equals(slot, value)
             .and_then(|holds| set.and(&holds).ok())
