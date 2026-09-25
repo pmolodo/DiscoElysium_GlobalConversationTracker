@@ -210,6 +210,71 @@ fn operator_precedence_and_binds_tighter_than_or() {
     );
 }
 
+/// Chains grouped the way the game groups them, which is not the way standard Lua does.
+///
+/// Every row was asked of the running game through `GameHarness evaluate` (de-yctx), with
+/// `T` as `1 == 1` and `F` as `1 == 2`. The rows marked as disagreeing with standard Lua are
+/// the ones that settle it: the game compares each operator only with the next one, so
+/// `T and F and T or T` is `T and (F and (T or T))` there.
+#[test]
+fn chains_group_as_the_game_groups_them() {
+    const MEASURED: [(&str, bool); 13] = [
+        ("T and F or T", true),
+        // Standard Lua answers true for each of these four.
+        ("T and F and T or T", false),
+        ("T and F and T or T or F", false),
+        ("F and T or T", false),
+        ("T and F and T or F or T", false),
+        ("T and T and F or T", true),
+        ("F or T and T", true),
+        ("T or F and F", true),
+        ("T and F or T or F", true),
+        ("T and F or F or T", true),
+        ("(T and F and T) or T", true),
+        ("T and F and (T or T)", false),
+        ("T and T or F", true),
+    ];
+    for (shape, answer) in MEASURED {
+        let guard = shape.replace('T', "1 == 1").replace('F', "1 == 2");
+        let expected = if answer {
+            Ternary::True
+        } else {
+            Ternary::False
+        };
+        assert_eq!(test(&guard, &GameWorld::blank()), expected, "{shape}");
+    }
+}
+
+/// Conversation 640's entry 53, the guard that found this: true under standard Lua through
+/// its second `or`, false in the game, which does not offer the option.
+#[test]
+fn titus_evidence_option_is_closed_as_the_game_closes_it() {
+    const GUARD: &str = concat!(
+        r#"Variable["whirling.hardie_lynching_evidence_hub_reached"] == true"#,
+        r#"  and  Variable["whirling.hardie_lynching_hub_reached"] == false"#,
+        r#"  and  Variable["whirling.hardie_postviscal_scan"] == true"#,
+        r#"  or  Variable["cargo.evrart_hardieboys_did_the_merco_in"] == true"#,
+        r#"  or  Variable["yard.hanged_rope_airlifting_carfo"] == true"#,
+        r#"  or  Variable["yard.hanged_rope_industrial_strength"] == true"#,
+        r#"  or  Variable["cargo.belt_vermillion_connection_made"] == true"#
+    );
+    let flag = |name: &str, value: bool| (name.to_string(), GuardValue::from_boolean(value));
+    let world = [
+        flag("whirling.hardie_lynching_evidence_hub_reached", true),
+        flag("whirling.hardie_lynching_hub_reached", true),
+        flag("whirling.hardie_postviscal_scan", true),
+        flag("cargo.evrart_hardieboys_did_the_merco_in", true),
+        flag("yard.hanged_rope_airlifting_carfo", false),
+        flag("yard.hanged_rope_industrial_strength", false),
+        flag("cargo.belt_vermillion_connection_made", false),
+    ]
+    .into_iter()
+    .fold(GameWorld::blank(), |world, (name, value)| {
+        world.set_variable(&name, value)
+    });
+    assert_eq!(test(GUARD, &world), Ternary::False);
+}
+
 #[test]
 fn garbage_is_an_error() {
     assert!(parse_guard(r#"Variable["a"] $$ 3"#).is_err());

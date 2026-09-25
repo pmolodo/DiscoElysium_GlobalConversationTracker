@@ -1,0 +1,16 @@
+{
+  "_format": "sparse-diff",
+  "_formatVersion": 2,
+  "_base": "../../at-joyce2.ntwtf/at-joyce2.ntwtf.lua.parts/Actor.json",
+  "_changes": {
+    "Kim_Kitsuragi": {
+      "Position_Whirling_int_f1": "6.244176,0.004179315,0.5700662,0,0.983555,0,-0.1806093,Whirling-int-f1",
+      "Position_Martinaise_ext": "-51.97707,4.268003,-94.72309,0,0.9379719,0,-0.3467113,Martinaise-ext",
+      "Position_Union_boss_int": "4.651984,3.568795,4.649324,0,0.9680296,0,-0.2508361,Union-boss-int"
+    },
+    "You": {
+      "Position_Whirling_int_f1": "5.105979,0.004575318,0.2152364,0,0.9561676,0,0.2928198,Whirling-int-f1",
+      "Position_Martinaise_ext": "-52.65823,4.268003,-93.5283,0,0.9771183,0,-0.2126969,Martinaise-ext"
+    }
+  }
+}

@@ -1,0 +1,2160 @@
+{
+  "_base": "../at-joyce2.ntwtf/at-joyce2.2nd.ntwtf.json",
+  "_changes": {
+    "aquiredJournalTasks": {
+      "DoneTasksTabNotifyIcon": true,
+      "HudNotifyIcon": true,
+      "SubtaskAquisitions": {
+        "TASK.open_gary_door": {
+          "TASK.report_the_door_back_to_evrart": {
+            "dayCounter": 4,
+            "dayMinutes": 549,
+            "realDayCounter": 1,
+            "seconds": 43
+          }
+        },
+        "TASK.prove_your_authority_to_the_hardie_boys": {
+          "TASK.pass_the_hardie_authority_check": {
+            "dayCounter": 4,
+            "dayMinutes": 612,
+            "realDayCounter": 1,
+            "seconds": 35
+          }
+        }
+      },
+      "TaskAquisitions": {
+        "TASK.deliver_mail_to_fishing_village": {
+          "dayCounter": 4,
+          "dayMinutes": 577,
+          "realDayCounter": 1,
+          "seconds": 19
+        },
+        "TASK.prove_your_authority_to_the_hardie_boys": {
+          "dayCounter": 4,
+          "dayMinutes": 611,
+          "realDayCounter": 1,
+          "seconds": 26
+        }
+      },
+      "TaskNewStates": {
+        "TASK.prove_your_authority_to_the_hardie_boys": true
+      },
+      "TaskResolutions": {
+        "TASK.deliver_mail_to_fishing_village": null,
+        "TASK.interrogate_vigilantes": {
+          "dayCounter": 4,
+          "dayMinutes": 584,
+          "realDayCounter": 1,
+          "seconds": 59
+        },
+        "TASK.open_gary_door": {
+          "dayCounter": 4,
+          "dayMinutes": 550,
+          "realDayCounter": 1,
+          "seconds": 29
+        },
+        "TASK.prove_your_authority_to_the_hardie_boys": null
+      }
+    },
+    "characterSheet": {
+      "gainedItems": [
+        "shoes_snakeskin_left",
+        "pants_bellbottom",
+        "neck_tie",
+        "jacket_suede",
+        "shirt_dress_disco",
+        "shoes_snakeskin",
+        "shoes_snakeskin_right",
+        "shirt_tank_top",
+        "yellow_plastic_bag",
+        "gloves_bum",
+        "map_of_martinaise",
+        "hat_bum",
+        "book_greatest_innossence",
+        "prybar",
+        "chaincutters",
+        "flashlight",
+        "jacket_navalcoat",
+        "drug_alcohol_commodore_red",
+        "pants_jeans",
+        "glasses_flipup",
+        "shoes_fancy_loafer",
+        "gum_wrapper",
+        "glasses_biker",
+        "music_smallest_church_tape",
+        "postcard_coal_city",
+        "neck_bowtie",
+        "pants_interisolar",
+        "fuel_canister_rcm",
+        "hat_faln",
+        "postcard_couron",
+        "glasses_megabinos",
+        "missing_jacket_filthy",
+        "library_card",
+        "shirt_polo",
+        "neck_scented_scarf",
+        "jacket_korovjev",
+        "book_la_fumee",
+        "postcard_le_jardin",
+        "glasses_rect",
+        "jacket_patrol_cloak",
+        "rene_photo",
+        "gloves_faln",
+        "jacket_rcm",
+        "badge",
+        "jacket_pissflaubert",
+        "white_envelope"
+      ]
+    },
+    "containerSourceState": {
+      "itemRegistry": {
+        "Interactable/Harbour/Patrol Cloak Schedule/Patrol Cloak Placeholder Prefab/Hanging_Cloak/Hanging-Cloak1": [
+          {
+            "$ref": "1835"
+          }
+        ],
+        "Karaoke Prefab 2f(Clone)/NPCs Karaoke/Clubber Man 5/ClubberMan5/doomspiral_rig/doomspiral_SHJntGrp/doomspiral_ROOTSHJnt/doomspiral_Spine_01SHJnt/doomspiral_Spine_02SHJnt/doomspiral_Spine_TopSHJnt/doomspiral_r_Arm_ClavicleSHJnt/doomspiral_r_Arm_ShoulderSHJnt/doomspiral_r_Arm_ElbowSHJnt/doomspiral_r_Arm_WristSHJnt/doomspiral_r_Finger_02_01SHJnt/doomspiral_r_Finger_02_02SHJnt/empty_bottle1": [
+          {
+            "$id": "1674",
+            "bonusLoot": false,
+            "calculatedValue": 0,
+            "deviation": 0,
+            "name": "plastic_tare",
+            "probability": 1,
+            "value": 0
+          }
+        ],
+        "Karaoke Prefab(Clone)/NPCs Karaoke/Clubber Man 5/ClubberMan5/doomspiral_rig/doomspiral_SHJntGrp/doomspiral_ROOTSHJnt/doomspiral_Spine_01SHJnt/doomspiral_Spine_02SHJnt/doomspiral_Spine_TopSHJnt/doomspiral_r_Arm_ClavicleSHJnt/doomspiral_r_Arm_ShoulderSHJnt/doomspiral_r_Arm_ElbowSHJnt/doomspiral_r_Arm_WristSHJnt/doomspiral_r_Finger_02_01SHJnt/doomspiral_r_Finger_02_02SHJnt/empty_bottle1": [
+          {
+            "$id": "1931",
+            "bonusLoot": false,
+            "calculatedValue": 0,
+            "deviation": 0,
+            "name": "glass_tare",
+            "probability": 1,
+            "value": 0
+          }
+        ],
+        "Patrol Cloak Placeholder Prefab(Clone)/Hanging_Cloak/Hanging-Cloak1": [
+          {
+            "$id": "1835",
+            "bonusLoot": false,
+            "calculatedValue": 0,
+            "deviation": 0,
+            "name": "jacket_patrol_cloak",
+            "probability": 1,
+            "value": 0
+          }
+        ],
+        "Props whirling f2/Karaoke f2/Karaoke Prefab 2f/NPCs Karaoke/Clubber Man 5/ClubberMan5/doomspiral_rig/doomspiral_SHJntGrp/doomspiral_ROOTSHJnt/doomspiral_Spine_01SHJnt/doomspiral_Spine_02SHJnt/doomspiral_Spine_TopSHJnt/doomspiral_r_Arm_ClavicleSHJnt/doomspiral_r_Arm_ShoulderSHJnt/doomspiral_r_Arm_ElbowSHJnt/doomspiral_r_Arm_WristSHJnt/doomspiral_r_Finger_02_01SHJnt/doomspiral_r_Finger_02_02SHJnt/empty_bottle1": [
+          {
+            "$ref": "1674"
+          }
+        ],
+        "Props/Karaoke/Karaoke Prefab/NPCs Karaoke/Clubber Man 5/ClubberMan5/doomspiral_rig/doomspiral_SHJntGrp/doomspiral_ROOTSHJnt/doomspiral_Spine_01SHJnt/doomspiral_Spine_02SHJnt/doomspiral_Spine_TopSHJnt/doomspiral_r_Arm_ClavicleSHJnt/doomspiral_r_Arm_ShoulderSHJnt/doomspiral_r_Arm_ElbowSHJnt/doomspiral_r_Arm_WristSHJnt/doomspiral_r_Finger_02_01SHJnt/doomspiral_r_Finger_02_02SHJnt/empty_bottle1": [
+          {
+            "$ref": "1931"
+          }
+        ]
+      }
+    },
+    "failedWhiteChecksHolder": {
+      "ChecksBySkill": {
+        "AUTHORITY": [
+          "whirling.hardie_authority_wc_to_get_klaasje"
+        ],
+        "LOGIC": [
+          "ice.andre_logic_whitecheck_success",
+          "cargo.evrartdocument_logic_wc_to_see_whats_up_with_the_signatures"
+        ],
+        "RHETORIC": [
+          "plaza.gaston_rhetoric_sandwich",
+          "jam.siileng_whitecheck_rhetoric_give_me_money"
+        ]
+      },
+      "ChecksByVariable": {
+        "CheckItem": [
+          "whirling.mirror_subdued_expression",
+          "canal.toy_white_check",
+          "yard.hanged_endurance_didnt_vomit",
+          "cargo.momsoffice_payphone_interfacing_wc",
+          "whirling.hardie_authority_wc_to_get_klaasje"
+        ],
+        "IsDayFrom": [
+          "yard.hanged_endurance_didnt_vomit"
+        ],
+        "IsTHCPresent": [
+          "whirling.sleeper_yell_him_out_of_sleep",
+          "doomed.bookstore_backdoor_redcheck_smash",
+          "backyard.wall_concept_wc",
+          "pier.joyce_volition_white_succeeded"
+        ],
+        "TASK.confront_hardie_about_drug_trade_done": [
+          "whirling.hardie_authority_wc_to_get_klaasje"
+        ],
+        "XP.glen_says_he_thinks_she_could_be_a_new_hardie": [
+          "whirling.hardie_authority_wc_to_get_klaasje"
+        ],
+        "XP.hardie_dance": [
+          "whirling.hardie_authority_wc_to_get_klaasje"
+        ],
+        "cargo.conze_put_his_money_on_cool_cubic_pyrite": [
+          "cargo.evrartdocument_logic_wc_to_see_whats_up_with_the_signatures"
+        ],
+        "cargo.evrartenvelope_viscal_youthcentre_very_close_to_houses": [
+          "cargo.evrartdocument_logic_wc_to_see_whats_up_with_the_signatures"
+        ],
+        "cargo.inland_youthcentre_omnious_or_cool": [
+          "cargo.evrartdocument_logic_wc_to_see_whats_up_with_the_signatures"
+        ],
+        "whirling.hardie_lynching_witness_hub": [
+          "whirling.hardie_authority_wc_to_get_klaasje"
+        ],
+        "whirling.hardie_threw_evrart_on_the_table": [
+          "whirling.hardie_authority_wc_to_get_klaasje"
+        ],
+        "whirling.hardies_confronted_them_with_the_bullet": [
+          "whirling.hardie_authority_wc_to_get_klaasje"
+        ],
+        "whirling.hardies_warned_the_boys_about_the_tribunal": [
+          "whirling.hardie_authority_wc_to_get_klaasje"
+        ],
+        "whirling.hardies_you_dont_tell_me_what_to_do": [
+          "whirling.hardie_authority_wc_to_get_klaasje"
+        ]
+      },
+      "ReopenedWhiteChecksByActorName": {
+        "Cargo Container Door": {
+          "cargo.container_rhetoric_wc": [
+            {
+              "Actor": {
+                "alternatePortraits": [],
+                "fields": [
+                  {
+                    "title": "Name",
+                    "type": "Text",
+                    "typeString": "",
+                    "value": "Cargo Container Door"
+                  },
+                  {
+                    "title": "IsPlayer",
+                    "type": "Boolean",
+                    "typeString": "CustomFieldType_Boolean",
+                    "value": "False"
+                  },
+                  {
+                    "title": "Description",
+                    "type": "Text",
+                    "typeString": "",
+                    "value": ""
+                  },
+                  {
+                    "title": "character_short_name",
+                    "type": "Text",
+                    "typeString": "",
+                    "value": "cargocontainerdoor"
+                  },
+                  {
+                    "title": "Articy Id",
+                    "type": "Text",
+                    "typeString": "",
+                    "value": "0x010000590000975E"
+                  }
+                ],
+                "id": 321,
+                "portrait": null,
+                "spritePortrait": null,
+                "spritePortraits": []
+              },
+              "ActorsPortraitsBundleManager": null,
+              "CheckModifiers": {
+                "CheckItem": [
+                  {
+                    "bonus": -1,
+                    "expression": "CheckItem(\"police_dice\")",
+                    "fallbackExplanation": "Icosahedral Dice Set \"Sirens\".",
+                    "localizedExplanation": {
+                      "Term": "tooltip7/0x01000059000097C7"
+                    }
+                  }
+                ],
+                "IsDayFrom": [
+                  {
+                    "bonus": -1,
+                    "expression": "IsDayFrom(2)",
+                    "fallbackExplanation": "Been in the world for two days.",
+                    "localizedExplanation": {
+                      "Term": "tooltip2/0x01000059000097C7"
+                    }
+                  },
+                  {
+                    "bonus": -1,
+                    "expression": "IsDayFrom(4)",
+                    "fallbackExplanation": "Been in this world for many days.",
+                    "localizedExplanation": {
+                      "Term": "tooltip3/0x01000059000097C7"
+                    }
+                  }
+                ],
+                "IsTHCPresent": [
+                  {
+                    "bonus": -1,
+                    "expression": "IsTHCPresent(\"precarious_world\")",
+                    "fallbackExplanation": "Precarious world.",
+                    "localizedExplanation": {
+                      "Term": "tooltip4/0x01000059000097C7"
+                    }
+                  },
+                  {
+                    "bonus": -1,
+                    "expression": "IsTHCPresent(\"one_more_door\")",
+                    "fallbackExplanation": "One more door.",
+                    "localizedExplanation": {
+                      "Term": "tooltip5/0x01000059000097C7"
+                    }
+                  }
+                ],
+                "cargo.savvy_container_door_unlock": [
+                  {
+                    "bonus": -5,
+                    "expression": "Variable[\"cargo.savvy_container_door_unlock\"]",
+                    "fallbackExplanation": "Savvy's here!",
+                    "localizedExplanation": {
+                      "Term": "tooltip8/0x01000059000097C7"
+                    }
+                  }
+                ],
+                "tc.container_priority_from_kim": [
+                  {
+                    "bonus": -1,
+                    "expression": "Variable[\"tc.container_priority_from_kim\"]",
+                    "fallbackExplanation": "Erratic, yet thorough.",
+                    "localizedExplanation": {
+                      "Term": "tooltip1/0x01000059000097C7"
+                    }
+                  }
+                ],
+                "whirling.money_is_all_about_trust": [
+                  {
+                    "bonus": -1,
+                    "expression": "Variable[\"whirling.money_is_all_about_trust\"]",
+                    "fallbackExplanation": "Money is all about trust!",
+                    "localizedExplanation": {
+                      "Term": "tooltip6/0x01000059000097C7"
+                    }
+                  }
+                ]
+              },
+              "FlagName": "cargo.container_rhetoric_wc",
+              "LastSkillValue": 0,
+              "LastTargetValue": 16,
+              "SkillType": "RHETORIC",
+              "checkPrecondition": "Variable[\"cargo.evrart_container_stroke\"] == true  or  Variable[\"cargo.container_knock\"]  and  Variable[\"cargo.container_tried_to_open_door\"]",
+              "checkTargetArticyId": "0x0000000000000000",
+              "difficulty": 19,
+              "isOnlySeen": false
+            }
+          ]
+        }
+      },
+      "WhiteCheckCache": {
+        "cargo.evrartdocument_logic_wc_to_see_whats_up_with_the_signatures": {
+          "Actor": {
+            "alternatePortraits": [],
+            "fields": [
+              {
+                "title": "Name",
+                "type": "Text",
+                "typeString": "",
+                "value": "White Envelope"
+              },
+              {
+                "title": "IsPlayer",
+                "type": "Boolean",
+                "typeString": "CustomFieldType_Boolean",
+                "value": "False"
+              },
+              {
+                "title": "Description",
+                "type": "Text",
+                "typeString": "",
+                "value": ""
+              },
+              {
+                "title": "character_short_name",
+                "type": "Text",
+                "typeString": "",
+                "value": "whiteenvelope"
+              },
+              {
+                "title": "Articy Id",
+                "type": "Text",
+                "typeString": "",
+                "value": "0x010000070000138D"
+              }
+            ],
+            "id": 353,
+            "portrait": null,
+            "spritePortrait": null,
+            "spritePortraits": []
+          },
+          "ActorsPortraitsBundleManager": null,
+          "CheckModifiers": {
+            "cargo.conze_put_his_money_on_cool_cubic_pyrite": [
+              {
+                "bonus": 1,
+                "expression": "Variable[\"cargo.conze_put_his_money_on_cool_cubic_pyrite\"]",
+                "fallbackExplanation": "Cool cubic pyrite.",
+                "localizedExplanation": {
+                  "Term": "tooltip3/0x01000007000012D5"
+                }
+              }
+            ],
+            "cargo.evrartenvelope_viscal_youthcentre_very_close_to_houses": [
+              {
+                "bonus": -1,
+                "expression": "Variable[\"cargo.evrartenvelope_viscal_youthcentre_very_close_to_houses\"] == true",
+                "fallbackExplanation": "Centre's very close to houses.",
+                "localizedExplanation": {
+                  "Term": "tooltip1/0x01000007000012D5"
+                }
+              }
+            ],
+            "cargo.inland_youthcentre_omnious_or_cool": [
+              {
+                "bonus": -1,
+                "expression": "Variable[\"cargo.inland_youthcentre_omnious_or_cool\"]",
+                "fallbackExplanation": "Ominous shape.",
+                "localizedExplanation": {
+                  "Term": "tooltip2/0x01000007000012D5"
+                }
+              }
+            ]
+          },
+          "FlagName": "cargo.evrartdocument_logic_wc_to_see_whats_up_with_the_signatures",
+          "LastSkillValue": 0,
+          "LastTargetValue": 12,
+          "SkillType": "LOGIC",
+          "checkPrecondition": "",
+          "checkTargetArticyId": "0x0000000000000000",
+          "difficulty": 12,
+          "isOnlySeen": false
+        },
+        "pier.joyce_conceptualization_white_what_world": {
+          "Actor": {
+            "$id": "817"
+          }
+        },
+        "pier.joyce_esprit_service_history": {
+          "Actor": {
+            "$ref": "817"
+          }
+        },
+        "whirling.hardie_authority_wc_to_get_klaasje": {
+          "Actor": {
+            "alternatePortraits": [],
+            "fields": [
+              {
+                "title": "Name",
+                "type": "Text",
+                "typeString": "",
+                "value": "Titus Hardie"
+              },
+              {
+                "title": "IsPlayer",
+                "type": "Boolean",
+                "typeString": "CustomFieldType_Boolean",
+                "value": "False"
+              },
+              {
+                "title": "Pictures",
+                "type": "Text",
+                "typeString": "",
+                "value": "[portrait_titus.png]"
+              },
+              {
+                "title": "Description",
+                "type": "Text",
+                "typeString": "",
+                "value": "Titus Hardie, leader of the Hardie Boys. Former prizefighter and a rowing enthusiast. Tall guy, wide in the shoulders and narrow at the hips. Hard-ass, stubborn, take-shit-from-no-one type of guy. He's wearing a baseball cap with the \"Martinaise Burning Rhinos\" (a local rugby team) logo (A flaming rhino horn). Also an orange padded west. It's says \"ROWING CLUB\" on the back and \"T. Hardie\" on left side on the chest. He's also wearing fingerless gloves and yellow boots with bluejeans tucked in them.\n\nHe's 39 years old. Short dark hair. Sharp features. Kind of handsome - like Johnny Football Hero once he's past his prime and never moved out of the home town.\n\nQuarterback for the \"Martinaise Flaming Rhinos\"."
+              },
+              {
+                "title": "character_short_name",
+                "type": "Text",
+                "typeString": "",
+                "value": "titushardie"
+              },
+              {
+                "title": "IsNPC",
+                "type": "Boolean",
+                "typeString": "CustomFieldType_Boolean",
+                "value": "True"
+              },
+              {
+                "title": "IsFemale",
+                "type": "Boolean",
+                "typeString": "CustomFieldType_Boolean",
+                "value": "False"
+              },
+              {
+                "title": "short_description",
+                "type": "Text",
+                "typeString": "",
+                "value": ""
+              },
+              {
+                "title": "LongDescription",
+                "type": "Text",
+                "typeString": "",
+                "value": ""
+              },
+              {
+                "title": "color",
+                "type": "Number",
+                "typeString": "CustomFieldType_Number",
+                "value": "1"
+              },
+              {
+                "title": "Articy Id",
+                "type": "Text",
+                "typeString": "",
+                "value": "0x0100004C0000C042"
+              }
+            ],
+            "id": 103,
+            "portrait": null,
+            "spritePortrait": null,
+            "spritePortraits": []
+          },
+          "ActorsPortraitsBundleManager": null,
+          "CheckModifiers": {
+            "CheckItem": [
+              {
+                "bonus": -1,
+                "expression": "CheckItem(\"wirral_die\")",
+                "fallbackExplanation": "Standard Wirrâl Die.",
+                "localizedExplanation": {
+                  "Term": "tooltip9/0x0100009200002B75"
+                }
+              }
+            ],
+            "TASK.confront_hardie_about_drug_trade_done": [
+              {
+                "bonus": -1,
+                "expression": "Variable[\"TASK.confront_hardie_about_drug_trade_done\"]",
+                "fallbackExplanation": "Confronted about drug trade.",
+                "localizedExplanation": {
+                  "Term": "tooltip1/0x0100009200002B75"
+                }
+              }
+            ],
+            "XP.glen_says_he_thinks_she_could_be_a_new_hardie": [
+              {
+                "bonus": -1,
+                "expression": "Variable[\"XP.glen_says_he_thinks_she_could_be_a_new_hardie\"]",
+                "fallbackExplanation": "Discussed eighth Hardie.",
+                "localizedExplanation": {
+                  "Term": "tooltip4/0x0100009200002B75"
+                }
+              }
+            ],
+            "XP.hardie_dance": [
+              {
+                "bonus": -1,
+                "expression": "Variable[\"XP.hardie_dance\"]",
+                "fallbackExplanation": "Physical stand-off winner.",
+                "localizedExplanation": {
+                  "Term": "tooltip6/0x0100009200002B75"
+                }
+              }
+            ],
+            "whirling.hardie_lynching_witness_hub": [
+              {
+                "bonus": -1,
+                "expression": "Variable[\"whirling.hardie_lynching_witness_hub\"]",
+                "fallbackExplanation": "Found a witness.",
+                "localizedExplanation": {
+                  "Term": "tooltip8/0x0100009200002B75"
+                }
+              }
+            ],
+            "whirling.hardie_threw_evrart_on_the_table": [
+              {
+                "bonus": -2,
+                "expression": "Variable[\"whirling.hardie_threw_evrart_on_the_table\"]",
+                "fallbackExplanation": "Evrart asked to cooperate.",
+                "localizedExplanation": {
+                  "Term": "tooltip3/0x0100009200002B75"
+                }
+              }
+            ],
+            "whirling.hardies_confronted_them_with_the_bullet": [
+              {
+                "bonus": -1,
+                "expression": "Variable[\"whirling.hardies_confronted_them_with_the_bullet\"]",
+                "fallbackExplanation": "Strange reaction to bullet.",
+                "localizedExplanation": {
+                  "Term": "tooltip2/0x0100009200002B75"
+                }
+              }
+            ],
+            "whirling.hardies_warned_the_boys_about_the_tribunal": [
+              {
+                "bonus": -2,
+                "expression": "Variable[\"whirling.hardies_warned_the_boys_about_the_tribunal\"]",
+                "fallbackExplanation": "Warned about the tribunal.",
+                "localizedExplanation": {
+                  "Term": "tooltip7/0x0100009200002B75"
+                }
+              }
+            ],
+            "whirling.hardies_you_dont_tell_me_what_to_do": [
+              {
+                "bonus": 1,
+                "expression": "Variable[\"whirling.hardies_you_dont_tell_me_what_to_do\"] == true",
+                "fallbackExplanation": "Weak when you first met.",
+                "localizedExplanation": {
+                  "Term": "tooltip5/0x0100009200002B75"
+                }
+              }
+            ]
+          },
+          "FlagName": "whirling.hardie_authority_wc_to_get_klaasje",
+          "LastSkillValue": 0,
+          "LastTargetValue": 13,
+          "SkillType": "AUTHORITY",
+          "checkPrecondition": "Variable[\"whirling.hardie_make_authority_wc_appear\"] == true  and  Variable[\"whirling.hardie_authority_wc_passed\"] == false",
+          "checkTargetArticyId": "0x0100004C0000C042",
+          "difficulty": 17,
+          "isOnlySeen": false
+        },
+        "whirling.mirror_expression_source_located": {
+          "Actor": {
+            "$id": "358"
+          }
+        },
+        "whirling.mirror_subdued_expression": {
+          "Actor": {
+            "$ref": "358"
+          }
+        }
+      }
+    },
+    "hudState": {
+      "charsheetNotification": true,
+      "journalNotification": true
+    },
+    "inventoryState": {
+      "inventoryViewState": {
+        "inventory": {
+          "READING": [
+            {
+              "Key": 0,
+              "Value": "book_greatest_innossence"
+            },
+            {
+              "Key": 1,
+              "Value": "map_of_martinaise"
+            },
+            {
+              "Key": 2,
+              "Value": "gum_wrapper"
+            },
+            {
+              "Key": 3,
+              "Value": "music_smallest_church_tape"
+            },
+            {
+              "Key": 4,
+              "Value": "missing_jacket_filthy"
+            },
+            {
+              "Key": 5,
+              "Value": "library_card"
+            },
+            {
+              "Key": 6,
+              "Value": "book_la_fumee"
+            },
+            {
+              "Key": 7,
+              "Value": "badge"
+            },
+            {
+              "Key": 8,
+              "Value": "white_envelope"
+            }
+          ]
+        }
+      },
+      "itemListState": [
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_trash_container",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_ring",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_whirling_tequila",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_bookstore_backdoor",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_doomed_backdoor",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_abandoned_lorry",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_church_door",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_apartment_building",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_workshop_spare",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_coast_home",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "key_basement_apartment",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "union_membership_card",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "union_membership_card_other",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "sabre",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "armistice_muzzleloader",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "gun_villiers",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "gun_ruby",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "boombox",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "prybar",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "chaincutters",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "ledger_oblivion",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "ledger_of_failure_and_hatred",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "ledger_damaged",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "flashlight",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "kvalsund_multitool",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "yellow_plastic_bag",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "spirit_bomb",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "drug_alcohol_commodore_red",
+          "substanceTimeLeft": 0,
+          "substanceUses": 2
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "drug_alcohol_pale_aged_vodka",
+          "substanceTimeLeft": 0,
+          "substanceUses": -1
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "drug_alcohol_potent_pilsner",
+          "substanceTimeLeft": 0,
+          "substanceUses": -1
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "drug_pyrholidon",
+          "substanceTimeLeft": 0,
+          "substanceUses": -1
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "drug_smokes_astra",
+          "substanceTimeLeft": 0,
+          "substanceUses": -1
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "drug_speed_preptide",
+          "substanceTimeLeft": 0,
+          "substanceUses": -1
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "drug_speed_bottle",
+          "substanceTimeLeft": 0,
+          "substanceUses": -1
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "drug_alcohol_goracy_brew",
+          "substanceTimeLeft": 0,
+          "substanceUses": -1
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "drug_smokes_tioumoutiri",
+          "substanceTimeLeft": 0,
+          "substanceUses": -1
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "nosaphed",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "drouamine",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "magnesium",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "hypnogamma",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "jacket_carabineer",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "pants_carabineer",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "jacket_kimono_robe",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "shirt_faln",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "pants_faln",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "shoes_t500",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "shirt_t500",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "gloves_t500",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "hat_t500",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "hat_samaran",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "jacket_fucktheworld",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_pissflaubert",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_korovjev",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_suede",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "pants_jeans",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_rcm",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "shirt_hjelmdall",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "pants_bellbottom",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "pants_rcm",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "jacket_fritte_raincoat",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_patrol_cloak",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "hat_revolutionary",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shirt_dress_disco",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shoes_snakeskin",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shoes_snakeskin_left",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shoes_snakeskin_right",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "hat_camionneur",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "neck_winter_scarf",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "hat_rcm",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "gloves_garden",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "neck_tie",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "neck_setting_sun_medal",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "jacket_windbreaker_surf",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "glasses_self_destruction",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "glasses_sub_insulindics",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "shoes_faln",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "pants_itchy_angry",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "hat_amphibian_sports_visor",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "jacket_faln",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "gloves_faln",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "gloves_bum",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "jacket_interisolar",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "pants_interisolar",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "neck_scented_scarf",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "hat_faln",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "hat_bum",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "glasses_megabinos",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "glasses_flipup",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "shoes_cavalry",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "shirt_interisolar",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "jacket_nansencoat",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "jacket_navalcoat",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shoes_fancy_loafer",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "neck_teratorn_tie",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "hat_mullen",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "jacket_mullen",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shirt_polo",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "shirt_tank_top",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "neck_bowtie",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "jacket_interisolar_white",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "pants_interisolar_white",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "pants_jeans_red",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "pants_jeans_black",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "shoes_fancy_loafer_brown",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "shoes_snakeskin_red",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "shirt_mesh",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "neck_winter_scarf_red",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "glasses_rect",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "glasses_bugeyes",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "glasses_biker",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "shoes_donks",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "jacket_reflective_vest",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "hat_headset",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "map_of_martinaise",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "instant_photo_tattoos",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "ham_sandwich",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "fractured_bullet",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "dried_may_bells",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "deluxe_topping_pie",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "badge",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "book_greatest_innossence",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "book_hjelmdevil",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "book_hjelmdallermann",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "rubys_journal",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "book_codex_urik",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "book_cockatoo",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "book_primer",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "game_suzerainty",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "game_wirral",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "book_medicinal_purposes_of_the_pale",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "book_sixteen_days_in_coldest_april",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "book_dick_mullen_and_the_mistaken_identity",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "book_nilsenism_introduction",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "book_la_fumee",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "klaasje_passport",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "tape_lely",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "music_smallest_church_tape",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "note_from_fridge",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "library_card",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "gum_wrapper",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "hanged_boots_raw",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "missing_jacket_filthy",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "white_envelope_signed_right",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "white_envelope_signed_failed_forgery",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "white_envelope_signed_wrong",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "white_envelope",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "white_envelope_lilienne_signed",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "white_envelope_lilienne_and_idiot_doom",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "stock_certificate",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "ammonia_ampoule",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "antique_rifle",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "blue_medicinal_spirit",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "box_with_locusts",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "bullet",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "cindys_brush",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "commemorative_pin",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "deserter_gun",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "dockworker_id_card",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "figurine_set_headless_faln_rider",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "filament_memory_off_site_copy",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "filament_memory_production_schedule",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "fuel_canister_lum",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "fuel_canister_rcm",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "samaran_speakers",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "kind_green_ape_pen",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "lieutenants_handkerchief",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "lieutenants_notebook",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "novelty_cheque",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "radiant_spinners",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "ruffed_grouse_taxidermy",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "shotput_ball",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "yellow_man_mug",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "police_dice",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "superstar_dice",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "apocalypse_die",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "sorry_die",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "wirral_die",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "anti_wirral_die",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "red_police_die",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "music_whirling_smallest_church",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "tape_melody_broken",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "tape_melody_fixed",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "rene_photo",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "bullets",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "figurine_set_revolutionary",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "blue_oblong_pen",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "deserter_scope",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "postcard_martinaise",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "postcard_le_jardin",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "postcard_la_delta",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "postcard_grand_couron",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "postcard_couron",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "postcard_boogie_street",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": false,
+          "itemName": "postcard_coal_city",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "highly_advanced_transceiver",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "highly_expensive_transceiver",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "perfectly_adequate_transceiver",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "cindys_painting",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "money",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "cents_40",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "leopard_print_body_suit",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "tare_pile",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "glass_tare",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "metal_tare",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "special_tare",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        },
+        {
+          "StackItems": null,
+          "isFresh": true,
+          "itemName": "plastic_tare",
+          "substanceTimeLeft": 0,
+          "substanceUses": 0
+        }
+      ]
+    },
+    "playerCharacter": {
+      "Level": 14,
+      "Money": 3937,
+      "NewPointsToSpend": true,
+      "SkillPoints": 2,
+      "XpAmount": 14,
+      "healingPools": {
+        "VOLITION": 0
+      }
+    },
+    "sunshineClockTimeHolder": {
+      "time": {
+        "dayMinutes": 629,
+        "seconds": 4
+      }
+    }
+  },
+  "_format": "json-diff",
+  "_formatVersion": 1,
+  "_remove": [
+    "/failedWhiteChecksHolder/ChecksByVariable/cargo.savvy_container_door_unlock",
+    "/failedWhiteChecksHolder/ChecksByVariable/tc.container_priority_from_kim",
+    "/failedWhiteChecksHolder/ChecksByVariable/whirling.money_is_all_about_trust",
+    "/failedWhiteChecksHolder/WhiteCheckCache/cargo.container_rhetoric_wc"
+  ]
+}

@@ -402,13 +402,32 @@ impl Parser {
         }
     }
 
-    /// Takes an infix operator, building everything that binds at least as tightly first.
+    /// Takes an infix operator, first building THE ONE operator before it if that one binds
+    /// at least as tightly.
     ///
     /// This is where precedence happens: `a or b and c` leaves the `or` waiting because
     /// `and` holds tighter, while `a and b or c` builds the `and` before the `or` goes on.
+    ///
+    /// ONE, NOT EVERY ONE, because that is how the game groups a chain, and a guard means
+    /// what the game makes of it. Standard Lua would build everything waiting that binds at
+    /// least as tightly; the interpreter the game ships (`Language.Lua`,
+    /// `OperatorExpr.BuildExpressionTree`) compares each operator only with the next one. If
+    /// the left one is prior it folds left and moves on; if not, its right operand is THE
+    /// WHOLE REST OF THE CHAIN, and nothing later is ever compared with it again. So
+    /// `a == b and c == d or e` is `a == b and (c == d or e)` in the game, where standard Lua
+    /// has `(a == b and c == d) or e` - and conversation 640's entry 53, whose guard is that
+    /// shape, is offered by one and not by the other (de-yctx).
+    ///
+    /// A PREFIX `not` IS PART OF ITS OPERAND, so every one waiting is built first and none of
+    /// them is the one. The game reads a prefix operator only at the head of an expression,
+    /// where it takes the first term and nothing more; `not not a == b` is not something it
+    /// reads at all, and here it is `(not not a) == b`.
     fn push_op(&mut self, op: Pending) -> Result<(), GuardParseError> {
+        while self.ops.len() > self.floor().1 && matches!(self.ops.last(), Some(Pending::Not)) {
+            self.reduce()?;
+        }
         let power = op.binding_power();
-        while self.ops.len() > self.floor().1
+        if self.ops.len() > self.floor().1
             && self
                 .ops
                 .last()

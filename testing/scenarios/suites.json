@@ -808,6 +808,36 @@
       "suite": "joyce-wild-pines",
       "what": "the menu after asking Joyce about Wild Pines, on day four with the player's own global state",
       "why": "From a real playthrough: on the fourth morning, choosing 'Tell me about Wild Pines. What do you do?' from Joyce's hub reaches a two-option menu, and the player's own overflow log recorded 762 running out at two seconds and 270 at none."
+    },
+    {
+      "scenarios": [
+        {
+          "conversation": 640,
+          "stops": [
+            {
+              "what": "Titus's hub after 'Look, the insane police officer is back.': 153, 56, 131, 292",
+              "inputs": ["enter"],
+              "options": [
+                { "entry": 292, "marker": "none", "why": "its only routes to lines this save has not read go back to the hub and through 53, which the game will not offer again" },
+                { "entry": 131, "marker": "none", "why": "the same: the lynching hub leads back to Titus's hub, and on from there only through 53" }
+              ]
+            }
+          ],
+          "markers": "named",
+          "save": "at-titus"
+        }
+      ],
+      "settings": {
+        "KeepLookAheadRequests": "true",
+        "LookAheadMemoryBudgetMb": "300",
+        "LookAheadMenuTimeBudgetMs": "3000",
+        "LookAheadTimeBudgetMs": "1000"
+      },
+      "settingsWhy": "The playthrough's own budgets, and the request the game sends kept so it can be set beside the offline one.",
+      "state": "global-state-at-titus.json",
+      "suite": "titus-hub",
+      "what": "Titus's hub on day four with the player's own global state, where 53's guard is closed only under the game's operator grouping",
+      "why": "de-yctx: 53, 'Guess what: I've come upon something incriminating.', is guarded by 'A and B and C or D or ...' with D true. Standard Lua opens it; the game's interpreter groups the chain as 'A and (B and (C or D or ...))', closes it, and leaves it off the menu. While the engine grouped the chain the standard way, it thought 53 could be taken on a return to the hub, and starred 292 and 131 red for routes the player could never follow."
     }
   ]
 }

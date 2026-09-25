@@ -1,0 +1,31 @@
+{
+  "_format": "expanded-save-diff",
+  "_formatVersion": 1,
+  "base": "../at-joyce2.ntwtf",
+  "members": [
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-titus.states.lua",
+      "suffix": ".states.lua"
+    },
+    {
+      "diff": "at-titus.1st.ntwtf.json",
+      "kind": "json",
+      "name": "at-titus.1st.ntwtf.json",
+      "suffix": ".1st.ntwtf.json"
+    },
+    {
+      "diff": "at-titus.2nd.ntwtf.json",
+      "kind": "json",
+      "name": "at-titus.2nd.ntwtf.json",
+      "suffix": ".2nd.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-titus.FOW.json",
+      "suffix": ".FOW.json"
+    }
+  ]
+}
