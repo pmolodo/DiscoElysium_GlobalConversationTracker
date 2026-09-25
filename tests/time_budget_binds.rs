@@ -190,3 +190,45 @@ fn narrowing_a_budget_moves_the_wall_and_leaves_the_estimates_alone() {
         "which is only safe because the wall is below them and they are spent against it",
     );
 }
+
+/// A marking's wall is the lesser of what the menu and the option each have left, and the
+/// per-option dial is never multiplied into a menu total.
+///
+/// THE MENU MEASUREMENT BUILDS ITS WALL THROUGH THIS CALL, so a row is cut where a player's
+/// menu is cut, where a copy of the rule would be free to give a menu the per-option dial
+/// times its width.
+#[test]
+fn a_markings_wall_is_the_lesser_dial_left() {
+    let ms = std::time::Duration::from_millis;
+    let request = LookAheadRequest {
+        time_budget_ms: 1000,
+        menu_time_budget_ms: 3000,
+        ..Default::default()
+    };
+
+    let fresh = request.marking_budget(ms(0), ms(0));
+    assert_eq!(
+        fresh.wall,
+        ms(1000),
+        "one option's dial, not one per option"
+    );
+    assert_eq!(fresh.each, request.search_budget().each);
+
+    assert_eq!(
+        request.marking_budget(ms(2500), ms(0)).wall,
+        ms(500),
+        "a menu nearly spent binds the option",
+    );
+    assert_eq!(
+        request.marking_budget(ms(100), ms(400)).wall,
+        ms(600),
+        "and what the option spent comes off its own dial",
+    );
+    assert_eq!(
+        LookAheadRequest::default()
+            .marking_budget(ms(0), ms(0))
+            .wall,
+        std::time::Duration::MAX,
+        "no dials, no wall",
+    );
+}

@@ -175,6 +175,9 @@
 //! `--starts` sets the menu's width, `--unseen` how many of the deepest entries are
 //! unread, and `--budget-mb` what the manager is given.
 //!
+//! THE CLOCKS ARE THE PLUGIN'S, per option and per menu - see `plugin_defaults` - and the
+//! marking's wall is built by `LookAheadRequest::marking_budget`, the call the product makes.
+//!
 //! `--nolimit` takes the limits off: a 6144 MB manager and a five-minute wall, which is
 //! also each pass's ration.
 //!
@@ -224,6 +227,7 @@ use lookahead_engine::symbolic::{menu, seen_state_search};
 use gct_measure::common;
 
 use gct_measure::options;
+use gct_measure::plugin_defaults;
 
 use gct_measure::menu_profile;
 use menu_profile::MenuProfile;
@@ -819,13 +823,14 @@ where
             );
         }
 
-        // WHAT THE PLUGIN ASKS FOR, taken from the product rather than restated here, so a
-        // change to the shipped budget moves this row with it.
-        let search = lookahead_engine::bridge::LookAheadRequest {
+        // WHAT THE PLUGIN ASKS FOR: the shipped clocks, held to `Plugin.cs` by
+        // `plugin_defaults`, beside the allowance this row was given. A request's own default
+        // is no clock at all, which measures a menu the game would have cut short.
+        let request = plugin_defaults::Budgets {
             memory_budget_mb: budget.memory() / (1024 * 1024),
-            ..Default::default()
+            ..plugin_defaults::Budgets::SHIPPED
         }
-        .search_budget();
+        .apply(Default::default());
 
         let mut counted = Menu {
             setup,
@@ -863,10 +868,9 @@ where
                 each: NOLIMIT_TIME,
             }
         } else {
-            menu::Budget {
-                wall: search.overall.saturating_mul(starts.len() as u32),
-                each: search.each,
-            }
+            // FROM `began`, as the product counts its menu dial from the start of the request,
+            // so the setup this row pays is spent against the wall the way a player's is.
+            request.marking_budget(began.elapsed(), Duration::ZERO)
         };
         // THE MARKING THE PRODUCT MARKS WITH by default, through the one function that chooses
         // it, so a default row measures what a player waits for. See [`marking`].

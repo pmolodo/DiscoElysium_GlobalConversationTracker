@@ -1028,6 +1028,28 @@ impl LookAheadRequest {
         }
         std::time::Duration::from_millis(self.menu_time_budget_ms)
     }
+
+    /// What one marking may spend, `menu_elapsed` into the menu and `option_elapsed` into the
+    /// option's own allowance.
+    ///
+    /// THE LESSER OF THE TWO DIALS' REMAINDERS, and neither is made out of the other - see
+    /// [`answer_starts`]. PUBLIC SO THE MENU MEASUREMENT BUILDS ITS WALL HERE TOO: a copy of
+    /// this line in a driver is free to multiply the per-option dial into a menu total, which
+    /// measures a menu the game would have cut short.
+    pub fn marking_budget(
+        &self,
+        menu_elapsed: std::time::Duration,
+        option_elapsed: std::time::Duration,
+    ) -> crate::symbolic::menu::Budget {
+        let ration = self.search_budget();
+        crate::symbolic::menu::Budget {
+            wall: self
+                .menu_budget()
+                .saturating_sub(menu_elapsed)
+                .min(ration.overall.saturating_sub(option_elapsed)),
+            each: ration.each,
+        }
+    }
 }
 
 /// What one option scored.
@@ -1828,14 +1850,12 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> SeenState>(
             answers.push(result);
         }
     }
-    let ration = request.search_budget();
     // TWO LIMITS, AND NEITHER IS MADE OUT OF THE OTHER. The menu dial bounds everything this
     // menu does, from `began`. The per-option dial bounds how long any one option's answer
     // takes - so the ordinary options, which one marking answers together and which all wait
     // for it, share ONE per-option allowance, and each locked half, searched on its own, gets
     // one of its own. The per-option dial is never multiplied into a menu total: an option
-    // does not get longer because it has siblings.
-    let menu_left = || request.menu_budget().saturating_sub(began.elapsed());
+    // does not get longer because it has siblings. See [`LookAheadRequest::marking_budget`].
     let marking_began = std::time::Instant::now();
     // WHERE THE PLAYER HAS BEEN, as far as it bears on this menu - see [`passed_since_hub`].
     let encountered: Vec<DialogueNodeId> = request
@@ -1857,10 +1877,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> SeenState>(
         },
         seen_state,
         &contestants,
-        &menu::Budget {
-            wall: menu_left().min(ration.overall.saturating_sub(marking_began.elapsed())),
-            each: ration.each,
-        },
+        &request.marking_budget(began.elapsed(), marking_began.elapsed()),
         shape,
         &encountered,
     );
@@ -1911,10 +1928,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> SeenState>(
         // THIS HALF'S OWN ALLOWANCE, across every search it takes - it can ask again after
         // blocking an entry a star already leads to, and all of that is this one option's time.
         let half_began = std::time::Instant::now();
-        let half_budget = || menu::Budget {
-            wall: menu_left().min(ration.overall.saturating_sub(half_began.elapsed())),
-            each: ration.each,
-        };
+        let half_budget = || request.marking_budget(began.elapsed(), half_began.elapsed());
         let alone = loop {
             let mut alone = menu::mark_menu_blocking(
                 Search {
