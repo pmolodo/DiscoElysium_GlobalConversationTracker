@@ -41,23 +41,6 @@ use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::reachability::{Reachability, never_displays};
 use crate::world::ILookAheadWorld;
 
-/// When to stop asking.
-pub struct Budget {
-    /// How long to keep asking.
-    pub time: std::time::Duration,
-    /// The budget each individual backward pass runs under.
-    pub each: crate::symbolic::backward::Budget,
-}
-
-impl Default for Budget {
-    fn default() -> Self {
-        Self {
-            time: std::time::Duration::from_secs(5),
-            each: crate::symbolic::backward::Budget::default(),
-        }
-    }
-}
-
 /// Why a search stopped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StoppedBy {

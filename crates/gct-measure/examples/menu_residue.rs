@@ -82,6 +82,7 @@ use lookahead_engine::symbolic::vars::DataVars;
 use gct_measure::common;
 
 use gct_measure::options;
+use gct_measure::plugin_defaults;
 
 /// The conversation de-fpax dies on, which is the whole point of this measurement and so is
 /// fixed rather than asked for.
@@ -98,12 +99,9 @@ const UNSEEN: usize = 10;
 
 /// What the request asks for as its time budget, in milliseconds. `--time-budget-ms` moves it.
 ///
-/// ZERO IS WHAT A PLAYER GETS: the plugin's own default, and the value that leaves
-/// `answer::Budget::default` in place - fifty milliseconds forwards, two seconds
-/// backwards, a quarter second per candidate. Raising it raises only the BACKWARDS pass;
-/// `each` is capped by the default whatever is asked for, so the product path cannot be
-/// made to do arbitrary work by turning this up.
-const TIME_BUDGET_MS: u64 = 0;
+/// WHAT A PLAYER GETS, the shipped per-option budget. Zero is no limit, as it is on the
+/// plugin's own setting.
+const TIME_BUDGET_MS: u64 = plugin_defaults::TIME_BUDGET_MS;
 
 /// How many starts to ask about, which is a generous menu rather than a typical one.
 ///

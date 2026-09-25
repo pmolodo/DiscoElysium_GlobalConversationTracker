@@ -823,8 +823,8 @@ where
             );
         }
 
-        // WHAT THE PLUGIN ASKS FOR: the shipped clocks, held to `Plugin.cs` by
-        // `plugin_defaults`, beside the allowance this row was given. A request's own default
+        // WHAT THE PLUGIN ASKS FOR: the shipped clocks, from the one definition the plugin's
+        // defaults are generated from, beside the allowance this row was given. A request's own default
         // is no clock at all, which measures a menu the game would have cut short.
         let request = plugin_defaults::Budgets {
             memory_budget_mb: budget.memory() / (1024 * 1024),

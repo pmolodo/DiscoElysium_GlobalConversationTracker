@@ -379,15 +379,13 @@ namespace GlobalConversationTracker
             // in particular. A budget in megabytes gives every conversation the same
             // allowance and roughly halves the worst case. See de-e23q.
             //
-            // 300 RATHER THAN 256, which was a round number rather than a measured one. The
-            // heaviest group in the game cannot be marked EXACTLY below about 288 MB at any
-            // clock, so a ceiling of 256 sat just under the one conversation that needed it.
-            // The shipped marking does not need the headroom - it answers every menu at 256 -
-            // but the exact search it falls back to does. See de-0jsf.16.
+            // EVERY LOOK-AHEAD BUDGET'S DEFAULT IS THE ENGINE'S, from src/shipped_budgets.rs by
+            // way of the generated ShippedBudgets class. That file says why each is the number
+            // it is.
             var lookAheadMemoryBudget = Config.Bind(
                 PerformanceSection,
                 "LookAheadMemoryBudgetMb",
-                300,
+                ShippedBudgets.MemoryBudgetMb,
                 "The most memory one option's look-ahead may use, in megabytes, before giving "
                 + "up. Lower it if response menus feel slow or the game is short of memory; an "
                 + "option whose search gives up is marked with MarkUncertainLookAhead rather "
@@ -437,7 +435,7 @@ namespace GlobalConversationTracker
             var lookAheadTimeBudget = Config.Bind(
                 PerformanceSection,
                 "LookAheadTimeBudgetMs",
-                1000,
+                ShippedBudgets.TimeBudgetMs,
                 "The longest one option's look-ahead may run for, in milliseconds, before giving "
                 + "up and showing no asterisk. 0 means no time limit. Applies as well as "
                 + "LookAheadMemoryBudgetMb, whichever is reached first. A menu draws one of these "
@@ -450,22 +448,11 @@ namespace GlobalConversationTracker
                 + "that normally decides anything.");
 
             // THE WALL AROUND THE WHOLE MENU, which the per-option dial above cannot be: a
-            // menu is the sum of its options and a check counts twice, so twelve options at
-            // the shipped thousand milliseconds arrives at a worst case near twenty-four
-            // seconds - under a host read deadline of thirty whose answer to being crossed
-            // is to kill the engine. de-dt75.3.
-            //
-            // THREE SECONDS BECAUSE THE MEASUREMENT SAYS SO, not as a round number.
-            // crates/gct-measure/examples/menu_wall.rs asks the six heaviest groups a deliberately
-            // adversarial menu - twenty-four starts, every one of them with unread text
-            // beyond it, and a cold engine - and the worst of them, conversation 368, came
-            // back in 2.05 seconds. So this sits above the worst menu anyone has measured
-            // and an order of magnitude below the deadline that kills, which is the gap it
-            // exists to hold open.
+            // menu is the sum of its options and a check counts twice. de-dt75.3.
             var lookAheadMenuTimeBudget = Config.Bind(
                 PerformanceSection,
                 "LookAheadMenuTimeBudgetMs",
-                3000,
+                ShippedBudgets.MenuTimeBudgetMs,
                 "The longest a whole response menu's look-ahead may run for, in milliseconds, "
                 + "counting every option together. 0 means no limit. Options are searched in the "
                 + "order they are drawn, so when this runs out it is the ones at the BOTTOM of "

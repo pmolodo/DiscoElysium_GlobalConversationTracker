@@ -54,7 +54,7 @@ pub struct Budget {
     /// One candidate's fixed point.
     ///
     /// A CEILING FOR CALLERS THAT WANT ONE rather than a ration the search imposes on
-    /// itself: by default it is the whole backward attempt, so a candidate may spend
+    /// itself: a player's dial sets it to the whole backward attempt, so a candidate may spend
     /// whatever the wall has left. The driver narrows it to the time actually remaining
     /// before every pass, so [`Self::overall`] binds a candidate whether this does or not.
     ///
@@ -89,24 +89,6 @@ impl Budget {
             overall: self.overall.min(left),
             backwards: self.backwards,
             each: self.each,
-        }
-    }
-}
-
-impl Default for Budget {
-    fn default() -> Self {
-        // A CANDIDATE GETS THE WHOLE BACKWARD ATTEMPT, so the wall is the only clock that
-        // stops one. See [`Budget::each`] for why a smaller ration is not the protection it
-        // looks like: the attempt ends at the first pass that fails to settle either way,
-        // so cutting that pass short shortens the search without buying anything for the
-        // candidates behind it.
-        let backwards = Duration::from_secs(2);
-        Self {
-            // THE BACKWARD ATTEMPT, which is the whole of the search. Stated rather than
-            // derived so a reader can see the number the answer is promised in.
-            overall: backwards,
-            backwards,
-            each: backwards,
         }
     }
 }

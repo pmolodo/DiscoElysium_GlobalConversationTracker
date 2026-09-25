@@ -873,11 +873,13 @@ pub struct LookAheadRequest {
     /// The longest one option may run for in milliseconds; zero for no limit.
     ///
     /// Zero means NO LIMIT rather than the default, matching the plugin's setting, where
-    /// zero is documented as no time limit.
+    /// zero is documented as no time limit. SO A REQUEST'S OWN DEFAULT HAS NO CLOCK, and a
+    /// caller that wants what a player gets asks for [`crate::shipped_budgets`] by name.
     #[serde(default)]
     pub time_budget_ms: u64,
 
-    /// The longest the WHOLE MENU may run for in milliseconds; zero for no limit.
+    /// The longest the WHOLE MENU may run for in milliseconds; zero for no limit, as for
+    /// [`Self::time_budget_ms`].
     ///
     /// ## Why one option's budget is not enough
     ///
@@ -905,6 +907,10 @@ pub struct LookAheadRequest {
     pub menu_time_budget_ms: u64,
 
     /// The most memory one option's search may hold, in MEGABYTES; zero for the default.
+    ///
+    /// ZERO IS THE DEFAULT HERE AND NO LIMIT ON THE CLOCKS, because a search cannot run
+    /// without memory: the manager preallocates what this buys, so "unlimited" has no
+    /// meaning to give zero. The default is [`crate::shipped_budgets::MEMORY_BUDGET_MB`].
     ///
     /// MEGABYTES ON THE WIRE AND BYTES IN THE ENGINE, deliberately. This number is set by a
     /// player in a configuration file, and "256" is a figure a person can hold in their
@@ -966,8 +972,6 @@ impl LookAheadRequest {
     /// tests/time_budget_binds.rs pins its SHAPE rather than timing a real search, because a
     /// timing test on a busy machine fails for reasons that are nobody's fault.
     pub fn search_budget(&self) -> answer::Budget {
-        let default = answer::Budget::default();
-
         // THE STATE BUDGET IS THE KNOB THAT STARVES A SEARCH, and that is all it ever was:
         // a test-only setting, not on the wire for players, whose whole job is to make a
         // search give up on demand so the mod's uncertain marker can be checked. See
@@ -977,12 +981,13 @@ impl LookAheadRequest {
         // candidate, which is what a search that cannot establish anything looks like from
         // here. Any value above zero means the same thing, and means nothing else.
         if self.state_budget > 0 {
+            // THE ATTEMPT KEEPS A CLOCK, the shipped per-option one. A wall of zero would stop
+            // the loop before its first candidate, so the search would give up without ever
+            // running a pass - a different failure from the one this setting exists to provoke.
+            let attempt = std::time::Duration::from_millis(crate::shipped_budgets::TIME_BUDGET_MS);
             return answer::Budget {
-                // THE ATTEMPT KEEPS A CLOCK. A wall of zero would stop the loop before its
-                // first candidate, so the search would give up without ever running a pass -
-                // a different failure from the one this setting exists to provoke.
-                overall: default.backwards,
-                backwards: default.backwards,
+                overall: attempt,
+                backwards: attempt,
                 each: std::time::Duration::ZERO,
             };
         }

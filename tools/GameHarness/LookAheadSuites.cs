@@ -40,8 +40,8 @@ namespace GlobalConversationTracker.Harness
         /// never fires and the memory budget stays the only limit that decides anything.
         /// That is the point. A wall-clock limit is not reproducible: the same menu on
         /// the same save could mark differently on a machine that happened to be busy,
-        /// and a suite that can flip on load is worse than no suite. The shipped default
-        /// is a second, and testing that would be testing the clock.
+        /// and a suite that can flip on load is worse than no suite. Testing the shipped
+        /// <see cref="ShippedBudgets.TimeBudgetMs"/> would be testing the clock.
         /// </remarks>
         public const int TestTimeBudgetMs = 30_000;
 
@@ -54,9 +54,10 @@ namespace GlobalConversationTracker.Harness
         /// option give up sooner, it decides which options are searched AT ALL, and it
         /// decides that from how long the machine took over the options before them. A suite
         /// running under one would mark a different set of options on a busy machine than on
-        /// an idle one, which is a suite that flips on load. The shipped default is three
-        /// seconds and the worst menu measured is two, so what a suite would be testing is
-        /// the gap between those two numbers on whatever hardware it ran on.
+        /// an idle one, which is a suite that flips on load. The shipped
+        /// <see cref="ShippedBudgets.MenuTimeBudgetMs"/> sits just above the worst menu
+        /// measured, so what a suite would be testing is the gap between those two numbers on
+        /// whatever hardware it ran on.
         /// </remarks>
         public const int TestMenuTimeBudgetMs = 0;
 
@@ -69,7 +70,7 @@ namespace GlobalConversationTracker.Harness
         /// <see cref="TestStateBudgetSetting"/> instead, which is the only budget that can
         /// stop one before it has looked at anything.
         /// </remarks>
-        public const int TestMemoryBudgetMb = 300;
+        public const int TestMemoryBudgetMb = ShippedBudgets.MemoryBudgetMb;
 
         /// <summary>
         /// The suite key that starves a crawl: a state budget, and TEST-ONLY.

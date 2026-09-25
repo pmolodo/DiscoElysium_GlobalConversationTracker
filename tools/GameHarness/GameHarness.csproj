@@ -11,6 +11,8 @@
     <RootNamespace>GlobalConversationTracker.Harness</RootNamespace>
     <AssemblyName>GameHarness</AssemblyName>
     <IsPackable>false</IsPackable>
+    <!-- A suite's memory budget is the shipped one, from the engine's one definition of it. -->
+    <NeedsShippedBudgets>true</NeedsShippedBudgets>
   </PropertyGroup>
 
   <ItemGroup>

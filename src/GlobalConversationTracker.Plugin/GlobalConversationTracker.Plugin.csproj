@@ -233,6 +233,8 @@
     <PropertyGroup>
         <NeedsBepInExCore>true</NeedsBepInExCore>
         <NeedsBepInExInterop>true</NeedsBepInExInterop>
+        <!-- The look-ahead settings' defaults, from the engine's one definition of them. -->
+        <NeedsShippedBudgets>true</NeedsShippedBudgets>
     </PropertyGroup>
 
     <!-- BepInEx / Il2CppInterop framework assemblies. -->

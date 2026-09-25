@@ -27,7 +27,6 @@
 //! to what is left of the menu, rather than a stopwatch on a real menu.
 
 use lookahead_engine::bridge::LookAheadRequest;
-use lookahead_engine::symbolic::answer;
 
 /// The dial's number is the wall, and the parts are inside it.
 #[test]
@@ -78,18 +77,6 @@ fn a_small_dial_squeezes_the_rations_it_is_smaller_than() {
     assert!(
         budget.each <= ten,
         "a candidate cannot outlast a 10ms answer"
-    );
-}
-
-/// The default carries a wall too, so a request that names no budget is bounded.
-#[test]
-fn the_default_budget_has_a_wall_covering_its_own_rations() {
-    let default = answer::Budget::default();
-
-    assert!(
-        default.overall >= default.backwards,
-        "the default wall should cover the work the default rations describe, or the shape \
-         of a default search changes the moment the wall is enforced",
     );
 }
 

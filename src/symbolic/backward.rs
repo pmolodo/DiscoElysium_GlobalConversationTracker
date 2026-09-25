@@ -163,6 +163,9 @@ impl Clone for Budget {
     }
 }
 
+/// A GENEROUS CEILING FOR TESTS AND TOOLS, and not a player's budget: what a player's search
+/// runs under comes from their request - see `crate::shipped_budgets`. The product's passes
+/// set both limits themselves and take only the progress fields from here.
 impl Default for Budget {
     fn default() -> Self {
         Self {

@@ -179,60 +179,9 @@ impl DiagramBudget {
 
     /// What a player's search gets when they have not said otherwise, in bytes.
     ///
-    /// 300 MB. It buys diagram nodes, at [`Self::BYTES_PER_NODE`] apiece.
-    ///
-    /// ## Why 300 and not 256
-    ///
-    /// 256 was never measured as a threshold, only as a round number that was enough for
-    /// everything the engine then did. It stopped being enough for one thing: conversation
-    /// 761 cannot be marked EXACTLY below about 288 MB at any clock, and answers above it
-    /// (de-0jsf.16). A ceiling that sits eleven per cent under the one group that needs it is
-    /// an arbitrary number doing harm, so this clears it with headroom rather than sitting on
-    /// the edge of it.
-    ///
-    /// THE SHIPPED MARKING DOES NOT NEED IT, which is what makes the bump cheap rather than a
-    /// concession. Measured 2026-09-17 at 256 MB, `menu::mark_menu_hybrid` answers every one of
-    /// the 389 menus a walked profile puts up - see `menu_profile::walked_profile` - with no
-    /// option anywhere left unsettled, and under sixty thousand diagram nodes for the worst of
-    /// them - conversation 16, at 56,644. The headroom is for the exact search behind it - the thing a fallback reaches for -
-    /// and for the groups nobody has profiled.
-    ///
-    /// ONE MENU IN THE GAME DOES NOT SETTLE, AND MORE MEMORY IS NOT WHAT IT WANTS. Asked on the
-    /// adversarial profile `MenuProfile::of` builds, 761 fails to settle at 256 and fails in the
-    /// same way at 300 - 2,534 ms against 2,561, four and a half million nodes either way - so
-    /// the extra 44 MB buys it nothing. What that profile asks for is a state no save holds:
-    /// almost every line called read while the world it hands the engine has been shown nothing,
-    /// so every one-time effect in the group is still pending and the search cannot fold any of
-    /// them away. The same menu in a state a playthrough walked to costs 118 ms at 256 MB and
-    /// settles every option. See de-zbsb.
-    ///
-    /// It is 44 MB of a preallocation made in-process with a Unity game, against a worst case
-    /// that already leaves most of the store idle.
-    ///
-    /// ## What 256 bought, which still holds
-    ///
-    /// IT WAS ENOUGH FOR THE MARKING, AND THAT IS MEASURED. de-dt75.2 asked the question two
-    /// ways.
-    ///
-    /// NOTHING IN THE GAME RUNS OUT. A whole-game matrix, 2,334 measured rows across both
-    /// engine arms, records no manager that filled - `no-room` and `no-ram` appear on no row.
-    ///
-    /// AND A SESSION DOES NOT ACCUMULATE INTO IT, which is the question one manager per
-    /// conversation raises and a per-request manager could not. `crates/gct-measure/examples/workspace_menus.rs`
-    /// walks forty menus through the shipped call: conversation 761, the heaviest group in
-    /// the game, leaves the store holding 17.9% of this, and the next highest of the forty
-    /// heaviest is 1.5%. The store is filled by the FIRST request and the other thirty-nine
-    /// add two tenths of a per cent, so what a group holds is a constant of the group rather
-    /// than a curve heading for the ceiling.
-    ///
-    /// So there is over six times the headroom on the worst group, and every megabyte here is
-    /// memory a player gives up whether their conversations need it or not - the node store
-    /// is one preallocation made in-process with a Unity game. That is the argument against
-    /// raising it further, and it is why this went to 300 rather than to a gigabyte.
-    ///
-    /// A CHANGE HERE WANTS A MATRIX RUN EITHER SIDE OF IT, since a regression traced to a
-    /// budget that moved in the same commit is not traced at all.
-    pub const DEFAULT_MEMORY_BUDGET: usize = 300 * 1024 * 1024;
+    /// [`crate::shipped_budgets::MEMORY_BUDGET_MB`], which says why it is the number it is. It
+    /// buys diagram nodes, at [`Self::BYTES_PER_NODE`] apiece.
+    pub const DEFAULT_MEMORY_BUDGET: usize = crate::shipped_budgets::MEMORY_BUDGET_MB * 1024 * 1024;
 
     /// What a measurement gets: six gigabytes, and the same six for every one of them.
     ///

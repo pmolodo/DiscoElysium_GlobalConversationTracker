@@ -25,6 +25,12 @@ pub mod wire_convert;
 /// What crosses between the plugin and this engine, and what it means.
 pub mod bridge;
 
+/// The look-ahead budgets a player gets by default, written down once.
+///
+/// `build.rs` writes the same numbers out for the C# side, so the plugin's config defaults and
+/// the harness read them from here rather than from a copy.
+pub mod shipped_budgets;
+
 /// The engine's work, with no transport attached to it.
 pub mod service;
 

@@ -12,7 +12,7 @@
 //! Both go through `common::staging::play_stops`, so what this prints is what the claim
 //! checks: the save, the global state and the walk to each menu the in-game run stages, the
 //! stops asked in order through one `Service` as the engine host asks them, and the budgets the
-//! plugin ships - see `plugin_defaults`, held to `Plugin.cs` by a test. Each budget can be
+//! plugin ships - see `plugin_defaults`, which takes them from the engine's one definition. Each budget can be
 //! overridden, to ask under a player's own config, and `--nolimit` lifts both time limits, to
 //! ask how long a search that gave up would really need.
 //!
