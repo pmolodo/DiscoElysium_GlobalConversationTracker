@@ -28,7 +28,7 @@
 //! often that happened, which is the number that says whether this approach can carry
 //! real content.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use oxidd::BooleanFunction;
 use oxidd::bdd::BDDFunction;
@@ -1858,7 +1858,11 @@ impl<'a> GuardCompiler<'a> {
         }
 
         // (index of the reputation ahead, the amount it is ahead by) -> where the loop is there.
-        let mut ahead: HashMap<(Option<usize>, i64), BDDFunction> = HashMap::new();
+        //
+        // ORDERED MAPS, because the order the entries are combined in decides which diagrams
+        // are built on the way and stay in the manager. A hash map's order differs from one
+        // process to the next, and so would the node count.
+        let mut ahead: BTreeMap<(Option<usize>, i64), BDDFunction> = BTreeMap::new();
         ahead.insert((None, 0), self.top());
 
         for index in range {
@@ -1872,7 +1876,7 @@ impl<'a> GuardCompiler<'a> {
                 Err(Amounts::NoRoom) => return self.no_room(rendered),
             };
 
-            let mut next: HashMap<(Option<usize>, i64), BDDFunction> = HashMap::new();
+            let mut next: BTreeMap<(Option<usize>, i64), BDDFunction> = BTreeMap::new();
             for (&(best, best_amount), reached) in &ahead {
                 for (amount, holding) in &amounts {
                     let Ok(both) = reached.and(holding) else {
@@ -1955,7 +1959,9 @@ impl<'a> GuardCompiler<'a> {
             None
         };
 
-        let mut by_amount: HashMap<i64, BDDFunction> = HashMap::new();
+        // ORDERED, for the reason `highest_reputation` gives: the amounts are combined in the
+        // order this returns them.
+        let mut by_amount: BTreeMap<i64, BDDFunction> = BTreeMap::new();
         for held in 0..=top {
             let amount = match base {
                 Some(base) => base + held as i64,
