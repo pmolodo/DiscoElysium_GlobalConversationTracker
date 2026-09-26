@@ -267,6 +267,11 @@ pub enum Nearest {
     Found {
         distance: usize,
         winner: usize,
+        /// The target whose front first reached the entry the option was met from - the only
+        /// target of a one-target pass, and for a pass over several a HINT: the states there
+        /// are every target's, merged, so which of them met the option is not recorded. A round
+        /// uses it only to choose where to look first - see [`crate::symbolic::menu`].
+        origin: DialogueNodeId,
     },
     /// No option still hunting can reach the target.
     Unreachable,
@@ -292,6 +297,10 @@ struct Walk<'w, 'a> {
     queue: Worklist<'w>,
     /// The layer being spread, in choices from the target.
     distance: usize,
+    /// For each entry reached, the target whose front reached it first - see
+    /// [`Nearest::Found::origin`]. A map of ids rather than a set per target, which is what
+    /// keeps a pass over several targets one pass.
+    origins: HashMap<DialogueNodeId, DialogueNodeId>,
     /// WHEN THIS PASS IS OUT OF TIME, as a moment rather than an allowance, so that everything
     /// the pass reaches can ask without being handed the clock it started on.
     ///
@@ -1078,6 +1087,7 @@ impl<'a> Backward<'a> {
             frontier: HashMap::new(),
             queue: Worklist::new(known.order()),
             distance: 0,
+            origins: HashMap::new(),
             deadline: began.checked_add(budget.time),
             since_the_clock: 0,
         };
@@ -1095,7 +1105,8 @@ impl<'a> Backward<'a> {
             if let Some(delta) = this.widen(target, &seed) {
                 next.insert(target, delta);
             }
-            if let Some(found) = this.meeting(target, 0, positions) {
+            walk.origins.entry(target).or_insert(target);
+            if let Some(found) = this.meeting(target, 0, positions, target) {
                 return found;
             }
         }
@@ -1174,11 +1185,14 @@ impl<'a> Backward<'a> {
     }
 
     /// Whether what is known at `id` meets an option that begins there, and which option.
+    ///
+    /// `origin` is the target credited with the meeting - see [`Nearest::Found::origin`].
     fn meeting(
         &self,
         id: DialogueNodeId,
         distance: usize,
         positions: &[Position],
+        origin: DialogueNodeId,
     ) -> Option<Nearest> {
         let states = self.sets.get(&id)?;
         for (winner, position) in positions.iter().enumerate() {
@@ -1186,7 +1200,13 @@ impl<'a> Backward<'a> {
                 continue;
             }
             match states.and(&position.holding) {
-                Ok(meet) if meet.satisfiable() => return Some(Nearest::Found { distance, winner }),
+                Ok(meet) if meet.satisfiable() => {
+                    return Some(Nearest::Found {
+                        distance,
+                        winner,
+                        origin,
+                    });
+                }
                 Ok(_) => {}
                 Err(_) => {
                     return Some(Nearest::Unfinished {
@@ -1210,6 +1230,8 @@ impl<'a> Backward<'a> {
     ) -> Option<Nearest> {
         let (graph, world, known, cut, positions) =
             (walk.graph, walk.world, walk.known, walk.cut, walk.positions);
+        // What arrives from `id` is credited to the target that reached `id` first.
+        let origin = walk.origins[&id];
         for &parent in known.parents_of(id) {
             walk.since_the_clock += 1;
             if walk.since_the_clock >= CLOCK_EVERY {
@@ -1235,7 +1257,8 @@ impl<'a> Backward<'a> {
                     out_of_memory: true,
                 });
             }
-            if let Some(found) = self.meeting(parent, walk.distance, positions) {
+            walk.origins.entry(parent).or_insert(origin);
+            if let Some(found) = self.meeting(parent, walk.distance, positions, origin) {
                 return Some(found);
             }
             let waiting = walk

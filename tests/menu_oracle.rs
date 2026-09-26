@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 //! Compare greedy menu marking with exhaustive concrete-state distances.
 use gct_measure::common;
+use lookahead_engine::core::guard_value::GuardValue;
 use lookahead_engine::core::types::{DialogueNodeId, SeenState, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::oracle;
@@ -28,8 +29,8 @@ fn compare(
     options: &[DialogueNodeId],
     world: &dyn ILookAheadWorld,
     seen_state: &impl Fn(DialogueNodeId) -> SeenState,
-) {
-    compare_under(&GroupShape::of(graph), graph, options, world, seen_state);
+) -> menu::MenuAnswer {
+    compare_under(&GroupShape::of(graph), graph, options, world, seen_state)
 }
 
 fn compare_under(
@@ -38,7 +39,7 @@ fn compare_under(
     options: &[DialogueNodeId],
     world: &dyn ILookAheadWorld,
     seen_state: &impl Fn(DialogueNodeId) -> SeenState,
-) {
+) -> menu::MenuAnswer {
     let layout = DataLayout::for_group(graph, world, 16);
     let vars = DataVars::new(&layout, graph.symbols(), DiagramBudget::modest());
     let mut compiler = GuardCompiler::new(&vars).with_world(world);
@@ -143,6 +144,69 @@ fn compare_under(
     }
     let actual: Vec<_> = found.marks.iter().map(|m| (m.best, m.distance)).collect();
     assert_eq!(actual, expected, "menu {options:?}");
+    found
+}
+
+/// A round that has to rule targets out across conversations, the shape of the Wild Pines menu.
+///
+/// ```text
+///   1    the option; offers the choices 3 and 4, and passes four shut doors
+///   3    a choice, offering 5 and 6; 5 goes on to 200
+///   4    a choice, going on to 400
+///   2, 7, 8, 9, 10    shut doors, which is what makes every target's link bound 0
+///
+///   conversation 1   101-103    behind 10 only - unreachable
+///   conversation 2   200        through 3 and 5 - distance 2
+///   conversation 3   301-316    behind 8 only - unreachable
+///   conversation 4   400        through 4 - distance 1
+///                    401-402    behind 9 only - unreachable
+/// ```
+///
+/// Every target shares one level, and its pass meets. The walk takes conversation 1 first, and
+/// one pass rules all three of its targets out. It finds 200 at 2, which leaves nineteen targets
+/// whose bounds could beat that - enough for one pass to find the least, 1, and to name 400 as
+/// the target whose front met the option. So conversation 4 is asked next: one pass says its
+/// part is reachable, and 400 alone is at 1, which ends the round without asking any of the
+/// sixteen in conversation 3.
+///
+/// SEVEN PASSES: the round's reachability, the level, conversation 1, 200, the least,
+/// conversation 4 and 400. Asked in bound order one target at a time, the same round takes
+/// twenty-four, asking every one of the nineteen unreachable targets on its own.
+#[test]
+fn a_round_rules_targets_out_a_conversation_at_a_time() {
+    let unreachable_behind = |door: i32, targets: std::ops::RangeInclusive<i32>| {
+        Entry::new(door)
+            .guard(r#"Variable["shut"]"#)
+            .links(&targets.collect::<Vec<_>>())
+    };
+    let mut builder = GraphBuilder::new()
+        .add(Entry::new(1).player().links(&[2, 3, 4, 7, 8, 9, 10]))
+        .add(unreachable_behind(2, 200..=200))
+        .add(Entry::new(3).player().links(&[5, 6]))
+        .add(Entry::new(4).player().links(&[400]))
+        .add(Entry::new(5).player().links(&[200]))
+        .add(Entry::new(6).player())
+        .add(unreachable_behind(7, 400..=400))
+        .add(unreachable_behind(8, 301..=316))
+        .add(unreachable_behind(9, 401..=402))
+        .add(unreachable_behind(10, 101..=103))
+        .add(Entry::new(200).in_conversation(2));
+    for (conversation, targets) in [(1, 101..=103), (3, 301..=316), (4, 400..=402)] {
+        for id in targets {
+            builder = builder.add(Entry::new(id).in_conversation(conversation));
+        }
+    }
+    let graph = builder.build();
+    let world = GameWorld::blank().set_variable("shut", GuardValue::from_boolean(false));
+    let answer = compare(&graph, &[node(1)], &world, &|id| {
+        if id.entry_id >= 100 {
+            SeenState::UnseenAnyGame
+        } else {
+            SeenState::SeenThisGame
+        }
+    });
+    assert_eq!(answer.marks[0].witness.map(|id| id.entry_id), Some(400));
+    assert_eq!(answer.passes, 7);
 }
 
 #[test]

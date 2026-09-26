@@ -27,6 +27,9 @@ pub fn node(id: i32) -> DialogueNodeId {
 /// How one entry is described. Everything but the id has a default.
 pub struct Entry {
     pub id: i32,
+    /// [`DEFAULT_CONVERSATION`] unless said otherwise. Links name entries by `id` alone, so a
+    /// fixture that spans conversations keeps its entry ids distinct across all of them.
+    pub conversation: i32,
     pub guard: Option<String>,
     pub script: Option<String>,
     pub links: Vec<i32>,
@@ -47,6 +50,7 @@ impl Entry {
     pub fn new(id: i32) -> Self {
         Self {
             id,
+            conversation: DEFAULT_CONVERSATION,
             guard: None,
             script: None,
             links: Vec::new(),
@@ -60,6 +64,12 @@ impl Entry {
             cost_once: false,
             fields: HashMap::new(),
         }
+    }
+
+    /// Puts the entry in another conversation of the same group.
+    pub fn in_conversation(mut self, conversation: i32) -> Self {
+        self.conversation = conversation;
+        self
     }
 
     /// An entry field the database carries, as it spells it.
@@ -155,9 +165,19 @@ impl GraphBuilder {
     pub fn build_with_symbols(self) -> (LookAheadGraph, StateSymbols) {
         let mut symbols = StateSymbols::new();
         let mut nodes = Vec::with_capacity(self.entries.len());
+        // Where each entry id lives, so a link can name an entry of another conversation.
+        let mut ids = HashMap::new();
+        for entry in &self.entries {
+            let id = DialogueNodeId::new(entry.conversation, entry.id);
+            assert!(
+                ids.insert(entry.id, id).is_none(),
+                "a fixture's entry ids must be distinct across its conversations: {}",
+                entry.id
+            );
+        }
 
         for entry in self.entries {
-            let id = node(entry.id);
+            let id = ids[&entry.id];
             let guard = parse_guard(entry.guard.as_deref().unwrap_or(""))
                 .expect("a fixture's guard should parse");
             let mut actions = parse_actions(entry.script.as_deref().unwrap_or(""), &mut symbols);
@@ -195,7 +215,11 @@ impl GraphBuilder {
                 -1
             };
 
-            let links: Vec<DialogueNodeId> = entry.links.iter().map(|l| node(*l)).collect();
+            let links: Vec<DialogueNodeId> = entry
+                .links
+                .iter()
+                .map(|l| ids.get(l).copied().unwrap_or_else(|| node(*l)))
+                .collect();
 
             let mut built = LookAheadNode {
                 is_group: entry.is_group,

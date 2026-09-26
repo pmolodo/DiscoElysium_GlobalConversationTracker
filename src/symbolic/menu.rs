@@ -18,12 +18,25 @@
 //! bound alone never stopped the walk and every one of them was asked: 100 passes and 880 ms,
 //! against 1 s per option. So where a best is proven and the bound still cannot stop the walk,
 //! one backward pass from every target not yet asked that could still beat it finds the least
-//! distance any of them has, and a least no nearer than the best ends the round. It is asked ONLY there: asked at the
-//! start of every round it cost more than it saved wherever the bound already worked, up to
-//! two and a half times the diagram nodes on a menu whose walk the bound stops at once.
-//! Finding the winning target by bisecting the targets with such passes was measured too, and
-//! was slower - a pass over half of them walks as deep as the least distance, and costs more
-//! than the single-target passes it replaces.
+//! distance any of them has, and a least no nearer than the best ends the round. It is asked
+//! ONLY there: asked at the start of every round it cost more than it saved wherever the bound
+//! already worked, up to two and a half times the diagram nodes on a menu whose walk the bound
+//! stops at once. Finding the winning target by bisecting the targets with such passes was
+//! measured too, and was slower - a pass over half of them walks as deep as the least distance,
+//! and costs more than the single-target passes it replaces.
+//!
+//! WHAT IS LEFT IS RULING TARGETS OUT, and two things cut it, both measured on the same menu.
+//! Where the least can beat the best, the walk asks first the contenders in the conversation of
+//! the target the pooled pass names, which is where the target at the least usually is. And a
+//! level whose reachability pass meets is asked again a conversation at a time, so a
+//! conversation none of whose targets is reachable is ruled out by one pass rather than one per
+//! target. Together they took Wild Pines from 61 passes and about 600 ms to 24 and about 375,
+//! with the same answer. Halving a level that meets instead, down to 4, 8 or 16 targets, was
+//! measured too and cost half as many nodes again as not splitting at all: a reachability pass
+//! over half a level costs more than the single passes it spares, and here most halves meet.
+//! Following every target the pooled pass's fronts could have come from, rather than the one it
+//! names, saved passes but no nodes - the fronts merge near the menu, so nearly every target is
+//! among them.
 //!
 //! The structural choice distance, guards ignored and cut respected, drops a target no
 //! route reaches at all before the search spends anything on it.
@@ -48,7 +61,7 @@ use std::time::{Duration, Instant};
 
 use super::backward::{Backward, Budget as PassBudget, Nearest, Position};
 
-use super::known::GroupShape;
+use super::known::{GroupShape, Known};
 use super::search::Search;
 use super::seen_state_search::{StoppedBy, choice_bounds};
 use crate::core::types::{DialogueNodeId, SeenState};
@@ -556,6 +569,44 @@ fn worth_hunting<F: Fn(DialogueNodeId) -> SeenState>(
 /// 347's and 1260's synthetic menus it cost 17 and 39 ms more than asking them singly.
 const LEAST_WORTH_ASKING: usize = 16;
 
+/// Whether any of `targets` can be reached with `cut` in place, asked by one pass under what is
+/// left of the menu's wall.
+///
+/// `Err` says why the pass stopped short of an answer, and whether the manager filled.
+fn any_reachable(
+    search: Search<'_, '_>,
+    targets: &[DialogueNodeId],
+    cut: &HashSet<DialogueNodeId>,
+    known: &Known,
+    budget: &Budget,
+    began: Instant,
+    answer: &mut MenuAnswer,
+) -> Result<bool, (StoppedBy, bool)> {
+    let left = budget.wall.saturating_sub(began.elapsed());
+    if left.is_zero() {
+        return Err((StoppedBy::Time, false));
+    }
+    answer.passes += 1;
+    let any = Backward::reaching_any_knowing(
+        search,
+        targets,
+        cut,
+        &PassBudget {
+            time: budget.each.min(left),
+            steps: usize::MAX,
+            ..Default::default()
+        },
+        Some(known),
+    );
+    if any.stats().met_at.is_some() {
+        return Ok(true);
+    }
+    if !any.stats().reached_fixed_point {
+        return Err((StoppedBy::Incomplete, any.stats().out_of_memory));
+    }
+    Ok(false)
+}
+
 /// Every option answered by its own baseline and nothing else, which is where both markings
 /// start.
 fn blank(contestants: &[Contestant]) -> MenuAnswer {
@@ -755,30 +806,60 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
             // whose bound stops it never pays for that pass, and one with fewer than
             // [`LEAST_WORTH_ASKING`] contenders left asks them one at a time instead.
             //
+            // AND WHERE THE LEAST CAN BEAT THE BEST, ITS CONVERSATION FIRST. The pass cannot say
+            // which target the least belongs to - its fronts merge - but it names the one whose
+            // front first reached the entry the option was met from, and a target at the least
+            // distance is most often in that same conversation. So the contenders from that
+            // conversation are asked first, in bound order, and the rest after them. The walk
+            // still stops at the first target found at the least, so this changes only which of
+            // two targets tied at it wins - see CLAUDE.md on why that is no defect.
+            //
             // A LEVEL AT A TIME FIRST. Link bounds are optimistic, and a guard can shut off
             // hundreds of targets a few links away; asking each costs a whole backward pass
             // to prove it unreachable. So the first time the loop reaches a bound with more
             // than one target, one pass asks whether ANY of that level's remaining targets can
-            // be reached: where none can, the level is settled at once and skipped, and where
-            // one can, its targets are asked one at a time as before. Only targets proven
-            // unreachable are skipped, so the order and the answer are unchanged. Measured on
+            // be reached: where none can, the level is settled at once and skipped. Measured on
             // the Wild Pines menu (de-yvue): 458 targets proven unreachable one at a time in
             // 5.8 s took four such passes.
-            let mut level_asked = None;
-            for (at, &target) in in_play.iter().enumerate() {
+            //
+            // AND WHERE ONE CAN, A CONVERSATION AT A TIME. A level that meets is usually met by
+            // one conversation, and every target of the others costs a whole pass to rule out;
+            // so a level spanning several conversations asks the same question of each
+            // conversation's part before its targets are asked one at a time. Only targets
+            // proven unreachable are skipped, so neither changes an answer.
+            let mut order = in_play.clone();
+            // Whether the least pass has moved a conversation forward, after which the bounds
+            // are no longer in order and a bound that cannot beat the best skips its target
+            // rather than ending the walk.
+            let mut reordered = false;
+            let mut levels_asked = HashSet::new();
+            // The levels whose pass met and that span several conversations.
+            let mut levels_split = HashSet::new();
+            let mut parts_asked = HashSet::new();
+            let mut at = 0;
+            while at < order.len() {
+                let here = at;
+                at += 1;
                 if let Some((nearest, _, _)) = best {
-                    if bounds[&target] >= nearest {
+                    // A TIE NEVER REPLACES THE BEST, so a least no nearer than it ends the walk.
+                    if least.is_some_and(|least| least >= nearest) {
+                        break;
+                    }
+                    if bounds[&order[here]] >= nearest {
+                        if reordered {
+                            continue;
+                        }
                         break;
                     }
                     // ONLY WHAT COULD STILL BEAT THE BEST: a target whose bound is not below it
-                    // cannot, and in bound order those that can are the next few.
+                    // cannot.
                     let contenders: Vec<DialogueNodeId> = if least_asked {
                         Vec::new()
                     } else {
-                        in_play[at..]
+                        order[here..]
                             .iter()
                             .copied()
-                            .take_while(|id| bounds[id] < nearest)
+                            .filter(|id| bounds[id] < nearest)
                             .collect()
                     };
                     if !least_asked && contenders.len() >= LEAST_WORTH_ASKING {
@@ -800,10 +881,23 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
                             // EVERY CONTENDER IS AT LEAST THIS FAR, which is kept as what the
                             // walk would have proven by asking them: a later round's bounds
                             // are what keeps it short, and the walk is about to stop asking.
-                            Nearest::Found { distance, .. } => {
+                            Nearest::Found {
+                                distance, origin, ..
+                            } => {
                                 for &id in &contenders {
                                     let bound = proven.entry(id).or_insert(distance);
                                     *bound = (*bound).max(distance);
+                                }
+                                if distance < nearest {
+                                    let (first, rest): (Vec<DialogueNodeId>, Vec<_>) =
+                                        order[here..].iter().copied().partition(|id| {
+                                            id.conversation_id == origin.conversation_id
+                                                && bounds[id] < nearest
+                                        });
+                                    order.truncate(here);
+                                    order.extend(first);
+                                    order.extend(rest);
+                                    reordered = true;
                                 }
                                 Some(distance)
                             }
@@ -819,39 +913,70 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
                         // round asks them one at a time from here on.
                         least_asked = true;
                     }
-                    // A TIE NEVER REPLACES THE BEST, so a least no nearer than it ends the walk.
                     if least.is_some_and(|least| least >= nearest) {
                         break;
                     }
                 }
+                // Read after the least pass, which can move another target into this place.
+                let target = order[here];
                 let level = bounds[&target];
-                if level_asked != Some(level) {
-                    level_asked = Some(level);
-                    let group: Vec<DialogueNodeId> = in_play[at..]
+                if levels_asked.insert(level) {
+                    let group: Vec<DialogueNodeId> = order[here..]
                         .iter()
                         .copied()
-                        .take_while(|id| bounds[id] == level)
+                        .filter(|id| bounds[id] == level)
                         .collect();
                     if group.len() > 1 {
-                        let left = budget.wall.saturating_sub(began.elapsed());
-                        if left.is_zero() {
-                            failure = Some((StoppedBy::Time, false));
-                            break 'classes;
-                        }
-                        answer.passes += 1;
-                        let any = Backward::reaching_any_knowing(
+                        match any_reachable(
                             search.reborrow(),
                             &group,
                             &cut,
-                            &pass_budget(left),
-                            Some(&known),
-                        );
-                        if any.stats().met_at.is_none() {
-                            if !any.stats().reached_fixed_point {
-                                failure = Some((StoppedBy::Incomplete, any.stats().out_of_memory));
+                            &known,
+                            budget,
+                            began,
+                            &mut answer,
+                        ) {
+                            Ok(true) => {
+                                let first = group[0].conversation_id;
+                                if group.iter().any(|id| id.conversation_id != first) {
+                                    levels_split.insert(level);
+                                }
+                            }
+                            Ok(false) => unreachable.extend(group),
+                            Err(stopped) => {
+                                failure = Some(stopped);
                                 break 'classes;
                             }
-                            unreachable.extend(group);
+                        }
+                    }
+                }
+                if levels_split.contains(&level)
+                    && !unreachable.contains(&target)
+                    && parts_asked.insert((level, target.conversation_id))
+                {
+                    let part: Vec<DialogueNodeId> = order[here..]
+                        .iter()
+                        .copied()
+                        .filter(|id| {
+                            bounds[id] == level && id.conversation_id == target.conversation_id
+                        })
+                        .collect();
+                    if part.len() > 1 {
+                        match any_reachable(
+                            search.reborrow(),
+                            &part,
+                            &cut,
+                            &known,
+                            budget,
+                            began,
+                            &mut answer,
+                        ) {
+                            Ok(true) => {}
+                            Ok(false) => unreachable.extend(part),
+                            Err(stopped) => {
+                                failure = Some(stopped);
+                                break 'classes;
+                            }
                         }
                     }
                 }
@@ -872,7 +997,9 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
                     &known,
                     &positions,
                 ) {
-                    Nearest::Found { distance, winner } => {
+                    Nearest::Found {
+                        distance, winner, ..
+                    } => {
                         proven.insert(target, distance);
                         if best.is_none_or(|(nearest, _, _)| distance < nearest) {
                             best = Some((distance, hunting[winner], target));
