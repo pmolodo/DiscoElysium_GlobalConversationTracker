@@ -294,7 +294,10 @@ def serial_phase(run, conversations, recorded, workers, settle, reap):
 
     Returns how many of `conversations`, in order, the phase covered. A group already recorded
     is not measured again, but its row still counts towards settling.
+
+    `settle` is the RULE, and this pass watches with a fresh copy of it - see `Settling.fresh`.
     """
+    settle = settle.fresh()
     columns = run.columns()
     for position, conversation in enumerate(conversations, start=1):
         if conversation in recorded:

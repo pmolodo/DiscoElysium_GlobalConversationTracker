@@ -229,5 +229,33 @@ class OptionsReachTheRun(unittest.TestCase):
                 self.parse("--driver", "--no-cache", "368")
 
 
+class CheapRun:
+    """A pass whose every group costs the same few milliseconds, so it settles on the rule alone."""
+
+    def columns(self):
+        return HEADER
+
+    def measure(self, conversation):
+        return TAB.join(str(value) for value in [conversation, 1, 8, 8, 20, 100, 1, 8, ""]) + "\n", ""
+
+
+class EveryPassSettlesOnItsOwn(unittest.TestCase):
+    """A several-run measurement measures the heavy groups one at a time in EVERY run.
+
+    WORTH A TEST BECAUSE THE FAILURE IS SILENT. One watch shared between passes arrives at the
+    second already bottomed out, so every run after the cold one went parallel after its first
+    group - measuring its heaviest groups side by side, in the runs whose medians are the result,
+    while the log still printed the rule as if it had been followed.
+    """
+
+    def test_a_second_pass_on_the_same_rule_still_waits_for_the_run(self):
+        rule = menus.Settling(3, 2, 0)
+        groups = list(range(1, 20))
+        with redirect_stdout(StringIO()):
+            first = menus.serial_phase(CheapRun(), groups, {}, 4, rule, lambda *_: None)
+            second = menus.serial_phase(CheapRun(), groups, {}, 4, rule, lambda *_: None)
+        self.assertEqual((first, second), (3, 3))
+
+
 if __name__ == "__main__":
     unittest.main()

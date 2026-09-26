@@ -1267,6 +1267,17 @@ class Settling:
         """The rule the arguments `add_arguments` put on the parser ask for."""
         return cls(args.settle_groups, args.settle_factor, args.settle_ms)
 
+    def fresh(self):
+        """The same rule with nothing observed yet.
+
+        ONE WATCH PER PASS. What has settled is a fact about the groups one pass has measured, and
+        a watch carried into the next pass arrives already bottomed out - so the next pass goes
+        parallel after its first group, and its heavy groups are measured side by side, which is
+        exactly what the serial phase exists to prevent. A several-run measurement did that to
+        every run after the cold one, whose rows are the ones it discards.
+        """
+        return type(self)(self.groups, self.factor, self.ms)
+
     def reset(self):
         """A group that is not evidence the cost has bottomed out: start counting again."""
         self.settled = 0
