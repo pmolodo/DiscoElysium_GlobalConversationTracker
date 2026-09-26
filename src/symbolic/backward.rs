@@ -1031,18 +1031,24 @@ impl<'a> Backward<'a> {
         &self.stats
     }
 
-    /// The nearest option to one target, walking back from the target alone.
+    /// The nearest option to any of `targets`, walking back from the targets alone.
     ///
     /// Distance is counted in choices: an entry is charged when it is left, and only where it
     /// is a player line offered beside another. The route's two ends are free.
     ///
-    /// ONE FRONT, from the target. It keeps the cumulative set per entry and the layer being
+    /// ONE FRONT, from the targets. It keeps the cumulative set per entry and the layer being
     /// spread, and stops in the first layer whose set meets an option's own states at that
-    /// option's entries - so the distance is exact for this target and says nothing about
-    /// any other.
+    /// option's entries - so the distance is exact for the nearest of them and says nothing
+    /// about the rest.
+    ///
+    /// ONE TARGET IS WHAT A ROUND ASKS OF EACH, since the target is what it claims. SEVERAL AT
+    /// ONCE answers the least distance any of them has, which is what lets a round stop
+    /// asking: see [`crate::symbolic::menu::mark_menu`]. A target another's route passes is
+    /// not charged for leaving it, which cannot lower the least distance - the route to it
+    /// alone is no longer.
     pub fn nearest(
         search: Search<'_, 'a>,
-        target: DialogueNodeId,
+        targets: &[DialogueNodeId],
         cut: &HashSet<DialogueNodeId>,
         budget: &Budget,
         known: &Known,
@@ -1062,12 +1068,6 @@ impl<'a> Backward<'a> {
             sets: HashMap::new(),
             stats: BackwardStats::default(),
         };
-        let Some(node) = graph.get(target).filter(|n| !never_displays(n, world)) else {
-            return Nearest::Unreachable;
-        };
-        if cut.contains(&target) {
-            return Nearest::Unreachable;
-        }
         let mut walk = Walk {
             graph,
             world,
@@ -1081,13 +1081,26 @@ impl<'a> Backward<'a> {
             deadline: began.checked_add(budget.time),
             since_the_clock: 0,
         };
-        let seed = this.pre_enter(node, &vars.top(), compiler, world, &mut walk.image);
+        // A SET, because the charge below asks it once per entry a layer spreads.
+        let free: HashSet<DialogueNodeId> = targets.iter().copied().collect();
         let mut next = HashMap::new();
-        if let Some(delta) = this.widen(target, &seed) {
-            next.insert(target, delta);
+        for &target in targets {
+            let Some(node) = graph.get(target).filter(|n| !never_displays(n, world)) else {
+                continue;
+            };
+            if cut.contains(&target) {
+                continue;
+            }
+            let seed = this.pre_enter(node, &vars.top(), compiler, world, &mut walk.image);
+            if let Some(delta) = this.widen(target, &seed) {
+                next.insert(target, delta);
+            }
+            if let Some(found) = this.meeting(target, 0, positions) {
+                return found;
+            }
         }
-        if let Some(found) = this.meeting(target, 0, positions) {
-            return found;
+        if next.is_empty() {
+            return Nearest::Unreachable;
         }
         for distance in 0usize.. {
             walk.distance = distance;
@@ -1125,7 +1138,7 @@ impl<'a> Backward<'a> {
                 // LEAVING A CHOICE COSTS ONE, and the charge is the node's rather than the
                 // link's, so every route out of it belongs to the next layer. The target is
                 // where the route finishes and is free.
-                if id != target && graph.get(id).is_some_and(|n| n.choice) {
+                if !free.contains(&id) && graph.get(id).is_some_and(|n| n.choice) {
                     let pending = next.get(&id).cloned().unwrap_or_else(|| vars.bottom());
                     match pending.or(&delta) {
                         Ok(joined) => {
