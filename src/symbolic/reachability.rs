@@ -389,13 +389,10 @@ impl<'a> Reachability<'a> {
         if let Some(failed) = self.flag(node.failed_flag_slot) {
             let mut still_closed = self.or_no_room(failed.not());
             // UNLESS THE TARGET HAS FALLEN SINCE. The game keeps what a white check was failed
-            // against and offers it again once the current target is lower, which happens when
-            // a modifier worth a negative bonus comes true - see `LookAheadNode::reopen_when`,
-            // which holds those of them this group can move.
-            if !node.reopen_when.is_empty() {
-                let reopened = compiler
-                    .reopening_for(node.id, &node.reopen_when)
-                    .may_be_true;
+            // against and offers it again once the current target is lower - see
+            // `graph::node::Reopening`.
+            if let Some(reopening) = &node.reopening {
+                let reopened = compiler.reopening_for(node.id, reopening);
                 still_closed = self.or_no_room(still_closed.or(&reopened));
             }
             open = self.or_no_room(open.and(&still_closed));

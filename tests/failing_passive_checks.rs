@@ -131,6 +131,7 @@ fn menu_markers(consult_the_sheet: bool) -> Option<Vec<(i32, String)>> {
             // means is the one the in-game run loads, and a fixture that quietly meant a
             // different one would agree with the game by accident.
             variables: fixtures::variables_sent(SAVE, &questions_of(&graph, group.clone())),
+            failed_white_checks: fixtures::failed_white_checks_in_save(SAVE),
             checks_pass: checks.pass,
             checks_fail: checks.fail,
             check_margins: checks.margins,
@@ -247,6 +248,7 @@ fn best_reachable(start: (i32, i32), candidate: (i32, i32)) -> Option<i32> {
                 .filter(|node| *node != of(candidate))
                 .collect(),
             variables: fixtures::variables_sent(SAVE, &questions_of(&graph, group.clone())),
+            failed_white_checks: fixtures::failed_white_checks_in_save(SAVE),
             checks_pass: checks.pass,
             checks_fail: checks.fail,
             check_margins: checks.margins,

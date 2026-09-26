@@ -44,6 +44,35 @@ fn with_number(name: &str, value: f64) -> GameWorld {
     GameWorld::blank().set_variable(name, GuardValue::from_number(value))
 }
 
+/// Read whole by `Lua.IsTrue`, a bare name is an undefined global and never holds, where in a
+/// guard it is a call the world is asked about. A name with its argument list is a call either
+/// way. The first case is the database's own: a target modifier missing its `Variable[...]`.
+#[test]
+fn a_bare_name_read_as_lua_is_an_undefined_global() {
+    use crate::core::guard::GuardExpression;
+    use crate::parser::guard_parser::parse_lua_condition;
+
+    let world = with_bool("whirling.garte_body_mercenary", false);
+    let read = parse_lua_condition(
+        r#"Variable["whirling.garte_body_mercenary"] or whirling_klaasje_body_mercenary"#,
+    )
+    .expect("the modifier parses");
+    assert_eq!(read.test(&WorldContext(&world)), Ternary::False);
+
+    assert!(matches!(
+        parse_guard("whirling_klaasje_body_mercenary")
+            .expect("parses")
+            .expression(),
+        GuardExpression::Call(..)
+    ));
+    assert!(matches!(
+        parse_lua_condition("IsKimHere()")
+            .expect("parses")
+            .expression(),
+        GuardExpression::Call(..)
+    ));
+}
+
 #[test]
 fn no_condition_is_true() {
     for guard in ["", "   "] {

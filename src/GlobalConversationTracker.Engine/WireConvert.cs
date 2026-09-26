@@ -186,7 +186,15 @@ namespace GlobalConversationTracker.Engine
 
             written.Items.AddRange(world.Items);
             written.Thoughts.AddRange(world.Thoughts);
-            written.FailedWhiteChecks.AddRange(world.FailedWhiteChecks);
+            foreach (FailedWhiteCheck failed in world.FailedWhiteChecks)
+            {
+                written.FailedWhiteChecks.Add(new Wire.FailedWhiteCheck
+                {
+                    Flag = failed.Flag,
+                    Difficulty = failed.Difficulty,
+                    LastTarget = failed.LastTarget,
+                });
+            }
             foreach (CheckMargin margin in world.CheckMargins)
             {
                 written.CheckMargins.Add(new Wire.CheckMargin

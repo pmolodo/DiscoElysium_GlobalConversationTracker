@@ -137,6 +137,16 @@ pub fn read_snapshot(snapshot: Option<wire::WorldRawData>) -> Result<WorldRawDat
         return Ok(WorldRawData::default());
     };
 
+    let failed_white_checks: Vec<crate::bridge::FailedWhiteCheck> = snapshot
+        .failed_white_checks
+        .into_iter()
+        .map(|check| crate::bridge::FailedWhiteCheck {
+            flag: check.flag,
+            difficulty: check.difficulty,
+            last_target: check.last_target,
+        })
+        .collect();
+
     Ok(WorldRawData {
         money: snapshot.money,
         day_minutes: snapshot.day_minutes,
@@ -144,7 +154,7 @@ pub fn read_snapshot(snapshot: Option<wire::WorldRawData>) -> Result<WorldRawDat
         clock_locked: snapshot.clock_locked,
         variables: {
             let mut variables = read_named(snapshot.variables);
-            crate::bridge::lock_failed_white_checks(&mut variables, snapshot.failed_white_checks);
+            crate::bridge::lock_failed_white_checks(&mut variables, &failed_white_checks);
             variables
         },
         variable_values: read_values(snapshot.variable_values),
@@ -172,6 +182,7 @@ pub fn read_snapshot(snapshot: Option<wire::WorldRawData>) -> Result<WorldRawDat
                 })
             })
             .collect(),
+        failed_white_checks,
     })
 }
 

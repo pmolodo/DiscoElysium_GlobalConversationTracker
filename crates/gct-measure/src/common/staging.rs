@@ -326,6 +326,7 @@ pub fn stage(
                 // stops the search before it builds a state, so the option draws nothing
                 // where the game draws a marker.
                 variables: fixtures::variables_sent(&scenario.save, &asked),
+                failed_white_checks: fixtures::failed_white_checks_in_save(&scenario.save),
                 // WHAT THIS SAVE HAS ALREADY SHOWN, which the engine seeds its seen slots from
                 // and which no offline run has ever sent. The same set the seen state rungs are
                 // built out of, put where a guard on having been shown can read it: without it

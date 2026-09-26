@@ -732,10 +732,8 @@ impl<'a> Backward<'a> {
             let mut still_closed = self.or_no_room(failed.not());
             // AND REOPENED BY A MODIFIER, the same rule as `Reachability::rolled_cases`,
             // which this has to mirror exactly or the two engines answer different questions.
-            if !node.reopen_when.is_empty() {
-                let reopened = compiler
-                    .reopening_for(node.id, &node.reopen_when)
-                    .may_be_true;
+            if let Some(reopening) = &node.reopening {
+                let reopened = compiler.reopening_for(node.id, reopening);
                 still_closed = self.or_no_room(still_closed.or(&reopened));
             }
             open = self.or_no_room(open.and(&still_closed));
@@ -1930,6 +1928,64 @@ mod tests {
             &failed().set_variable("character.tall", GuardValue::from_boolean(true)),
             3,
             false,
+        );
+    }
+
+    /// A check the game remembers failing is held to the target it failed against.
+    ///
+    /// THE EXACT RULE, which a save that failed the check makes askable: 1 was failed with
+    /// `character.tall` already holding, so against 10 - 2 = 8. Entry 2 sets
+    /// `character.brave`, worth -2 more, which brings it to 6 - below 8, so the game offers it
+    /// again. Failed with both holding, against 6, the same walk leaves it at 6, not below, and
+    /// the game does not.
+    ///
+    /// The permissive rule a check gets where no target is remembered would reopen both: brave
+    /// is movable and lowers the target. And a POSITIVE bonus counts too - `character.heavy`
+    /// worth +3 holding takes 6 back up to 9, which is not below 8.
+    #[test]
+    fn a_remembered_failed_target_is_held_exactly() {
+        let shape = || {
+            vec![
+                Entry::new(0).links(&[1, 2]),
+                Entry::new(1)
+                    .kind(DialogueCheckKind::White)
+                    .flag("check.jump")
+                    .field("variable1", r#"Variable["character.brave"]"#)
+                    .field("modifier1", "-2")
+                    .field("variable2", r#"Variable["character.tall"]"#)
+                    .field("modifier2", "-2")
+                    .field("variable3", r#"Variable["character.heavy"]"#)
+                    .field("modifier3", "3")
+                    .links(&[3]),
+                Entry::new(2)
+                    .script(r#"SetVariableValue("character.brave", true)"#)
+                    .links(&[1]),
+                Entry::new(3),
+            ]
+        };
+        let world = |last_target: i32, heavy: bool| {
+            GameWorld::blank()
+                .set_variable("character.tall", GuardValue::from_boolean(true))
+                .set_variable("character.heavy", GuardValue::from_boolean(heavy))
+                .with_failed_white_check(crate::bridge::FailedWhiteCheck {
+                    flag: "check.jump".to_string(),
+                    difficulty: 10,
+                    last_target,
+                })
+        };
+
+        agree(shape(), &world(8, false), 3, true);
+        agree(shape(), &world(6, false), 3, false);
+        agree(shape(), &world(8, true), 3, false);
+
+        // WITH NOTHING REMEMBERED, the movable negative bonus is enough.
+        agree(
+            shape(),
+            &GameWorld::blank()
+                .set_variable("character.tall", GuardValue::from_boolean(true))
+                .set_variable("check.jump_failed", GuardValue::from_boolean(true)),
+            3,
+            true,
         );
     }
 

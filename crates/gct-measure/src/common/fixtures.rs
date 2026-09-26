@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use lookahead_engine::bridge::{
-    CheckMargin, DataAnswer, DataKind, NodeRef, NodeSet, Questions, WireValue,
+    CheckMargin, DataAnswer, DataKind, FailedWhiteCheck, NodeRef, NodeSet, Questions, WireValue,
 };
 use lookahead_engine::core::passive_check;
 use lookahead_engine::core::types::Ternary;
@@ -260,38 +260,46 @@ pub fn variables_sent(save: &str, questions: &Questions) -> HashMap<String, Wire
 
     lookahead_engine::bridge::lock_failed_white_checks(
         &mut sent,
-        failed_white_checks_in_save(save),
+        &failed_white_checks_in_save(save),
     );
 
     sent
 }
 
-/// The flags of every white check this save holds as failed.
+/// Every white check this save holds as failed, with the target it was failed against - what
+/// the plugin reads from `FailedWhiteChecks.WhiteCheckCache` in game.
+///
+/// A WORLD BUILT FROM A SAVE CARRIES THESE AS WELL AS [`variables_sent`]: that locks each
+/// check, and this is what may open it again - see `graph::node::Reopening`.
 ///
 /// # Panics
 ///
 /// If the holder is not the shape the game writes. A lock misread as no lock opens a route the
-/// game refuses, which is the failure this reading exists to prevent.
-fn failed_white_checks_in_save(save: &str) -> HashSet<String> {
+/// game refuses, and a target misread moves where it reopens, which are the failures this
+/// reading exists to prevent.
+pub fn failed_white_checks_in_save(save: &str) -> Vec<FailedWhiteCheck> {
     let holder = world_state(save, "failedWhiteChecksHolder");
-    let by_skill = holder["ChecksBySkill"]
+    let cache = holder["WhiteCheckCache"]
         .as_object()
-        .unwrap_or_else(|| panic!("{save}'s failedWhiteChecksHolder has no ChecksBySkill table"));
+        .unwrap_or_else(|| panic!("{save}'s failedWhiteChecksHolder has no WhiteCheckCache table"));
 
-    by_skill
+    let number = |flag: &str, check: &serde_json::Value, field: &str| {
+        check[field]
+            .as_i64()
+            .and_then(|value| i32::try_from(value).ok())
+            .unwrap_or_else(|| panic!("{save}'s failed check {flag} has no {field}"))
+    };
+    let mut failed: Vec<FailedWhiteCheck> = cache
         .iter()
-        .flat_map(|(skill, flags)| {
-            flags
-                .as_array()
-                .unwrap_or_else(|| panic!("{save}'s failed {skill} checks are not a list"))
-                .iter()
-                .map(move |flag| {
-                    flag.as_str()
-                        .unwrap_or_else(|| panic!("{save}'s failed {skill} checks hold a non-name"))
-                        .to_string()
-                })
+        .map(|(flag, check)| FailedWhiteCheck {
+            flag: flag.clone(),
+            difficulty: number(flag, check, "difficulty"),
+            last_target: number(flag, check, "LastTargetValue"),
         })
-        .collect()
+        .collect();
+    // IN NAME ORDER, so two readings of one save are the same list.
+    failed.sort_by(|a, b| a.flag.cmp(&b.flag));
+    failed
 }
 
 /// One JSON value as the engine's wire vocabulary, or None where it is not one.

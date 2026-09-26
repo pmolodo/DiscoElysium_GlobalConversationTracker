@@ -215,12 +215,18 @@ message WorldRawData {
   // Entries the player has already been shown.
   NodeSet seen = 14;
 
-  // The flags of every white check the game holds as failed.
+  // A list of failed checks' flags alone, which a reader of failed_white_checks must never
+  // take for it.
+  reserved 15;
+
+  // Every white check the game holds as failed, with what it was failed against.
   //
-  // The game keeps these in a table of its own rather than in Lua, and refuses a failed white
-  // check for as long as it stays there. The engine reads each flag as that check's failure
-  // slot answered true, which closes the check both as an option and as a way through.
-  repeated string failed_white_checks = 15;
+  // The game keeps these in FailedWhiteChecks.WhiteCheckCache rather than in Lua, and refuses
+  // a failed white check until its target falls below the one it was failed against. The
+  // engine reads each flag as that check's failure slot answered true, which closes the check
+  // both as an option and as a way through, and offers it again where the modifiers the check
+  // carries bring its target below last_target.
+  repeated FailedWhiteCheck failed_white_checks = 19;
 
   // Whether a thought forces every red check to fail.
   //
@@ -239,6 +245,18 @@ message WorldRawData {
   // flipping, for the checks the plugin evaluated. An entry with no margin is one no damage
   // can move: another skill, or a check a thought forces through.
   repeated CheckMargin check_margins = 18;
+}
+
+// A white check the game holds as failed, as FailedWhiteChecks.WhiteCheckCache keeps it. The
+// game's own numbers: difficulty already carries the game mode's adjustment, so the engine
+// needs neither the difficulty table nor the mode.
+message FailedWhiteCheck {
+  // The check's FlagName.
+  string flag = 1;
+  // WhiteCheck.difficulty: the target before any modifier.
+  int32 difficulty = 2;
+  // WhiteCheck.LastTargetValue: the target the check was failed against.
+  int32 last_target = 3;
 }
 
 // A passive check's margin: the skill value plus the check's bonus, minus its threshold after

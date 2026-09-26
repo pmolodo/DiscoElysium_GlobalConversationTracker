@@ -224,6 +224,16 @@ pub trait ILookAheadWorld: Send + Sync {
     /// as if its roll could succeed while every red check deeper in the walk still fails -
     /// see `bridge::answer_starts`. Read through [`roll_may_succeed`].
     fn red_check_may_pass(&self, node: DialogueNodeId) -> bool;
+
+    /// The game's memory of a white check it holds as failed, by the check's `FlagName`, or
+    /// `None` where the world does not hold it as failed or cannot say.
+    ///
+    /// What makes reopening a failed check EXACT - see [`crate::graph::node::Reopening`]. A
+    /// world that cannot say leaves a failed check to the permissive rule a check failed inside
+    /// the search gets.
+    fn failed_white_check(&self, _flag: &str) -> Option<crate::bridge::FailedWhiteCheck> {
+        None
+    }
 }
 
 /// Whether a passive check fires, ALWAYS DEFINITELY: the world's answer, taken at the state

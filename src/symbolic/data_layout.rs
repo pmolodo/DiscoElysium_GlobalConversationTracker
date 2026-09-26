@@ -567,8 +567,8 @@ impl DataLayout {
     fn guard_reads(graph: &LookAheadGraph) -> GuardReads {
         let symbols = graph.symbols();
         let mut reads = GuardReads::default();
-        for node in graph.nodes() {
-            Self::read_comparisons(&node.guard, symbols, &mut reads);
+        for guard in graph.nodes().flat_map(LookAheadNode::guards_read) {
+            Self::read_comparisons(guard, symbols, &mut reads);
         }
         reads
     }
@@ -1093,7 +1093,7 @@ impl DataLayout {
     pub fn money_ceiling(graph: &LookAheadGraph, starting: i32) -> Option<u32> {
         let read = graph
             .nodes()
-            .any(|node| node.is_cost_option() || Self::guard_reads_money(&node.guard));
+            .any(|node| node.is_cost_option() || node.guards_read().any(Self::guard_reads_money));
         if !read {
             return None;
         }
@@ -1193,14 +1193,13 @@ impl DataLayout {
         symbols: &StateSymbols,
         names: &mut HashSet<String>,
     ) {
-        Self::read_by_guard(&node.guard, names);
         // WHAT REOPENS A FAILED CHECK IS READ TOO, and a slot only it reads is a slot that
         // would otherwise be dropped as read by nothing - leaving the formula pointing at a
         // column the layout no longer has.
-        for reopening in &node.reopen_when {
-            Self::read_by_guard(reopening, names);
+        for guard in node.guards_read() {
+            Self::read_by_guard(guard, names);
         }
-        if Self::reads_any_slot_contents(&node.guard) {
+        if node.guards_read().any(Self::reads_any_slot_contents) {
             // Which item a slot holds is the world's to say, so a question about whether
             // a slot is filled reads every item the group can take away.
             names.extend(
@@ -1231,7 +1230,7 @@ impl DataLayout {
     pub fn reads_no_slot(node: &LookAheadNode) -> bool {
         node.flag_slot < 0
             && node.failed_flag_slot < 0
-            && node.reopen_when.is_empty()
+            && node.reopening.is_none()
             && node.actions.iter().all(|action| action.unless().is_none())
             && !node.guard.nodes().any(|part| {
                 matches!(
@@ -1391,13 +1390,16 @@ impl DataLayout {
         graph.nodes().any(|node| {
             node.all_actions()
                 .any(|action| action.kind() == DialogueActionKind::AssignClock)
-                || node.guard.nodes().any(|part| {
-                    matches!(
-                        part.expression(),
-                        crate::core::guard::GuardExpression::Call(name, _)
-                            if crate::core::clock::ClockTime::owns(name)
-                    )
-                })
+                || node
+                    .guards_read()
+                    .flat_map(|guard| guard.nodes())
+                    .any(|part| {
+                        matches!(
+                            part.expression(),
+                            crate::core::guard::GuardExpression::Call(name, _)
+                                if crate::core::clock::ClockTime::owns(name)
+                        )
+                    })
         })
     }
 

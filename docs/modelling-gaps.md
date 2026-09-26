@@ -91,7 +91,7 @@ world although a dialogue action can change them.
 | gap                                                                                                                                                                                                                     | errs                  | where                                                                        | in content                                                                                                         | tracked |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------- |
 | A passive check is decided once per request, by the plugin. Where the group can change what is worn, or its damage or healing can cross the check's margin, the check is Unknown - item bonuses are not in the database | permissive            | plugin `PassiveCheckRule`; `core::skill_movers`; `Fitting::damage_unsettled` | groups that lose a worn item, gain an autoequip item, or damage or heal Volition or Endurance near a passive check |         |
-| A failed white check is reopened by a modifier the group can move, without asking what the modifier was worth when it failed                                                                                            | permissive            | `LookAheadNode::reopen_when`; `Backward::rolled_cases`                       | 75 of the game's 126 white checks carry such a modifier; see below                                                 |         |
+| A white check failed DURING the search is reopened by a modifier the group can move, without asking what the modifier was worth when it failed. One the save had already failed is held to its remembered target exactly | permissive            | `graph::node::Reopening`; `GuardCompiler::reopening_for`                     | a check the crawl fails and then comes back to; see below                                                          |         |
 | A fake check's `FlagName` and `FlagName_failed` are not read, though the game hides the option once either is set                                                                                                       | permissive            | fake check handling in the graph builder                                     | three fake checks; nothing writes their `_failed` flags                                                            |         |
 | `RemoveWhiteCheck` is not applied, so a check it retires mid-conversation stays offered                                                                                                                                 | permissive            | `core::modelling`                                                            | not reached: all four call sites pass a variable's value rather than a check's flag name                           |         |
 | A rolled check's odds (hardcore difficulty, situational modifiers, crit range) are not read. Both outcomes are taken whatever they are                                                                                  | none for reachability | by design                                                                    | every rolled check. Exact for "can this be reached"; says nothing about how likely it is                           |         |
@@ -108,21 +108,24 @@ they read is items and equipment (`CheckItem`, `CheckEquipped`, 83 of them), tho
 (`IsTHCPresent` and the fixed forms, 38), Kim, the clock, and named variables. All of those
 are things a dialogue action writes.
 
-**The engine reopens a check where a modifier worth a negative bonus holds** - the ones this
-group can MOVE, which is 75 of the 126 and 168 expressions between them. A modifier reading
-nothing the group writes is dropped when the graph is built: its answer is the world's for
-the whole search, so it was already true when the check failed and the target never fell.
+**A check the save has already failed is asked exactly.** The game remembers each failed
+check's `difficulty` and the target it failed against in `FailedWhiteChecks.WhiteCheckCache`;
+the plugin sends both, and the engine offers the check again where `difficulty` plus the
+bonuses of every modifier that holds falls below that target - modifiers of either sign, the
+ones the group cannot move counting as the world's constants.
 
-**What is left is the value at the failure.** The game keeps the target a check was failed
-against; the engine keeps no such thing, so a movable modifier that was ALREADY true then -
-the item already worn, the flag already set - reopens a check the game would leave shut. That
-is the residue, and it errs permissive, which is the direction this engine is built to be
-wrong in. Closing it needs one bit per check and modifier, recording what held at the moment
-of the failure; de-vdy9 carries the shape of that.
+**What is left is a check the crawl fails itself.** The search state does not carry the target
+a check was failed at, so such a check is offered again where a modifier worth a negative bonus
+holds that this group can MOVE - one nothing here writes held at the failure if it holds now,
+and lowered nothing. A movable modifier that ALREADY held at that failure reopens it too, which
+the game would not: that residue errs permissive, the direction this engine is built to be
+wrong in. Closing it needs the target at the failure carried in the state, a register per
+check.
 
-Two more of the game's conditions are not asked either, both of which would make it reopen
-LESS often: whether the check's own precondition still holds, and the exact comparison rather
-than the sign of one bonus.
+The game also reopens a check the moment its target falls and keeps it open, where the engine
+asks at the moment the check is offered, so a modifier that holds and then stops holding
+before the crawl returns is missed. And whether the check's own precondition still holds is
+the check's guard, which the search asks anyway.
 
 ## Actions not applied, or applied in part
 

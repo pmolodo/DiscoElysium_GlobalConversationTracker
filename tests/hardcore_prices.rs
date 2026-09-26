@@ -88,6 +88,7 @@ fn request_in(index: &Index, save: &str) -> LookAheadRequest {
             items: holdings.items_asked(&asked),
             thoughts: holdings.thoughts_asked(&asked),
             variables: fixtures::variables_sent(save, &asked),
+            failed_white_checks: fixtures::failed_white_checks_in_save(save),
             checks_pass: checks.pass,
             checks_fail: checks.fail,
             check_margins: checks.margins,

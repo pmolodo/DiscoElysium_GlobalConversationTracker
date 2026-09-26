@@ -84,7 +84,11 @@ fn full_snapshot() -> wire::WorldRawData {
         checks_pass: Some(runs(9, &[(50, 50)])),
         checks_fail: Some(runs(9, &[(42, 42), (19, 19)])),
         seen: Some(runs(9, &[(0, 40), (42, 42), (50, 99)])),
-        failed_white_checks: vec!["whirling.kim_inland_mystery_created".to_string()],
+        failed_white_checks: vec![wire::FailedWhiteCheck {
+            flag: "whirling.kim_inland_mystery_created".to_string(),
+            difficulty: 12,
+            last_target: 10,
+        }],
         red_checks_fail: true,
         // BOTH SHAPES OF ANSWER, so neither is dropped without this failing: a kind that
         // answers about one subject, and a kind that answers with a whole set.

@@ -146,6 +146,18 @@ impl GameWorld {
         self
     }
 
+    /// A world where the game holds a white check as failed against `failed.last_target`: its
+    /// failure slot locked the way [`crate::bridge::lock_failed_white_checks`] locks it for the
+    /// wire, and its memory kept for what may reopen it.
+    pub fn with_failed_white_check(mut self, failed: crate::bridge::FailedWhiteCheck) -> Self {
+        crate::bridge::lock_failed_white_checks(
+            &mut self.snapshot.variables,
+            std::slice::from_ref(&failed),
+        );
+        self.snapshot.failed_white_checks.push(failed);
+        self
+    }
+
     pub fn set_variable(mut self, name: &str, value: GuardValue) -> Self {
         self.snapshot
             .variables
@@ -540,6 +552,16 @@ impl ILookAheadWorld for GameWorld {
 
     fn red_check_may_pass(&self, _node: DialogueNodeId) -> bool {
         !self.snapshot.red_checks_fail
+    }
+
+    fn failed_white_check(&self, flag: &str) -> Option<crate::bridge::FailedWhiteCheck> {
+        // A LIST RATHER THAN A MAP, because a save holds a few dozen of these and each failed
+        // check is asked about once per compiled guard.
+        self.snapshot
+            .failed_white_checks
+            .iter()
+            .find(|check| check.flag == flag)
+            .cloned()
     }
 
     fn check_margin(&self, node: DialogueNodeId) -> Option<(String, i32)> {

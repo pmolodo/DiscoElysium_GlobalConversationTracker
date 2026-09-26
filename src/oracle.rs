@@ -36,7 +36,7 @@ use crate::core::action::{CounterCaps, DialogueAction};
 use crate::core::state::{LookAheadState, seed_state};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, SeenState, StartBranch, Ternary};
 use crate::graph::LookAheadGraph;
-use crate::graph::node::LookAheadNode;
+use crate::graph::node::{LookAheadNode, Reopening, TargetModifier};
 use crate::world::{CrawlContext, ILookAheadWorld};
 
 /// The cap every search in this repository counts to, and so the one a comparison uses.
@@ -371,15 +371,13 @@ fn enter_rolled(
     let failed = node.failed_flag_slot >= 0 && state.is_set(node.failed_flag_slot as usize);
 
     // A check that has PASSED is closed for good, and one that has FAILED is closed until
-    // its target falls: the game keeps failed white checks in FailedWhiteChecks and offers
-    // one again once a modifier worth a negative bonus holds - see
-    // `LookAheadNode::reopen_when`. The skill rank cannot rise inside a conversation, so the
-    // other half of the game's rule cannot fire here. See de-1uy8 and de-vdy9.
-    let reopened = !node.reopen_when.is_empty()
-        && node
-            .reopen_when
-            .iter()
-            .any(|reopening| reopening.test(&context.bound(state)) == Ternary::True);
+    // its target falls - see `graph::node::Reopening`, whose two forms this asks state by
+    // state, the same way `GuardCompiler::reopening_for` asks them over sets. See de-1uy8 and
+    // de-vdy9.
+    let reopened = node
+        .reopening
+        .as_ref()
+        .is_some_and(|reopening| reopened(reopening, state, context));
     if passed || (failed && !reopened) {
         return results;
     }
@@ -408,6 +406,39 @@ fn enter_rolled(
     }
 
     results
+}
+
+/// Whether a failed check may be offered again in this state.
+///
+/// A modifier this cannot decide counts where that lets the check open - a negative bonus
+/// where it may hold, a positive one only where it must - which is how the symbolic compiler
+/// takes an undecided modifier, so the two answer the same question.
+fn reopened(reopening: &Reopening, state: &LookAheadState, context: &CrawlContext<'_>) -> bool {
+    let bound = context.bound(state);
+    let may_lower = |modifier: &TargetModifier| {
+        let holds = modifier.holds.test(&bound);
+        if modifier.bonus < 0 {
+            holds != Ternary::False
+        } else {
+            holds == Ternary::True
+        }
+    };
+
+    match context.world.failed_white_check(&reopening.flag) {
+        Some(failed) => {
+            let sum: i32 = reopening
+                .modifiers
+                .iter()
+                .filter(|modifier| may_lower(modifier))
+                .map(|modifier| modifier.bonus)
+                .sum();
+            failed.difficulty + sum < failed.last_target
+        }
+        None => reopening
+            .modifiers
+            .iter()
+            .any(|modifier| modifier.movable && modifier.bonus < 0 && may_lower(modifier)),
+    }
 }
 
 /// Whether the player could pay for this entry out of the state's own purse.
@@ -572,6 +603,50 @@ mod tests {
             !walked(without_setter, &failed).reached(node(3)),
             "a failed check with nothing to reopen it was walked anyway",
         );
+    }
+
+    /// A check the game remembers failing is held to the target it failed against - the same
+    /// shape as `symbolic::backward::tests::a_remembered_failed_target_is_held_exactly`, which
+    /// says what each case is.
+    #[test]
+    fn a_remembered_failed_target_is_held_exactly() {
+        let entries = || {
+            vec![
+                Entry::new(0).links(&[1, 2]),
+                white(Entry::new(1))
+                    .flag("check.jump")
+                    .field("variable1", r#"Variable["character.brave"]"#)
+                    .field("modifier1", "-2")
+                    .field("variable2", r#"Variable["character.tall"]"#)
+                    .field("modifier2", "-2")
+                    .field("variable3", r#"Variable["character.heavy"]"#)
+                    .field("modifier3", "3")
+                    .links(&[3]),
+                Entry::new(2)
+                    .script(r#"SetVariableValue("character.brave", true)"#)
+                    .links(&[1]),
+                Entry::new(3),
+            ]
+        };
+        let world = |last_target: i32, heavy: bool| {
+            GameWorld::blank()
+                .set_variable("character.tall", GuardValue::from_boolean(true))
+                .set_variable("character.heavy", GuardValue::from_boolean(heavy))
+                .with_failed_white_check(crate::bridge::FailedWhiteCheck {
+                    flag: "check.jump".to_string(),
+                    difficulty: 10,
+                    last_target,
+                })
+        };
+
+        for (last_target, heavy, reopens) in [(8, false, true), (6, false, false), (8, true, false)]
+        {
+            assert_eq!(
+                walked(entries(), &world(last_target, heavy)).reached(node(3)),
+                reopens,
+                "failed against {last_target}, heavy {heavy}",
+            );
+        }
     }
 
     /// A garment unsettles the checks on the skill IT moves, and leaves the others settled.

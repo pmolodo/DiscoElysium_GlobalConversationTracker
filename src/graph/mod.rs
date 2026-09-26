@@ -235,7 +235,7 @@ impl LookAheadGraph {
             .map(str::to_string)
             .collect();
         for node in map.values() {
-            for part in node.guard.nodes() {
+            for part in node.guards_read().flat_map(|guard| guard.nodes()) {
                 match part.expression() {
                     crate::core::guard::GuardExpression::Variable(name) => {
                         variables.push(name.to_string());

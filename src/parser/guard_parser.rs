@@ -24,12 +24,38 @@ impl fmt::Display for GuardParseError {
 impl std::error::Error for GuardParseError {}
 
 /// Parse a guard expression from Lua-like syntax.
+///
+/// A name with no argument list is a call the world is asked about - see [`BareNames`].
 pub fn parse_guard(text: &str) -> Result<Guard, GuardParseError> {
+    parse_with(text, BareNames::AskTheWorld)
+}
+
+/// Parse an expression the game hands to `Lua.IsTrue` whole, where a bare name is a global.
+///
+/// FOR A WHITE CHECK'S TARGET MODIFIERS, which the game evaluates that way. In the shipped
+/// database every function a modifier calls is written with its argument list, and every bare
+/// name is a variable missing its `Variable[...]` - `deserter_modifier_comp_nervous_system`
+/// beside the real `seafort.deserter_modifier_comp_nervous_system` - which Lua reads as an
+/// undefined global: nil, so never true.
+pub fn parse_lua_condition(text: &str) -> Result<Guard, GuardParseError> {
+    parse_with(text, BareNames::AreUndefinedGlobals)
+}
+
+/// What a name with no argument list is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BareNames {
+    /// A call, which the world decides whether it answers.
+    AskTheWorld,
+    /// A global Lua reads and nothing defines, so false.
+    AreUndefinedGlobals,
+}
+
+fn parse_with(text: &str, bare_names: BareNames) -> Result<Guard, GuardParseError> {
     let stripped = strip_comments(text);
     if stripped.trim().is_empty() {
         return Ok(Guard::always_true());
     }
-    let mut parser = Parser::new(&stripped, text)?;
+    let mut parser = Parser::new(&stripped, text, bare_names)?;
     let expr = parser.parse()?;
     parser.expect_end()?;
     Ok(expr)
@@ -173,15 +199,18 @@ struct Parser {
     ops: Vec<Pending>,
     /// Brackets currently open, outermost first.
     frames: Vec<Frame>,
+    /// What a name with no argument list reads as.
+    bare_names: BareNames,
 }
 
 impl Parser {
-    fn new(text: &str, original: &str) -> Result<Self, GuardParseError> {
+    fn new(text: &str, original: &str, bare_names: BareNames) -> Result<Self, GuardParseError> {
         let tokens = tokenize(text, original)?;
         Ok(Self {
             tokens,
             pos: 0,
             source: original.to_string(),
+            bare_names,
             operands: Vec::new(),
             ops: Vec::new(),
             frames: vec![Frame {
@@ -295,9 +324,17 @@ impl Parser {
                 Guard::literal(GuardValue::from_number(number))
             }
             TokenKind::Text => Guard::literal(GuardValue::from_text(self.take().value)),
-            // A name with no argument list. Still a call, as it always was: the world is
-            // what decides whether it answers.
-            TokenKind::Name => Guard::call(self.take().value, Vec::new()),
+            // A name with no argument list: a call the world decides whether it answers, or
+            // a global nothing defines - see `BareNames`.
+            TokenKind::Name => {
+                let name = self.take().value;
+                match self.bare_names {
+                    BareNames::AskTheWorld => Guard::call(name, Vec::new()),
+                    BareNames::AreUndefinedGlobals => {
+                        Guard::literal(GuardValue::from_boolean(false))
+                    }
+                }
+            }
             _ => {
                 return Err(GuardParseError::new(
                     "unexpected token".into(),

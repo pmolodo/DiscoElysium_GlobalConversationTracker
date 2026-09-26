@@ -39,6 +39,7 @@ use crate::core::guard_value::{GuardValue, GuardValueKind};
 use crate::core::state::{ITEM_PREFIX, THOUGHT_PREFIX};
 use crate::core::types::{DialogueNodeId, Ternary};
 use crate::graph::LookAheadGraph;
+use crate::graph::node::Reopening;
 use crate::symbolic::vars::DataVars;
 use crate::world::{ILookAheadWorld, MONEY_QUERY};
 
@@ -210,7 +211,7 @@ pub struct GuardCompiler<'a> {
     guards: HashMap<DialogueNodeId, MayBe>,
     guard_cache_hits: usize,
     /// What reopens each failed check, compiled - see [`Self::reopening_for`].
-    reopenings: HashMap<DialogueNodeId, MayBe>,
+    reopenings: HashMap<DialogueNodeId, BDDFunction>,
     /// The reputation ranges no search from the menu's starts can change the winner of, keyed
     /// by the range's first index, each with the world's winner. See
     /// [`Self::settle_reputation`].
@@ -488,50 +489,119 @@ impl<'a> GuardCompiler<'a> {
         self.reopenings.clear();
     }
 
-    /// What reopens this check once it has failed, compiled once and remembered.
+    /// Where this failed check may be offered again, compiled once and remembered - see
+    /// [`crate::graph::node::Reopening`] for the rule and why it has two forms.
     ///
     /// A SECOND CACHE RATHER THAN A SECOND ENTRY IN THE FIRST, because an entry has one guard
-    /// and either none or several of these, and they are asked for at different moments: the
-    /// guard whenever the entry is reached, this only where a failed check is being offered
-    /// again. See [`Self::compile_for`], whose reasoning this follows.
+    /// and at most one of these, and they are asked for at different moments: the guard
+    /// whenever the entry is reached, this only where a failed check is being offered again.
+    /// See [`Self::compile_for`], whose reasoning this follows. Both depend on the world, and
+    /// [`Self::forget_guards`] clears both.
     ///
-    /// ANY OF THEM IS ENOUGH, so what comes back is their disjunction - the game's rule is that
-    /// the target falls, and each of these lowers it on its own.
-    pub fn reopening_for(&mut self, id: DialogueNodeId, reopening: &[Guard]) -> MayBe {
+    /// MAY, NOT MUST: a modifier this cannot decide is taken whichever way lets the check
+    /// open, which is the permissive answer.
+    pub fn reopening_for(&mut self, id: DialogueNodeId, reopening: &Reopening) -> BDDFunction {
         if let Some(compiled) = self.reopenings.get(&id) {
             return compiled.clone();
         }
 
-        let mut held: Option<MayBe> = None;
-        for guard in reopening {
-            let compiled = self.compile_node(guard.as_ref());
-            held = Some(match held {
-                Some(held) => MayBe {
-                    may_be_true: held
-                        .may_be_true
-                        .or(&compiled.may_be_true)
-                        .unwrap_or_else(|_| {
-                            self.out_of_memory = true;
-                            self.vars.bottom()
-                        }),
-                    may_be_false: held
-                        .may_be_false
-                        .and(&compiled.may_be_false)
-                        .unwrap_or_else(|_| {
-                            self.out_of_memory = true;
-                            self.vars.top()
-                        }),
-                },
-                None => compiled,
-            });
-        }
-
-        let compiled = held.unwrap_or_else(|| MayBe {
-            may_be_true: self.vars.bottom(),
-            may_be_false: self.vars.top(),
-        });
+        let remembered = self
+            .world
+            .and_then(|world| world.failed_white_check(&reopening.flag));
+        let compiled = match remembered {
+            Some(failed) => self.target_falls_below(reopening, &failed),
+            None => self.movable_modifier_lowers(reopening),
+        };
         self.reopenings.insert(id, compiled.clone());
         compiled
+    }
+
+    /// Where `difficulty` plus the bonuses of the modifiers that hold is below the target the
+    /// check was failed against - the game's rule, asked exactly.
+    ///
+    /// SPLIT BY SUM, the way [`Self::highest_reputation`] splits by amount: a map from each
+    /// total the modifiers so far can add up to, to the states in which they do. There are at
+    /// most ten modifiers and their bonuses are small, so the map stays a handful of entries.
+    /// A modifier the group cannot move compiles to a constant and moves every entry at once.
+    ///
+    /// Each modifier counts where it may LOWER the target: a negative bonus where it may hold,
+    /// a positive one only where it must.
+    fn target_falls_below(
+        &mut self,
+        reopening: &Reopening,
+        failed: &crate::bridge::FailedWhiteCheck,
+    ) -> BDDFunction {
+        let mut sums: BTreeMap<i32, BDDFunction> = BTreeMap::new();
+        sums.insert(0, self.top());
+
+        for modifier in &reopening.modifiers {
+            let compiled = self.compile_node(modifier.holds.as_ref());
+            let counted = if modifier.bonus < 0 {
+                Ok(compiled.may_be_true)
+            } else {
+                compiled.may_be_false.not()
+            };
+            let Ok(counted) = counted else {
+                return self.reopening_out_of_room();
+            };
+            let Ok(uncounted) = counted.not() else {
+                return self.reopening_out_of_room();
+            };
+
+            let mut next: BTreeMap<i32, BDDFunction> = BTreeMap::new();
+            for (sum, reached) in &sums {
+                for (total, when) in [(sum + modifier.bonus, &counted), (*sum, &uncounted)] {
+                    let Ok(both) = reached.and(when) else {
+                        return self.reopening_out_of_room();
+                    };
+                    let joined = match next.remove(&total) {
+                        Some(already) => already.or(&both),
+                        None => Ok(both),
+                    };
+                    let Ok(joined) = joined else {
+                        return self.reopening_out_of_room();
+                    };
+                    next.insert(total, joined);
+                }
+            }
+            sums = next;
+        }
+
+        let mut reopened = self.bottom();
+        for (sum, reached) in sums {
+            if failed.difficulty + sum >= failed.last_target {
+                continue;
+            }
+            let Ok(joined) = reopened.or(&reached) else {
+                return self.reopening_out_of_room();
+            };
+            reopened = joined;
+        }
+        reopened
+    }
+
+    /// Where a modifier this group can move, worth a negative bonus, may hold - the rule for a
+    /// check whose failed target the world does not remember.
+    fn movable_modifier_lowers(&mut self, reopening: &Reopening) -> BDDFunction {
+        let mut reopened = self.bottom();
+        for modifier in &reopening.modifiers {
+            if !modifier.movable || modifier.bonus >= 0 {
+                continue;
+            }
+            let compiled = self.compile_node(modifier.holds.as_ref());
+            let Ok(joined) = reopened.or(&compiled.may_be_true) else {
+                return self.reopening_out_of_room();
+            };
+            reopened = joined;
+        }
+        reopened
+    }
+
+    /// Nowhere, with the manager recorded as full: a reopening the manager had no room to build
+    /// is answered as the check staying shut, and the search reports why.
+    fn reopening_out_of_room(&mut self) -> BDDFunction {
+        self.out_of_memory = true;
+        self.bottom()
     }
 
     /// Gives the compiler a world to read untracked variables from.

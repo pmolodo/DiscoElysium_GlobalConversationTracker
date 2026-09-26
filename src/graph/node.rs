@@ -12,6 +12,47 @@ fn settled_by_default() -> bool {
 }
 use crate::core::types::{DialogueCheckKind, DialogueNodeId};
 
+/// What decides whether a failed white check is offered again.
+///
+/// ## The game's rule
+///
+/// `FailedWhiteChecks.IsFailedWhiteCheckPossible` offers a failed check again when
+/// `difficulty + (the bonuses of whichever modifiers hold now) < LastTargetValue`, the target
+/// it was failed against. The other half of the rule, the skill rank rising, cannot happen
+/// inside one conversation - nothing in a dialogue levels a skill.
+///
+/// ## What the engine can ask, by where the failure happened
+///
+/// A CHECK THE SAVE HAS ALREADY FAILED is asked exactly. The game remembers its `difficulty`
+/// and `LastTargetValue` in `FailedWhiteChecks.WhiteCheckCache`, the world carries them - see
+/// [`crate::world::ILookAheadWorld::failed_white_check`] - and every modifier is summed, the
+/// ones this group cannot move as the world's constants.
+///
+/// A CHECK THE SEARCH ITSELF FAILS has no remembered target, since the state does not carry
+/// the target a check was failed at. It is offered again where a modifier worth a NEGATIVE
+/// bonus holds that this group can MOVE: one nothing here writes has the same answer for the
+/// whole search, so its holding now means it held at the failure and lowered nothing. That
+/// errs permissive - a movable modifier that already held at the failure also reopens it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Reopening {
+    /// The check's `FlagName`, which the game keys its memory of failed checks by.
+    pub flag: String,
+    /// Every modifier expression on the check, with the bonus it is worth.
+    pub modifiers: Vec<TargetModifier>,
+}
+
+/// One of a white check's target modifiers.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TargetModifier {
+    /// Where the modifier holds.
+    pub holds: Guard,
+    /// What it adds to the target where it holds; negative makes the check easier.
+    pub bonus: i32,
+    /// Whether anything in the group writes what the expression reads - decided in
+    /// [`crate::index::build_group_graph`], where what the group writes is known.
+    pub movable: bool,
+}
+
 /// One dialogue entry as the look-ahead needs it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LookAheadNode {
@@ -64,19 +105,13 @@ pub struct LookAheadNode {
     pub hidden_when_unaffordable: bool,
     pub flag_slot: i32,        // -1 if none
     pub failed_flag_slot: i32, // -1 if none
-    /// What reopens this white check after it has failed, empty where nothing can.
+    /// What can offer this white check again after it has failed, or `None` where nothing can.
     ///
     /// THE GAME DOES NOT CLOSE A FAILED WHITE CHECK FOR GOOD. It keeps the target the check
     /// was failed against, and offers the check again once the current target falls below it -
-    /// `difficulty` plus the bonuses of whichever of its ten modifier expressions hold. So a
-    /// modifier worth a NEGATIVE bonus reopens the check by becoming true, which is what these
-    /// are: those expressions, any of which is enough.
-    ///
-    /// ONLY THE ONES THIS GROUP CAN MOVE. A modifier reading nothing any action here writes is
-    /// the same answer for the whole search, so its being true now means it was true when the
-    /// check failed - and reopening on it would offer a check the game has closed. Trimmed in
-    /// [`crate::index::build_group_graph`], where what the group writes is known.
-    pub reopen_when: Vec<Guard>,
+    /// `difficulty` plus the bonuses of whichever of its ten modifier expressions hold. See
+    /// [`Reopening`] for how much of that the engine can ask.
+    pub reopening: Option<Reopening>,
     pub boolean_only: bool,
     pub seen_slot: i32, // -1 if none
     /// The slot recording that this entry's once-only effects have fired, or -1.
@@ -123,7 +158,7 @@ impl LookAheadNode {
             hidden_when_unaffordable: false,
             flag_slot: -1,
             failed_flag_slot: -1,
-            reopen_when: Vec::new(),
+            reopening: None,
             boolean_only: false,
             seen_slot: -1,
             once_slot: -1,
@@ -199,6 +234,21 @@ impl LookAheadNode {
             && self.failed_flag_slot < 0
             && self.seen_slot < 0
             && self.once_slot < 0
+    }
+
+    /// Every guard the entry reads: its own, and the modifiers that may reopen it after a
+    /// failure - for what asks which variables, queries or slots an entry reads rather than
+    /// when.
+    ///
+    /// ONE PLACE, because each of those questions left out of it is one the modifiers are
+    /// silently not asked: a variable never declared, a query the plugin is never asked, a
+    /// counter whose comparison nothing sized.
+    pub fn guards_read(&self) -> impl Iterator<Item = &Guard> {
+        std::iter::once(&self.guard).chain(
+            self.reopening
+                .iter()
+                .flat_map(|reopening| reopening.modifiers.iter().map(|modifier| &modifier.holds)),
+        )
     }
 
     /// Every action the entry can take, on entering and on a failing branch alike - for what

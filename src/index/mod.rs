@@ -22,9 +22,9 @@ use crate::core::skill_movers::SkillMoves;
 use crate::core::state::{ONCE_PREFIX, SEEN_PREFIX, StateSymbols};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId};
 use crate::graph::LookAheadGraph;
-use crate::graph::node::LookAheadNode;
+use crate::graph::node::{LookAheadNode, Reopening, TargetModifier};
 use crate::parser::action_parser::parse_actions_with_journal;
-use crate::parser::guard_parser::parse_guard;
+use crate::parser::guard_parser::{parse_guard, parse_lua_condition};
 use crate::symbolic::data_layout::DataLayout;
 
 /// Field names as the asset spells them.
@@ -173,6 +173,10 @@ pub const ENTRY_FIELDS_READ: [&str; 36] = [
     "modifier9",
     "modifier10",
 ];
+
+/// The Lua call that writes a variable, which a handful of target modifiers are instead of a
+/// condition - see [`parse_reopening`].
+const SET_VARIABLE_VALUE: &str = "SetVariableValue";
 
 /// How many target modifiers a check may carry, which is what the database has room for.
 ///
@@ -631,7 +635,12 @@ pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, V
                 None
             };
             let (flag_slot, failed_flag_slot) = parse_flags(&entry.fields, &mut symbols, kind);
-            let reopen_when = parse_reopening(&entry.fields, kind, &journal);
+            let reopening = parse_reopening(
+                entry.fields.get(FLAG_NAME_FIELD).map(String::as_str),
+                &entry.fields,
+                kind,
+                &journal,
+            );
             let boolean_only = read_boolean(&entry.fields, BOOLEAN_ONLY_FIELD);
             let closes_once_seen = kind == DialogueCheckKind::Fake
                 || (kind == DialogueCheckKind::KimSwitch && !boolean_only);
@@ -656,7 +665,7 @@ pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, V
                 hidden_when_unaffordable,
                 flag_slot,
                 failed_flag_slot,
-                reopen_when,
+                reopening,
                 boolean_only,
                 seen_slot,
                 ..LookAheadNode::new(node_id)
@@ -708,33 +717,32 @@ pub(crate) fn slots_written_by(nodes: &[LookAheadNode], symbols: &StateSymbols) 
     written
 }
 
-/// Drops what reopens a failed check where nothing in these nodes can move it.
+/// Marks which of a failed check's modifiers something in these nodes can move.
 ///
 /// A modifier expression reading nothing anything here writes has the same answer for the
-/// whole search - the seed puts the world's value in and nothing moves it - so its being true
-/// NOW is also its having been true when the check failed, and the game would have reopened
-/// nothing. Keeping it would offer a check the game has closed.
+/// whole search - the seed puts the world's value in and nothing moves it. That is what a check
+/// the search fails itself needs to know: such a modifier held at the failure if it holds now,
+/// so it lowered nothing. See [`crate::graph::node::Reopening`].
 ///
-/// IT IS ALSO WHAT KEEPS THE LAYOUT HONEST: a slot nothing writes is dropped by
-/// [`keeping_only_read_slots`], and a formula kept over one would name a column that is gone.
-pub(crate) fn retain_movable_reopenings(
+/// MARKED, NOT DROPPED, because a check the save has already failed is asked exactly, and the
+/// exact sum needs the constant modifiers too. Keeping them costs the layout nothing: a slot
+/// nothing writes is dropped by [`keeping_only_read_slots`] whoever reads it, and the compiler
+/// answers a variable with no slot from the world.
+pub(crate) fn mark_movable_modifiers(
     nodes: &mut [LookAheadNode],
     symbols: &StateSymbols,
     written: &[bool],
 ) {
-    for node in nodes {
-        if node.reopen_when.is_empty() {
-            continue;
-        }
-        node.reopen_when.retain(|reopening| {
+    for reopening in nodes.iter_mut().filter_map(|node| node.reopening.as_mut()) {
+        for modifier in &mut reopening.modifiers {
             let mut names = HashSet::new();
-            DataLayout::read_by_guard(reopening, &mut names);
-            names.iter().any(|name| {
+            DataLayout::read_by_guard(&modifier.holds, &mut names);
+            modifier.movable = names.iter().any(|name| {
                 symbols
                     .find(name)
                     .is_some_and(|slot| written.get(slot).copied().unwrap_or(false))
-            })
-        });
+            });
+        }
     }
 }
 
@@ -806,7 +814,7 @@ fn keeping_only_read_slots(
     let written = slots_written_by(&nodes, &symbols);
 
     let mut nodes = nodes;
-    retain_movable_reopenings(&mut nodes, &symbols, &written);
+    mark_movable_modifiers(&mut nodes, &symbols, &written);
 
     let reads = DataLayout::read_by_nodes(nodes.iter(), &symbols);
 
@@ -952,43 +960,56 @@ pub fn parse_cost(fields: &HashMap<String, String>) -> (i32, bool, bool) {
     )
 }
 
-/// What would reopen this check once it has failed, or `None` where nothing in it can.
+/// [`parse_reopening`], for a caller with no journal - a fixture, where a task named would be
+/// one that does not exist.
+pub(crate) fn parse_reopening_without_journal(
+    flag: Option<&str>,
+    fields: &HashMap<String, String>,
+    kind: DialogueCheckKind,
+) -> Option<Reopening> {
+    parse_reopening(
+        flag,
+        fields,
+        kind,
+        &journal::Journal::from_index(&Index::new()),
+    )
+}
+
+/// What can offer this check again once it has failed, or `None` where nothing can - see
+/// [`crate::graph::node::Reopening`] for the game's rule and how much of it is asked.
 ///
-/// ## The game's rule
+/// `flag` is the check's `FlagName`, which the game keys its memory of failed checks by; a
+/// check without one records no failure, so nothing is kept to reopen.
 ///
-/// `FailedWhiteChecks.IsFailedWhiteCheckPossible` offers a failed white check again when the
-/// skill has risen above what it was, or when `difficulty` plus the bonuses of whichever
-/// modifier expressions currently hold has fallen below the target it was failed against. The
-/// skill cannot rise inside one conversation - nothing in a dialogue levels one - so what is
-/// left is the modifiers, and only those worth a NEGATIVE bonus, which are the ones that lower
-/// a target by becoming true.
+/// EVERY MODIFIER, OF EITHER SIGN. A check the save has failed is asked exactly, and a
+/// modifier worth a positive bonus holding now raises the target as surely as a negative one
+/// lowers it. Which of them the group can move is marked later, by
+/// [`mark_movable_modifiers`], once what the group writes is known.
+///
+/// READ AS THE GAME READS IT: whole, through `Lua.IsTrue`, so a bare name is an undefined
+/// global - see [`parse_lua_condition`] - and a `SetVariableValue` call is dropped. That returns
+/// nothing, so it never holds; five modifiers in the database are one, and the write each
+/// makes whenever the game re-tests the check is not followed.
 ///
 /// ## Why a parse failure takes the expression away
 ///
 /// An unparsed guard elsewhere falls back to "always true", which is the permissive answer and
-/// the right one for a guard: it opens a route rather than closing one that exists. Here the
-/// permissive answer is the reverse - an expression that always holds reopens the check for
-/// good - so an expression this cannot read is dropped, and the check keeps the behaviour it
-/// has without it.
-/// The same, for a caller with no journal - a fixture, where a task named would be one that
-/// does not exist.
-pub(crate) fn parse_reopening_without_journal(
-    fields: &HashMap<String, String>,
-    kind: DialogueCheckKind,
-) -> Vec<Guard> {
-    parse_reopening(fields, kind, &journal::Journal::from_index(&Index::new()))
-}
-
+/// the right one for a guard: it opens a route rather than closing one that exists. Here always
+/// true is permissive only for a negative bonus and restrictive for a positive one, so neither
+/// direction is safe to assume. An expression this cannot read is dropped, and counts as never
+/// holding.
 fn parse_reopening(
+    flag: Option<&str>,
     fields: &HashMap<String, String>,
     kind: DialogueCheckKind,
     journal: &journal::Journal,
-) -> Vec<Guard> {
+) -> Option<Reopening> {
     if kind != DialogueCheckKind::White {
-        return Vec::new();
+        return None;
     }
+    let flag = flag.map(str::trim).filter(|flag| !flag.is_empty())?;
 
-    let mut reopening = Vec::new();
+    let mut modifiers = Vec::new();
     for slot in 1..=MODIFIER_SLOTS {
         let Some(expression) = fields.get(&modifier_expression_field(slot)) else {
             continue;
@@ -1001,15 +1022,30 @@ fn parse_reopening(
             Some(text) => text.trim().parse().unwrap_or(0),
             None => 0,
         };
-        if bonus >= 0 {
+        // WORTH NOTHING, SO IT MOVES NOTHING, whether or not it holds.
+        if bonus == 0 {
             continue;
         }
-        let Ok(guard) = parse_guard(expression) else {
+        let Ok(guard) = parse_lua_condition(expression) else {
             continue;
         };
-        reopening.push(journal.with_tasks_as_variables(&guard));
+        if matches!(
+            guard.expression(),
+            crate::core::guard::GuardExpression::Call(name, _) if name == SET_VARIABLE_VALUE
+        ) {
+            continue;
+        }
+        modifiers.push(TargetModifier {
+            holds: journal.with_tasks_as_variables(&guard),
+            bonus,
+            movable: false,
+        });
     }
-    reopening
+
+    (!modifiers.is_empty()).then(|| Reopening {
+        flag: flag.to_string(),
+        modifiers,
+    })
 }
 
 /// What a passive check's success adds while a thought is fixed, as once actions on the entry -

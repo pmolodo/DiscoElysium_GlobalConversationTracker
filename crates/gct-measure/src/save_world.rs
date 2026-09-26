@@ -266,6 +266,7 @@ fn build_of_save(
         items: holdings.items_asked(&asked),
         thoughts: holdings.thoughts_asked(&asked),
         variables: crate::common::fixtures::variables_sent(save, &asked),
+        failed_white_checks: crate::common::fixtures::failed_white_checks_in_save(save),
         // WHAT THIS SAVE HAS ALREADY SHOWN, which the engine seeds its `once` and `seen` slots
         // from: without it every one-time effect starts unfired and a route the save has
         // already spent is open to the walk.

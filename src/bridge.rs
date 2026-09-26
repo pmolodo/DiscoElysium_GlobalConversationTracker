@@ -404,6 +404,28 @@ pub struct WorldRawData {
     /// [`CheckMargin`] and [`crate::core::skill_movers`].
     #[serde(default)]
     pub check_margins: Vec<CheckMargin>,
+    /// Every white check the game holds as failed, with the target it was failed against.
+    ///
+    /// Each one's failure slot is also answered true among [`Self::variables`] - see
+    /// [`lock_failed_white_checks`] - which is what closes it. This is what may open it again:
+    /// see [`crate::graph::node::Reopening`].
+    #[serde(default)]
+    pub failed_white_checks: Vec<FailedWhiteCheck>,
+}
+
+/// A white check the game holds as failed, as `FailedWhiteChecks.WhiteCheckCache` keeps it.
+///
+/// THE GAME'S OWN NUMBERS, not recomputed here. `difficulty` is the check's base target with
+/// the game mode's adjustment already in it, and `last_target` is what the check was rolled
+/// against when it failed - so the engine needs neither the difficulty table nor the mode.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FailedWhiteCheck {
+    /// The check's `FlagName`.
+    pub flag: String,
+    /// `WhiteCheck.difficulty`: the target before any modifier.
+    pub difficulty: i32,
+    /// `WhiteCheck.LastTargetValue`: the target the check was failed against.
+    pub last_target: i32,
 }
 
 /// A passive check's margin, as it crosses: the skill value plus the check's bonus, minus its
@@ -487,11 +509,11 @@ fn place_data(
 /// nothing the plugin reads from Lua can reopen it. See [`crate::index::FAILED_FLAG_SUFFIX`].
 pub fn lock_failed_white_checks(
     variables: &mut HashMap<String, WireValue>,
-    flags: impl IntoIterator<Item = String>,
+    failed: &[FailedWhiteCheck],
 ) {
-    for flag in flags {
+    for check in failed {
         variables.insert(
-            format!("{flag}{}", crate::index::FAILED_FLAG_SUFFIX),
+            format!("{}{}", check.flag, crate::index::FAILED_FLAG_SUFFIX),
             WireValue::Bool { value: true },
         );
     }
@@ -602,6 +624,10 @@ impl ILookAheadWorld for Unlocked<'_> {
             .iter()
             .any(|lock| matches!(lock, Lock::RedPassForbidden(option) if *option == node))
             || self.inner.red_check_may_pass(node)
+    }
+
+    fn failed_white_check(&self, flag: &str) -> Option<FailedWhiteCheck> {
+        self.inner.failed_white_check(flag)
     }
 }
 
@@ -1226,13 +1252,9 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
     let mut data = HashSet::new();
 
     for node in graph.nodes() {
-        collect(
-            &node.guard,
-            &mut queries,
-            &mut items,
-            &mut thoughts,
-            &mut data,
-        );
+        for guard in node.guards_read() {
+            collect(guard, &mut queries, &mut items, &mut thoughts, &mut data);
+        }
 
         found.entries.push(NodeRef::from(node.id));
         if node.kind != DialogueCheckKind::None {

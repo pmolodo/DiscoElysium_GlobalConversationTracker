@@ -385,11 +385,11 @@ fn a_shipped_failed_white_check_is_offered_again_when_its_target_can_fall() {
 
     let (graph, _) = build_group_graph(&index, MIRROR).expect("conversation 10 builds a group");
     assert!(
-        !graph
+        graph
             .get(check)
             .expect("the mirror's check is in its own group")
-            .reopen_when
-            .is_empty(),
+            .reopening
+            .is_some(),
         "{check:?} kept no way to be reopened, so this test is asking nothing",
     );
 
@@ -415,11 +415,7 @@ fn a_shipped_failed_white_check_is_offered_again_when_its_target_can_fall() {
     );
 
     let mut closed = graph.clone();
-    closed
-        .get_mut(check)
-        .expect("the check is there")
-        .reopen_when
-        .clear();
+    closed.get_mut(check).expect("the check is there").reopening = None;
     assert!(
         !reaches(&closed, &world, start, behind),
         "the check's pass flag was set without anything to reopen it, so reaching {behind:?} \
