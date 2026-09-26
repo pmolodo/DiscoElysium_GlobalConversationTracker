@@ -168,7 +168,7 @@ fn walk(
             if !starts.contains(&child)
                 && ((entry.kind == DialogueCheckKind::None
                     && holds_nowhere(compiler, child, &entry.guard, &pins.set))
-                    || recorded_for_good(entry, pins))
+                    || recorded_for_good(compiler, entry, pins))
             {
                 closed.insert(child);
                 continue;
@@ -186,9 +186,40 @@ fn walk(
 /// pinned set is one recorded on every route, so the check can never be entered: the failed
 /// white check the game keeps locked, most often. Its guard is not asked, which is why this is
 /// the one kind of check the trim closes.
-fn recorded_for_good(entry: &crate::graph::node::LookAheadNode, pins: &Pins) -> bool {
-    entry.is_rolled()
-        && (pins.set_for_good(entry.flag_slot) || pins.set_for_good(entry.failed_flag_slot))
+///
+/// EXCEPT A FAILED WHITE CHECK THAT CAN REOPEN. The game offers one again once its modifiers
+/// bring it below the target it was failed against, and the searches walk it wherever that may
+/// hold - see [`GuardCompiler::reopening_for`]. So a failure is closed for good only where the
+/// same rule cannot hold under `pins`; closing it anywhere else cuts off everything behind a
+/// check the search would have walked, and the menus before it lose the stars the check leads to.
+fn recorded_for_good(
+    compiler: &mut GuardCompiler<'_>,
+    entry: &crate::graph::node::LookAheadNode,
+    pins: &Pins,
+) -> bool {
+    if !entry.is_rolled() {
+        return false;
+    }
+    pins.set_for_good(entry.flag_slot)
+        || (pins.set_for_good(entry.failed_flag_slot) && !may_reopen(compiler, entry, &pins.set))
+}
+
+/// Whether a failed check can be offered again anywhere `pins` allows.
+///
+/// A manager with no room says it may, which closes nothing: the trim only ever removes what
+/// it has shown cannot be walked.
+fn may_reopen(
+    compiler: &mut GuardCompiler<'_>,
+    entry: &crate::graph::node::LookAheadNode,
+    pins: &BDDFunction,
+) -> bool {
+    let Some(reopening) = &entry.reopening else {
+        return false;
+    };
+    compiler
+        .reopening_for(entry.id, reopening)
+        .and(pins)
+        .map_or(true, |held| held.satisfiable())
 }
 
 /// Every slot no entry of `writers` can change, held at its starting value, as one set.
@@ -489,6 +520,54 @@ mod tests {
         let trimmed = trim_in(&graph, &open);
         assert_eq!(trimmed.closed, 0);
         assert!(trimmed.reachable.contains(&node(2)));
+    }
+
+    /// A failed white check its modifiers already reopen is not closed, though nothing in the
+    /// group can clear its failure; one they cannot reopen is.
+    ///
+    /// THE SHAPE OF JOYCE'S ESPRIT DE CORPS CHECK: failed at 15 against a target of 13, with
+    /// three -1 modifiers only the world can move. All three holding bring it to 12, below 13,
+    /// so the game offers it again and a search walks it - and a trim that closed it would cut
+    /// off everything behind it, and every menu before it would lose the stars it leads to.
+    #[test]
+    fn a_failed_check_its_modifiers_reopen_stays_open() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1, 3]))
+            .add(
+                Entry::new(1)
+                    .kind(DialogueCheckKind::White)
+                    .flag("wc")
+                    .field("variable1", r#"Variable["one"]"#)
+                    .field("modifier1", "-1")
+                    .field("variable2", r#"Variable["two"]"#)
+                    .field("modifier2", "-1")
+                    .field("variable3", r#"Variable["three"]"#)
+                    .field("modifier3", "-1")
+                    .links(&[2]),
+            )
+            .add(Entry::new(2))
+            .add(Entry::new(3))
+            .build();
+        let world = |third: bool| {
+            GameWorld::blank()
+                .set_variable("wc_failed", GuardValue::from_boolean(true))
+                .set_variable("one", GuardValue::from_boolean(true))
+                .set_variable("two", GuardValue::from_boolean(true))
+                .set_variable("three", GuardValue::from_boolean(third))
+                .with_failed_white_check(crate::bridge::FailedWhiteCheck {
+                    flag: "wc".to_string(),
+                    difficulty: 15,
+                    last_target: 13,
+                })
+        };
+
+        let reopened = trim_in(&graph, &world(true));
+        assert_eq!(reopened.closed, 0, "15 - 3 = 12, below 13");
+        assert!(reopened.reachable.contains(&node(2)));
+
+        let still_failed = trim_in(&graph, &world(false));
+        assert_eq!(still_failed.closed, 1, "15 - 2 = 13, not below 13");
+        assert!(!still_failed.reachable.contains(&node(2)));
     }
 
     /// A check whose guard cannot hold is stepped over rather than refused, so it closes

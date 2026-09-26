@@ -812,6 +812,37 @@
     {
       "scenarios": [
         {
+          "conversation": 631,
+          "stops": [
+            {
+              "what": "Joyce's hub on the sloop, on the fourth morning",
+              "inputs": [],
+              "options": [
+                { "entry": 960, "marker": "orange", "why": "its reality hub offers 545, the Esprit de Corps check the save failed at 15 against 13, which three -1 modifiers the save holds bring to 12 and so reopen - and past its pass lie 636:6 and 636:72, read in no save" }
+              ]
+            }
+          ],
+          "markers": "named",
+          "save": "at-joyce3"
+        }
+      ],
+      "settings": {
+        "KeepLookAheadRequests": "true",
+        "KeepLookAheadStats": "true",
+        "LogLookAheadBudgetExceeded": "true",
+        "LookAheadMemoryBudgetMb": "300",
+        "LookAheadMenuTimeBudgetMs": "3000",
+        "LookAheadTimeBudgetMs": "1000"
+      },
+      "settingsWhy": "The shipped budgets, with the overflow log and the requests kept, so a run in game can be set beside the offline one.",
+      "state": "global-state-at-joyce3.json",
+      "suite": "joyce-reality",
+      "what": "Joyce's hub on day four with the player's own global state, where asking about reality leads to a failed check its modifiers reopen",
+      "why": "From a real playthrough: the hub drew no star on any of its seven options, yet choosing 960 reached a menu whose open Esprit de Corps check passes to orange. The trim closed that check from the hub, as failed for good, though its modifiers reopen it - so everything behind it was cut off there, and nothing where it is the menu's own option."
+    },
+    {
+      "scenarios": [
+        {
           "conversation": 640,
           "stops": [
             {

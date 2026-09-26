@@ -199,7 +199,8 @@ fn collect_diffs(directory: &Path, found: &mut Vec<PathBuf>) {
 
 /// How many text-member diffs the scenarios carry: three made scenario saves - at-klaasjes-flower,
 /// at-trashcan and at-manana - and at-garte-kitchen, at-leo, at-evart, at-gary, at-joyce2,
-/// before-the-deserter, at-the-deserter and at-the-pinball, saves from real playthroughs.
+/// at-joyce3, before-the-deserter, at-the-deserter and at-the-pinball, saves from real
+/// playthroughs.
 ///
 /// THE DESERTER PAIR IS COUNTED AS TWO. before-the-deserter is the last save of a playthrough with
 /// no state in SEAFORT / THE DESERTER and at-the-deserter is the next one, which has forty-five of
@@ -209,7 +210,7 @@ fn collect_diffs(directory: &Path, found: &mut Vec<PathBuf>) {
 /// at-the-pinball is a save that reached WHIRLING F3 / GURDIS GOATS with most of it still ahead -
 /// 25 of its entries displayed, against 56 in the next least-progressed of the 54 that reached it
 /// at all. It is the world de-uqz4's menu can be opened in.
-const TEXT_DIFFS: usize = 11;
+const TEXT_DIFFS: usize = 12;
 
 /// Every committed text diff is in a shape this build can read.
 ///

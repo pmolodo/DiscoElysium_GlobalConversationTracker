@@ -1,0 +1,14 @@
+--- ../at-evart.ntwtf/at-evart.states.lua.diff
++++ at-joyce3.states.lua
+@@ -50,5 +50,5 @@
+ AreaState["JOYCE"]={LocationState=0};
+-AreaState["PLAZA_DUDES"]={LocationState=0};
++AreaState["PLAZA_DUDES"]={LocationState=4};
+ AreaState["PLAZA_GASTON"]={LocationState=0};
+-AreaState["SUNKEN_CAR"]={LocationState=0};
++AreaState["SUNKEN_CAR"]={LocationState=1};
+ AreaState["WATERLOCK_GATE"]={LocationState=1};
+@@ -255,2 +255,3 @@
+ AreaState["Yard Box"]={emptied=true};
++AreaState["police-motor-carriage container"]={emptied=true};
+ ShownOrbs["WHIRLING F2 ORB / locked door"]={OrbSeen=1};
