@@ -31,6 +31,15 @@
 //! announce itself - a stale answer drops slots that a search still needs, and the search then
 //! answers a menu confidently and differently.
 //!
+//! AND WHAT THE CODE MAKES OF THEM, which no content hash can see. The facts are the dialogue's,
+//! but the code decides how they are written down: an inert slot is stored by NUMBER, and the
+//! numbers come from which variables the graph counts a node as reading. A change there - a
+//! modifier's guard starting to count as a read, say - renumbers the slots under a file that
+//! still matches its dialogue, and the search then treats a live slot as inert and answers a
+//! menu confidently and wrongly. So a stored answer also carries [`DERIVATION`], and
+//! `tests/kept_facts.rs` pins a fingerprint of the facts beside it, so a change to what they
+//! hold fails a test until the number is bumped.
+//!
 //! NO HASHES, NO CACHE. An index with no header carries no hashes at all; it is the mod
 //! shipping a build intermediate, which is allowed. Nothing can be validated against it, so
 //! nothing is stored or read, and every group is worked out as it was before this existed.
@@ -41,6 +50,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::graph::LookAheadGraph;
 use crate::index::{FORMAT_VERSION, Index};
+
+/// How the facts are derived, bumped by hand whenever the code changes what a group's facts
+/// come out as - see the module documentation. `tests/kept_facts.rs` says when.
+pub const DERIVATION: u32 = 2;
 
 /// Everything a group implies that this module keeps.
 ///
@@ -61,6 +74,8 @@ pub struct GroupFacts {
 struct Stored {
     /// The index format the answer was worked out against.
     format: i32,
+    /// The [`DERIVATION`] that worked it out.
+    derivation: u32,
     /// What the group's conversations reduced to when it was stored - see [`content_of`].
     content: String,
     facts: GroupFacts,
@@ -130,6 +145,7 @@ impl FactStore {
 
         if let Some(stored) = Self::read(&at)
             && stored.format == FORMAT_VERSION
+            && stored.derivation == DERIVATION
             && stored.content == content
         {
             graph.remember_inert_slots(stored.facts.inert_slots.into_iter().collect());
@@ -146,6 +162,7 @@ impl FactStore {
             &at,
             &Stored {
                 format: FORMAT_VERSION,
+                derivation: DERIVATION,
                 content: content.to_string(),
                 facts: GroupFacts {
                     inert_slots,
@@ -227,6 +244,7 @@ mod tests {
         let stored = stored_for(&root, &[1]).expect("the answer was written");
         assert_eq!(stored.content, content_of(&index, &[1]));
         assert_eq!(stored.format, FORMAT_VERSION);
+        assert_eq!(stored.derivation, DERIVATION);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -302,27 +320,65 @@ mod tests {
         let content = content_of(&index, &[1]);
         let graph = crate::graph::LookAheadGraph::new(vec![], Default::default()).unwrap();
 
-        let invented = vec![crate::graph::settled::Candidate {
-            slot: 7,
-            written_at: Vec::new(),
-        }];
+        let invented = invented_facts();
+        write_invented(&store, &content, DERIVATION, &invented);
+
+        store.fill(&graph, &[1], &content);
+
+        assert_eq!(graph.settled_candidates(), &invented.settled);
+        assert!(graph.inert_slots().contains(&3));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An answer another derivation wrote is refused, however well its dialogue still matches.
+    ///
+    /// THE CASE THIS IS ABOUT: a change to which variables a node counts as reading renumbers
+    /// the slots, and a file written before it names live slots inert. Its conversations have
+    /// not moved, so only the derivation can tell it apart - and a search that takes it drops
+    /// a star the dialogue has.
+    #[test]
+    fn an_answer_from_another_derivation_is_refused() {
+        let (store, root) = store_at("degct-facts-derivation");
+        let index = index_holding(1, "a-hash");
+        let content = content_of(&index, &[1]);
+        let graph = crate::graph::LookAheadGraph::new(vec![], Default::default()).unwrap();
+
+        let invented = invented_facts();
+        write_invented(&store, &content, DERIVATION - 1, &invented);
+
+        store.fill(&graph, &[1], &content);
+
+        assert!(graph.settled_candidates().is_empty());
+        assert!(!graph.inert_slots().contains(&3));
+        assert_eq!(
+            stored_for(&root, &[1]).expect("rewritten").derivation,
+            DERIVATION
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Facts no empty graph could work out for itself, so one that comes back came off disk.
+    fn invented_facts() -> GroupFacts {
+        GroupFacts {
+            inert_slots: vec![3],
+            settled: vec![crate::graph::settled::Candidate {
+                slot: 7,
+                written_at: Vec::new(),
+            }],
+        }
+    }
+
+    /// Stores `facts` for group 1 as if `derivation` had worked them out.
+    fn write_invented(store: &FactStore, content: &str, derivation: u32, facts: &GroupFacts) {
         FactStore::write(
             &store.at(&[1]),
             &Stored {
                 format: FORMAT_VERSION,
-                content: content.clone(),
-                facts: GroupFacts {
-                    inert_slots: vec![3],
-                    settled: invented.clone(),
-                },
+                derivation,
+                content: content.to_string(),
+                facts: facts.clone(),
             },
         )
         .expect("the answer writes");
-
-        store.fill(&graph, &[1], &content);
-
-        assert_eq!(graph.settled_candidates(), &invented);
-        assert!(graph.inert_slots().contains(&3));
-        let _ = std::fs::remove_dir_all(&root);
     }
 }

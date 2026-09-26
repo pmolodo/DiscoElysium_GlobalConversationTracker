@@ -109,6 +109,9 @@ mod iteration_order;
 #[path = "kept_cache.rs"]
 mod kept_cache;
 
+#[path = "kept_facts.rs"]
+mod kept_facts;
+
 #[path = "kim_case_offline.rs"]
 mod kim_case_offline;
 
