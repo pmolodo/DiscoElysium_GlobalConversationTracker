@@ -5,22 +5,25 @@
 //!
 //! ## A round
 //!
-//! One backward pass from every target in play at once finds the least distance any of them
-//! has - or that none is reachable, which ends the class. It names no target, and the target
-//! is what the round claims, so the round then finds which target is that close, and which
-//! option owns it, by branch and bound: one single-target backward pass per target, in bound
-//! order, stopping as soon as a target's bound cannot beat the best distance proven this round
-//! - ties included, since a tie cannot change which distance is least - or as soon as the best
-//! IS the least distance, which nothing behind it can beat. See [`Backward::nearest`], which
-//! also says why a pooled search that meets a forward front from the menu is not used instead.
+//! One worklist pass asks whether anything in play is still reachable. Where something is,
+//! the round finds the least distance over every option and every target, and which option
+//! owns it, by branch and bound: one single-target backward pass per target, in bound order,
+//! stopping as soon as a target's bound cannot beat the best distance proven this round -
+//! ties included, since a tie cannot change which distance is least - or as soon as nothing
+//! not yet asked can beat it. See [`Backward::nearest`], which also says why a pooled search
+//! that meets a forward front from the menu is not used instead.
 //!
 //! THE LEAST DISTANCE IS WHAT STOPS A ROUND WHOSE BOUNDS ARE LOOSE. On the Wild Pines menu
 //! (de-1e58) the link bounds read 3 for 83 targets whose true distances are 4 and more, so the
 //! bound alone never stopped the walk and every one of them was asked: 100 passes and 880 ms,
-//! against 1 s per option. Knowing the least is 4, the walk stops at the first target found at
-//! 4. Finding that target by bisecting the targets with pooled passes was measured too, and was
-//! slower - a pass over half of them walks as deep as the least distance, and costs more than
-//! the single-target passes it replaces.
+//! against 1 s per option. So where a best is proven and the bound still cannot stop the walk,
+//! one backward pass from every target not yet asked that could still beat it finds the least
+//! distance any of them has, and a least no nearer than the best ends the round. It is asked ONLY there: asked at the
+//! start of every round it cost more than it saved wherever the bound already worked, up to
+//! two and a half times the diagram nodes on a menu whose walk the bound stops at once.
+//! Finding the winning target by bisecting the targets with such passes was measured too, and
+//! was slower - a pass over half of them walks as deep as the least distance, and costs more
+//! than the single-target passes it replaces.
 //!
 //! The structural choice distance, guards ignored and cut respected, drops a target no
 //! route reaches at all before the search spends anything on it.
@@ -545,6 +548,14 @@ fn worth_hunting<F: Fn(DialogueNodeId) -> SeenState>(
             .is_some_and(|reachable| reachable >= class)
 }
 
+/// The fewest targets still able to beat a round's best that are worth one pooled pass for
+/// their least distance, rather than a pass each - see [`mark_menu_blocking`].
+///
+/// BETWEEN WHAT WAS MEASURED ON EACH SIDE. A pooled pass over the 640 and more of the Wild
+/// Pines menu (de-1e58) saved some 300 ms of single-target passes; over the 4 to 8 left on
+/// 347's and 1260's synthetic menus it cost 17 and 39 ms more than asking them singly.
+const LEAST_WORTH_ASKING: usize = 16;
+
 /// Every option answered by its own baseline and nothing else, which is where both markings
 /// start.
 fn blank(contestants: &[Contestant]) -> MenuAnswer {
@@ -710,30 +721,39 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
                 failure = Some((StoppedBy::Time, false));
                 break 'classes;
             }
-            // THE LEAST DISTANCE ANY TARGET HAS, from one pass over all of them - and nothing
-            // left to claim where none is reachable. See the module documentation on a round.
             answer.passes += 1;
-            let least = match Backward::nearest(
+            let pass = Backward::reaching_any_knowing(
                 search.reborrow(),
                 &in_play,
                 &cut,
                 &pass_budget(left),
-                &known,
-                &positions,
-            ) {
-                Nearest::Found { distance, .. } => distance,
-                Nearest::Unreachable => break,
-                Nearest::Unfinished { out_of_memory } => {
-                    failure = Some((StoppedBy::Incomplete, out_of_memory));
-                    break 'classes;
+                Some(&known),
+            );
+            if pass.stats().met_at.is_none() {
+                if pass.stats().reached_fixed_point {
+                    break;
                 }
-            };
+                failure = Some((StoppedBy::Incomplete, pass.stats().out_of_memory));
+                break 'classes;
+            }
+            drop(pass);
             let mut best: Option<(usize, usize, DialogueNodeId)> = None;
+            // The least distance any target not yet asked has, once the bound has failed to stop
+            // the walk and enough targets are left to be worth asking - see below.
+            let mut least: Option<usize> = None;
+            let mut least_asked = false;
 
             // IN BOUND ORDER, one target at a time, stopping at the first whose bound cannot
             // beat the best distance proven this round - ties included, since a tie cannot
-            // change which distance is least - or as soon as the best is the least distance
-            // any target has, which nothing behind it can beat either.
+            // change which distance is least - or once nothing not yet asked can beat the best.
+            //
+            // THE LEAST DISTANCE IS ASKED ONLY WHERE THE BOUND FAILS: a best is proven, and the
+            // next target's bound is still below it. One pass over the targets not yet asked
+            // whose bounds could still beat the best then says how near the nearest of them
+            // is, and where that cannot beat the best, the walk stops. As the best falls those
+            // contenders only shrink, so their least stays a floor under what remains. A round
+            // whose bound stops it never pays for that pass, and one with fewer than
+            // [`LEAST_WORTH_ASKING`] contenders left asks them one at a time instead.
             //
             // A LEVEL AT A TIME FIRST. Link bounds are optimistic, and a guard can shut off
             // hundreds of targets a few links away; asking each costs a whole backward pass
@@ -746,10 +766,63 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
             // 5.8 s took four such passes.
             let mut level_asked = None;
             for (at, &target) in in_play.iter().enumerate() {
-                if best
-                    .is_some_and(|(nearest, _, _)| bounds[&target] >= nearest || nearest == least)
-                {
-                    break;
+                if let Some((nearest, _, _)) = best {
+                    if bounds[&target] >= nearest {
+                        break;
+                    }
+                    // ONLY WHAT COULD STILL BEAT THE BEST: a target whose bound is not below it
+                    // cannot, and in bound order those that can are the next few.
+                    let contenders: Vec<DialogueNodeId> = if least_asked {
+                        Vec::new()
+                    } else {
+                        in_play[at..]
+                            .iter()
+                            .copied()
+                            .take_while(|id| bounds[id] < nearest)
+                            .collect()
+                    };
+                    if !least_asked && contenders.len() >= LEAST_WORTH_ASKING {
+                        least_asked = true;
+                        let left = budget.wall.saturating_sub(began.elapsed());
+                        if left.is_zero() {
+                            failure = Some((StoppedBy::Time, false));
+                            break 'classes;
+                        }
+                        answer.passes += 1;
+                        least = match Backward::nearest(
+                            search.reborrow(),
+                            &contenders,
+                            &cut,
+                            &pass_budget(left),
+                            &known,
+                            &positions,
+                        ) {
+                            // EVERY CONTENDER IS AT LEAST THIS FAR, which is kept as what the
+                            // walk would have proven by asking them: a later round's bounds
+                            // are what keeps it short, and the walk is about to stop asking.
+                            Nearest::Found { distance, .. } => {
+                                for &id in &contenders {
+                                    let bound = proven.entry(id).or_insert(distance);
+                                    *bound = (*bound).max(distance);
+                                }
+                                Some(distance)
+                            }
+                            // NO CONTENDER IS REACHABLE, so nothing can beat the best.
+                            Nearest::Unreachable => break,
+                            Nearest::Unfinished { out_of_memory } => {
+                                failure = Some((StoppedBy::Incomplete, out_of_memory));
+                                break 'classes;
+                            }
+                        };
+                    } else {
+                        // TOO FEW TO BE WORTH A POOLED PASS, and contenders only shrink, so this
+                        // round asks them one at a time from here on.
+                        least_asked = true;
+                    }
+                    // A TIE NEVER REPLACES THE BEST, so a least no nearer than it ends the walk.
+                    if least.is_some_and(|least| least >= nearest) {
+                        break;
+                    }
                 }
                 let level = bounds[&target];
                 if level_asked != Some(level) {
