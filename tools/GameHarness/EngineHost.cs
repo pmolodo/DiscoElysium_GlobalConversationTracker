@@ -28,7 +28,7 @@ namespace GlobalConversationTracker.Harness
         /// <summary>What to run to build it, which is what a message says to do.</summary>
         private const string BuildCommand = "cargo build --release";
 
-        /// <summary>Where cargo leaves it.</summary>
+        /// <summary>The newest copy cargo has left, in whichever profile built it last.</summary>
         /// <exception cref="FileNotFoundException">It has not been built.</exception>
         internal static string Path
         {
@@ -37,18 +37,13 @@ namespace GlobalConversationTracker.Harness
                 string name = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
                     ? HostName + ".exe"
                     : HostName;
-                string path = System.IO.Path.Combine(
-                    GameInstall.RepoRoot(), "target", "release", name);
-
-                if (!File.Exists(path))
-                {
-                    throw new FileNotFoundException(
-                        $"The engine host is not at {path}, and it is what reads and writes "
-                        + $"this repository's formats. Build it first:\n  {BuildCommand}",
-                        path);
-                }
-
-                return path;
+                string root = GameInstall.RepoRoot();
+                return CargoBuilds.Newest(root, name)
+                    ?? throw new FileNotFoundException(
+                        $"No profile under {System.IO.Path.Combine(root, "target")} has built "
+                        + $"{name}, and it is what reads and writes this repository's formats. "
+                        + $"Build it first:\n  {BuildCommand}",
+                        name);
             }
         }
 

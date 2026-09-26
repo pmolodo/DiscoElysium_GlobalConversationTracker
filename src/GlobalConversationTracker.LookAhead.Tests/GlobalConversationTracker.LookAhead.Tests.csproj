@@ -23,4 +23,12 @@
       Include="..\GlobalConversationTracker.Engine\GlobalConversationTracker.Engine.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!--
+      How a cargo build is found, the same rule the automation uses. A source file rather than
+      a reference, because that project targets Windows and this one does not.
+    -->
+    <Compile Include="..\..\tools\GameAutomation\CargoBuilds.cs" Link="CargoBuilds.cs" />
+  </ItemGroup>
+
 </Project>

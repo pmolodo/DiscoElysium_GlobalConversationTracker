@@ -40,16 +40,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
         }
 
         /// <summary>
-        /// Cargo's copy of the engine executable, the more recently built of release and
-        /// debug, or null if neither has been built.
+        /// Cargo's copy of the engine executable, the most recently built in any profile, or
+        /// null if none has built it - see <see cref="Automation.CargoBuilds.Newest"/>.
         /// </summary>
-        /// <remarks>
-        /// NEWER rather than release-first, which is not a preference but a bug fix. A
-        /// stale release build silently shadows a fresh debug one, and the symptom is an
-        /// answer that does not contain a change made minutes ago - which reads as a bug in
-        /// the change and is not one. Whichever was built last is the one the developer
-        /// meant.
-        /// </remarks>
         internal static string? Engine
         {
             get
@@ -63,26 +56,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 string name = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
                     ? "gct-engine-host.exe"
                     : "gct-engine-host";
-
-                string? newest = null;
-                DateTime newestAt = DateTime.MinValue;
-                foreach (string profile in new[] { "release", "debug" })
-                {
-                    string candidate = Path.Combine(root, "target", profile, name);
-                    if (!File.Exists(candidate))
-                    {
-                        continue;
-                    }
-
-                    DateTime written = File.GetLastWriteTimeUtc(candidate);
-                    if (newest == null || written > newestAt)
-                    {
-                        newest = candidate;
-                        newestAt = written;
-                    }
-                }
-
-                return newest;
+                return Automation.CargoBuilds.Newest(root, name);
             }
         }
 
