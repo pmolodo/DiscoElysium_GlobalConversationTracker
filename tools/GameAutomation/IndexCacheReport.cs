@@ -11,13 +11,10 @@ namespace GlobalConversationTracker.Automation
     /// </summary>
     /// <remarks>
     /// <para>The index the mod ships is a cache of the dialogue database, checked per group
-    /// on first use. Two things about that can only be learned from a running game: whether
-    /// the check passes on an unmodified install - it must, or every launch would rebuild -
-    /// and what it COSTS, since the case for checking synchronously rests on a walk of the
-    /// live object graph being cheap and the estimate behind that was of the data rather
-    /// than of the walk.</para>
-    ///
-    /// <para>Both are in one line. This reads it.</para>
+    /// on first use. Whether that check passes on an unmodified install can only be learned
+    /// from a running game - it must, or every launch would rebuild - and the plugin says so
+    /// only where it does not: a passing check is silent, and a failing one logs the rebuild.
+    /// This reads what it opened and whether it rebuilt.</para>
     /// </remarks>
     public sealed class IndexCacheReport
     {
@@ -35,11 +32,6 @@ namespace GlobalConversationTracker.Automation
             + @"format (?<format>\d+)\.",
             RegexOptions.Compiled);
 
-        private static readonly Regex MatchedPattern = new Regex(
-            @"Look-ahead index: group (?<group>[\d,]+) matches the loaded database "
-            + @"\((?<ms>[\d,]+) ms\)\.",
-            RegexOptions.Compiled);
-
         private static readonly Regex RebuiltPattern = new Regex(
             @"Look-ahead index: rebuilt (?<count>[\d,]+) conversations",
             RegexOptions.Compiled);
@@ -48,16 +40,12 @@ namespace GlobalConversationTracker.Automation
             string? opened,
             int conversations,
             int format,
-            string? group,
-            double checkMilliseconds,
             bool rebuilt,
             string? line)
         {
             Opened = opened;
             Conversations = conversations;
             Format = format;
-            Group = group;
-            CheckMilliseconds = checkMilliseconds;
             Rebuilt = rebuilt;
             Line = line;
         }
@@ -76,21 +64,6 @@ namespace GlobalConversationTracker.Automation
         /// cannot be checked against anything.
         /// </remarks>
         public int Format { get; }
-
-        /// <summary>The group that was checked, as the plugin named it, or null.</summary>
-        public string? Group { get; }
-
-        /// <summary>
-        /// How long checking that group took, or -1 where none was checked.
-        /// </summary>
-        /// <remarks>
-        /// The number the synchronous check has to justify. A whole-database check at load
-        /// would walk 112,962 entries before the main menu draws; the argument for checking
-        /// a group instead is that six conversations cost almost nothing at a moment when
-        /// the look-ahead is about to spend far more anyway. This is what that turned out
-        /// to be.
-        /// </remarks>
-        public double CheckMilliseconds { get; }
 
         /// <summary>Whether the plugin rebuilt the index from the loaded database.</summary>
         /// <remarks>
@@ -112,7 +85,7 @@ namespace GlobalConversationTracker.Automation
         {
             if (!File.Exists(logPath))
             {
-                return new IndexCacheReport(null, -1, -1, null, -1, false, null);
+                return new IndexCacheReport(null, -1, -1, false, null);
             }
 
             // Shared read-write-delete: the game still has this open, and on Windows an
@@ -134,7 +107,6 @@ namespace GlobalConversationTracker.Automation
             }
 
             Match opened = OpenedPattern.Match(text);
-            Match matched = MatchedPattern.Match(text);
 
             string? line = null;
             foreach (string candidate in text.Split('\n'))
@@ -149,8 +121,6 @@ namespace GlobalConversationTracker.Automation
                 opened.Success ? opened.Groups["file"].Value : null,
                 opened.Success ? Number(opened.Groups["count"].Value) : -1,
                 opened.Success ? Number(opened.Groups["format"].Value) : -1,
-                matched.Success ? matched.Groups["group"].Value : null,
-                matched.Success ? Number(matched.Groups["ms"].Value) : -1,
                 RebuiltPattern.IsMatch(text),
                 line);
         }
@@ -184,10 +154,7 @@ namespace GlobalConversationTracker.Automation
                 return $"no index was opened: {Line}";
             }
 
-            string checking = CheckMilliseconds >= 0
-                ? $", {Group} checked in {CheckMilliseconds:N0} ms"
-                : ", no group checked";
-            return $"{Opened}, {Conversations} conversations, format {Format}{checking}"
+            return $"{Opened}, {Conversations} conversations, format {Format}"
                 + (Rebuilt ? ", REBUILT from the loaded database" : string.Empty);
         }
     }

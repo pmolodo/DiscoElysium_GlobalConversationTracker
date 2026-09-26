@@ -202,8 +202,6 @@ namespace GlobalConversationTracker
 
             if (disagreed == null)
             {
-                _log.Info(
-                    $"{LogPrefix} {key} matches the loaded database ({elapsed:N0} ms).");
                 return true;
             }
 

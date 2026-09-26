@@ -79,7 +79,6 @@ namespace GlobalConversationTracker
         private const float SamePixel = 0.5f;
 
         private static HookFailureLimiter? _failures;
-        private static IGlobalStateLog? _log;
 
         /// <summary>Applies the patch. Call once, from plugin load.</summary>
         /// <param name="harmony">The plugin's Harmony instance.</param>
@@ -95,9 +94,9 @@ namespace GlobalConversationTracker
                 throw new ArgumentNullException(nameof(harmony));
             }
 
-            _log = log ?? throw new ArgumentNullException(nameof(log));
             _failures = new HookFailureLimiter(
-                "shortening a check's band so its Pass / Fail line is readable", log);
+                "shortening a check's band so its Pass / Fail line is readable",
+                log ?? throw new ArgumentNullException(nameof(log)));
 
             harmony.PatchAll(typeof(MouseButtonUpdatePatch));
             harmony.PatchAll(typeof(PageSystemButtonUpdatePatch));
@@ -179,7 +178,7 @@ namespace GlobalConversationTracker
             return lineHeight > 0f ? lineHeight * (1f + LineClearance) : 0f;
         }
 
-        /// <summary>Lifts a band's bottom edge, or puts it back, saying so the first time.</summary>
+        /// <summary>Lifts a band's bottom edge, or puts it back.</summary>
         private static void Inset(RectTransform band, float inset)
         {
             Vector2 offset = band.offsetMin;
@@ -189,9 +188,6 @@ namespace GlobalConversationTracker
             }
 
             band.offsetMin = new Vector2(offset.x, inset);
-            _log?.Info(
-                $"Check band inset: {offset.y:0.##} -> {inset:0.##} on '{band.parent?.name}', "
-                + $"whose rect is {band.rect.width:0.##} x {band.rect.height:0.##}.");
         }
 
         /// <summary>The rect of the child that paints the band, or null if it has moved.</summary>

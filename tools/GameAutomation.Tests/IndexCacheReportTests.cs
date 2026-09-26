@@ -9,20 +9,19 @@ namespace GlobalConversationTracker.Automation.Tests
     /// </summary>
     /// <remarks>
     /// No game needed, for the reason <see cref="NativeEngineReportTests"/> gives. What
-    /// cannot be checked here is what the numbers turn out to be, which is the whole point
+    /// cannot be checked here is whether a real launch rebuilds, which is the whole point
     /// of asking a running game.
     /// </remarks>
     public class IndexCacheReportTests
     {
         /// <summary>A launch where the shipped index turned out to be right.</summary>
+        /// <remarks>A check that passes says nothing, so this is the opening line alone.</remarks>
         private const string Matching =
             "[Message:GlobalConversationTracker] Look-ahead index: opened "
-            + "GlobalConversationTracker.Index.jsonl, 1501 conversations, format 1.\n"
-            + "[Message:GlobalConversationTracker] Look-ahead index: group "
-            + "631,632,635,636,637,1249 matches the loaded database (43 ms).\n";
+            + "GlobalConversationTracker.Index.jsonl, 1501 conversations, format 1.\n";
 
         [Fact]
-        public void AMatchingIndexReportsWhatItOpenedAndWhatTheCheckCost()
+        public void AMatchingIndexReportsWhatItOpenedAndNoRebuild()
         {
             IndexCacheReport report = IndexCacheReport.FromText(Matching);
 
@@ -30,8 +29,6 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.Equal("GlobalConversationTracker.Index.jsonl", report.Opened);
             Assert.Equal(1501, report.Conversations);
             Assert.Equal(1, report.Format);
-            Assert.Equal("631,632,635,636,637,1249", report.Group);
-            Assert.Equal(43, report.CheckMilliseconds);
             Assert.False(report.Rebuilt);
         }
 
@@ -72,7 +69,6 @@ namespace GlobalConversationTracker.Automation.Tests
                 + "GlobalConversationTracker.Index.jsonl, 1501 conversations, format 0.\n");
 
             Assert.Equal(0, report.Format);
-            Assert.Equal(-1, report.CheckMilliseconds);
         }
 
         /// <summary>A log that never mentions the index says so.</summary>
