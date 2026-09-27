@@ -393,5 +393,24 @@ class EveryPassSettlesOnItsOwn(unittest.TestCase):
         self.assertEqual((first, second), (3, 3))
 
 
+class LaterPassesAskOnlyWhatBuiltAProfile(unittest.TestCase):
+    """A group the first pass built no profile in is not asked again by the passes after it."""
+
+    def test_a_group_with_no_row_is_dropped_and_the_order_kept(self):
+        with TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            write_run(folder, {368: {"menu_ms": 90, "nodes": 100}, 16: {"menu_ms": 40, "nodes": 100}})
+            self.assertEqual(menus.with_a_profile([368, 1150, 16, 7], folder), [368, 16])
+
+    def test_a_crash_or_a_retry_stays_in(self):
+        """Neither is a group with nothing to answer; each is one that did not answer this time."""
+        with TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            write_run(folder, {631: {"menu_ms": menus.RETRY, "nodes": 0}})
+            with (folder / menus.Run.ROWS).open("a", newline="") as handle:
+                handle.write(f"761{TAB}{menus.CRASHED}\n")
+            self.assertEqual(menus.with_a_profile(["631", "761", "1150"], folder), ["631", "761"])
+
+
 if __name__ == "__main__":
     unittest.main()

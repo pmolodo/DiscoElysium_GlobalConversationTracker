@@ -100,6 +100,8 @@ WHAT A RUN STILL MEETS is a group it cannot build its profile in: that depends o
 walks into and how many of the deepest entries it was told to treat as unread, so it is a
 finding rather than a fact. The measurement says so on stderr and writes no row. 130 of the 429
 under the current default. A run therefore holds only rows that are measurements. See de-ealo.
+Only an arm's FIRST pass asks such a group; the passes after it ask what it built a profile in -
+see `with_a_profile`.
 """
 
 import argparse
@@ -178,8 +180,23 @@ def driver_arguments(marking, driver):
     return [*(["--marking", marking] if marking else []), *driver]
 
 
+def rows_in(path):
+    """Every row of a run's rows file, by conversation - of any kind, NOT-MEASURED included."""
+    if not path.exists():
+        return {}
+    found = {}
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines()[1:]:
+        cells = line.split(TAB)
+        if len(cells) < 2 or not cells[0].isdigit():
+            continue
+        found[int(cells[0])] = cells
+    return found
+
+
 class Run:
     """One folder of rows, and what has already been written into it."""
+
+    ROWS = "menus.tsv"
 
     def __init__(self, out, menus, digest, marking=None, driver=()):
         # HELD RATHER THAN REBUILT where it is needed, so every group in a run is measured under
@@ -187,7 +204,7 @@ class Run:
         self.asked = driver_arguments(marking, driver)
         self.folder = Path(out)
         self.folder.mkdir(parents=True, exist_ok=True)
-        self.rows = self.folder / "menus.tsv"
+        self.rows = self.folder / self.ROWS
         self.log = self.folder / "menus.log"
         # THE BINARY IS HANDED IN, BUILT ONCE FOR THE WHOLE PASS, AND CHECKED HERE. Building
         # once makes the runs agree only as far as this process is concerned; anything else on
@@ -213,17 +230,7 @@ class Run:
         budget and nothing about the menu was learned. Every other row is an answer, a crash
         included.
         """
-        if not self.rows.exists():
-            return {}
-        finished = {}
-        for line in self.rows.read_text(encoding="utf-8", errors="replace").splitlines()[1:]:
-            cells = line.split(TAB)
-            if len(cells) < 2 or not cells[0].isdigit():
-                continue
-            if RETRY in cells:
-                continue
-            finished[int(cells[0])] = cells
-        return finished
+        return {conversation: cells for conversation, cells in rows_in(self.rows).items() if RETRY not in cells}
 
     def header(self):
         """Writes the column names, asked of the measurement rather than written here."""
@@ -351,14 +358,18 @@ def cost_of(rows):
     cells = rows.strip().split(TAB)
     if len(cells) < 2:
         # NO ROW AT ALL is what a group with no menu leaves: it is not a measurement, so it is
-        # not written as one, and the next run will not ask about it - see `Run.groups`.
+        # not written as one, and the next pass of this arm will not ask about it - see
+        # `with_a_profile`.
         return "nothing to measure"
     verdict = cells[MENU_MS_COLUMN] if len(cells) > MENU_MS_COLUMN else ""
     return f"{verdict} ms" if verdict.isdigit() else verdict
 
 
 def measure(out, conversations, workers, settle, menus, digest, groups, marking, driver, prefix=""):
-    """Measures one run into `out`; `prefix` leads every progress line - see `progress_line`."""
+    """Measures one run into `out`, and returns the groups it was asked, in order.
+
+    `prefix` leads every progress line - see `progress_line`.
+    """
     run = Run(out, menus, digest, marking, driver)
     run.header()
 
@@ -374,7 +385,7 @@ def measure(out, conversations, workers, settle, menus, digest, groups, marking,
 
     if not todo:
         print("nothing to do.")
-        return 0
+        return conversations
 
     if workers <= 1:
         print(f"{len(todo)} group(s), one at a time -> {run.rows}")
@@ -431,7 +442,7 @@ def measure(out, conversations, workers, settle, menus, digest, groups, marking,
     print(common.load_line(found))
     if run.log.exists():
         print(f"what the groups said on stderr is in {run.log}")
-    return 0
+    return conversations
 
 
 # Where each of several runs is written, under the folder the runs share.
@@ -602,7 +613,7 @@ def cold_line(cold, totals):
     """
     if cold is None:
         return "cold run: not taken"
-    rows = read_rows(cold / "menus.tsv")
+    rows = read_rows(cold / Run.ROWS)
     total = sum(int(row[MENU_MS]) for row in rows.values() if row.get(MENU_MS, "").isdigit())
     if not totals or not total:
         return f"cold run (discarded): {total:,} ms"
@@ -646,7 +657,7 @@ def combine(folders, out, cold=None):
     A group any run did not measure - CRASHED, NO-MENU, NOT-MEASURED - is combined on its
     verdicts rather than a cost, since there is no cost to take the median of.
     """
-    runs = [read_rows(folder / "menus.tsv") for folder in folders]
+    runs = [read_rows(folder / Run.ROWS) for folder in folders]
     conversations = sorted(set().union(*runs))
 
     lines = [TAB.join(COMBINED_COLUMNS)]
@@ -759,13 +770,18 @@ def measure_arm(out, named, workers, settle, menus, digest, groups, args, driver
 
     EVERY PASS IS COUNTED IN ITS PROGRESS LINES, the cold one first: a pass is a pass of waiting
     whether or not its rows are combined, so `[Run 1/4]` is the cold run of three.
+
+    ONLY THE FIRST PASS ASKS THE GROUPS THAT MAY BUILD NO PROFILE - see `with_a_profile`.
     """
     kind = common.run_kind(args.kind)
     passes = args.runs + (1 if takes_cold_run(kind) else 0)
+    asked = named
 
     def measure_pass(folder, number):
+        nonlocal asked
         where = f"{prefix}[Run {number}/{passes}]"
-        measure(folder, named, workers, settle, menus, digest, groups, args.marking, driver, where)
+        order = measure(folder, asked, workers, settle, menus, digest, groups, args.marking, driver, where)
+        asked = with_a_profile(order, folder)
 
     cold = None
     if takes_cold_run(kind):
@@ -782,6 +798,26 @@ def measure_arm(out, named, workers, settle, menus, digest, groups, args, driver
         measure_pass(folder, passes - args.runs + number)
         folders.append(folder)
     combine(folders, out, cold=cold)
+
+
+def with_a_profile(conversations, folder):
+    """Those of `conversations` that left a row in `folder`, in order: what a later pass asks.
+
+    A GROUP THAT BUILT NO PROFILE LEAVES NO ROW, and it will build none in the next pass either:
+    whether it can is decided by the dialogue, the world and the arm's question, and a pass of
+    the same arm changes none of the three. So asking it again costs a process launch and a world
+    build per group, every pass, to learn what the first pass already said - over a quarter of a
+    whole-game pass's groups, under the default arm.
+
+    ANY ROW KEEPS A GROUP IN, a crash or a NOT-MEASURED included: those were asked a question they
+    could not answer that time, which is not the same as having none to answer.
+
+    NOT KEPT PAST THE ARM, which is why it is narrowed here rather than in `Run.groups`: the same
+    group can refuse one arm's profile and build another's, so the finding belongs to this run
+    of passes and to nothing on disk. See `crates/gct-measure/examples/group_list.rs`.
+    """
+    rowed = rows_in(Path(folder) / Run.ROWS)
+    return [conversation for conversation in conversations if int(conversation) in rowed]
 
 
 # What an arm may be called: a plain word, since it becomes part of a folder name.
