@@ -72,7 +72,7 @@ powershell -NoProfile -Command "
 
 # SAID AFTERWARDS RATHER THAN ASSUMED. A run that was killed mid-group has lost that group and
 # nothing else: rows are appended as they finish, so everything before it is in the TSV and
-# the identical command resumes into the same folder.
+# the same command with --resume continues it in the same folder.
 echo
-echo "rows already finished are in the run's folder; re-running the same command with the"
-echo "same MENUS_OUT picks up where this stopped."
+echo "rows already finished are in the run's folder; re-running the same command with"
+echo "--resume added picks up where this stopped."

@@ -13,7 +13,7 @@ Usage:
 
 Examples:
     tools/measure-menus.py 368 631      # just these two
-    tools/measure-menus.py all          # every group in the game, resumably
+    tools/measure-menus.py all          # every group in the game, into a folder of its own
     tools/measure-menus.py --workers 1 all   # every group one at a time
     tools/measure-menus.py --runs 3 --out base all \
         --arm shipped-defaults --arm first-link --menu first --targets link-deepest
@@ -45,14 +45,15 @@ NOT-MEASURED group resets the count, since it is evidence that something did not
 rather than that measuring got cheap. A NO-MENU group neither counts nor resets: no start of it
 had anything worth hunting, which says nothing about what the next menu costs.
 
-RESUMING. Rows are written as they finish, and pointing a later run at the same folder makes
-it skip the groups already there:
+RESUMING. Rows are written as they finish, and `--resume` continues an interrupted run, skipping
+the groups already there:
 
-    tools/measure-menus.py --out performance/logs/2026-09-09/menus all
+    tools/measure-menus.py --resume --out base all
 
-The same command is the start and the resume; there is no separate mode to remember. A resumed
-group still counts towards settling, by the row it left, so a resume switches where the
-original run would have. Without `--out` each run gets its own folder and resumes nothing.
+It is always asked for: without it every run gets a folder of its own - a label is a suffix on
+this run's own name, and a path that already holds a run is refused. With it, a label continues
+the most recent folder carrying it. A resumed group still counts towards settling, by the row it
+left, so a resume switches where the original run would have.
 
 SEVERAL RUNS. `--runs N` takes N runs of the same groups back to back, each in run-1 ... run-N
 under the one folder, because a single run's milliseconds are a reading of the machine as much
@@ -921,9 +922,18 @@ def get_parser():
         default="",
         metavar="PATH|LABEL",
         help=(
-            "where the rows go, and THAT is the resume: run the same command again and every "
-            "group already there is skipped. A path is taken literally; a plain word is a "
-            "LABEL, carried as a suffix on the name the run would have had anyway"
+            "where the rows go. A path is taken literally, and refused if it already holds a "
+            "run; a plain word is a LABEL, carried as a suffix on the name the run would have "
+            "had anyway"
+        ),
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "continue the run --out names instead of starting a new one, skipping every group "
+            "already there: a label continues the most recent folder carrying it. Refused where "
+            "there is no such run"
         ),
     )
     parser.add_argument(
@@ -992,11 +1002,11 @@ def main(argv=None):
     if named != ["all"]:
         named = [int(c) for c in named]
 
-    # NAMED, LABELLED, OR A FOLDER OF ITS OWN. A path is taken literally and resumes what is
-    # there; a plain word is a LABEL, which says what the run was for and is carried as a suffix
-    # on the name every log here has - see `common.folder_for`. A run told nothing gets a fresh
-    # folder and resumes nothing, which is the safe default: a resume into a folder taken
-    # against different settings would mix two measurements.
+    # NAMED, LABELLED, OR A FOLDER OF ITS OWN. A path is taken literally; a plain word is a
+    # LABEL, which says what the run was for and is carried as a suffix on the name every log
+    # here has - see `common.folder_for`. Only --resume continues a folder that is already there.
+    if args.resume and not args.out:
+        refuse(f"--resume needs {OUT_OPTION}, to say which run to continue")
     #
     # THE KIND PLACES IT, transcript and rows alike: a dataset derived by this tool is filed
     # with the datasets rather than among the timings.
@@ -1008,7 +1018,7 @@ def main(argv=None):
     def folder_of(arm):
         label = "-".join(part for part in (args.out, arm) if part)
         if label:
-            return common.folder_for(label, TOOL, VERB, OUT_OPTION, kind)
+            return common.folder_for(label, TOOL, VERB, OUT_OPTION, kind, resume=args.resume)
         return common.run_folder(TOOL, VERB, OUT_OPTION, kind)
 
     outs = [folder_of(name) for name, _ in arms]
@@ -1070,7 +1080,7 @@ def main(argv=None):
                 print(f"\nDefender's report, over every arm -> {recording.stop()}")
         return 0
     except KeyboardInterrupt:
-        print("\ninterrupted; what finished is on disk and a re-run resumes it")
+        print("\ninterrupted; what finished is on disk and the same command with --resume continues it")
         return 130
 
 

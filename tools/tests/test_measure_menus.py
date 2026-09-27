@@ -10,12 +10,14 @@ suites' job, and a Python test that shelled out to a real pass would be a slow, 
 one.
 """
 
+import os
 import unittest
 
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 from drivers import load
 
@@ -410,6 +412,38 @@ class LaterPassesAskOnlyWhatBuiltAProfile(unittest.TestCase):
             with (folder / menus.Run.ROWS).open("a", newline="") as handle:
                 handle.write(f"761{TAB}{menus.CRASHED}\n")
             self.assertEqual(menus.with_a_profile(["631", "761", "1150"], folder), ["631", "761"])
+
+
+class ResumingIsAskedFor(unittest.TestCase):
+    """A run continues an existing folder only when told to, and is refused when told to without one."""
+
+    def folder_for(self, value, resume):
+        return menus.common.folder_for(value, "measure-menus", "menus", "--out", "testing", resume=resume)
+
+    def test_a_path_holding_a_run_is_refused_without_resume(self):
+        with TemporaryDirectory() as scratch:
+            (Path(scratch) / menus.common.RUN_RECORD).write_text("{}", encoding="utf-8")
+            with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+                self.folder_for(scratch, resume=False)
+            self.assertEqual(self.folder_for(scratch, resume=True), Path(scratch))
+
+    def test_resuming_a_path_with_no_run_is_refused(self):
+        with TemporaryDirectory() as scratch:
+            with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+                self.folder_for(scratch, resume=True)
+            self.assertEqual(self.folder_for(scratch, resume=False), Path(scratch))
+
+    def test_a_label_without_resume_is_this_runs_own_name(self):
+        """Even where an older folder carries the label, the rows take this run's transcript name."""
+        with TemporaryDirectory() as scratch:
+            transcript = Path(scratch) / "2026-09-27_10,34,34_abc_measure-menus_menus.txt"
+            with mock.patch.dict(os.environ, {"DEGCT_RUN_LOG": str(transcript)}):
+                found = self.folder_for("dwhole", resume=False)
+            self.assertEqual(found.name, "2026-09-27_10,34,34_abc_measure-menus_menus__dwhole")
+
+    def test_resuming_a_label_no_folder_carries_is_refused(self):
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+            self.folder_for("no-folder-carries-this-label", resume=True)
 
 
 if __name__ == "__main__":

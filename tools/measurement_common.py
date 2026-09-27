@@ -359,13 +359,12 @@ def in_tree(folder, kind):
     return folder
 
 
-def folder_for(value, tool, verb, out_option, kind):
+def folder_for(value, tool, verb, out_option, kind, resume=False):
     """Where a driver told `value` should write: a path as given, or a label's folder.
 
     ## Two things one variable can be
 
-    A PATH is taken literally, which is what it always was: `--out /tmp/rows` writes
-    there and resumes there.
+    A PATH is taken literally: `--out /tmp/rows` writes there.
 
     A LABEL - one plain word, no separators - names the run instead of placing it, and is a
     SUFFIX on the name the run would have had anyway:
@@ -385,16 +384,23 @@ def folder_for(value, tool, verb, out_option, kind):
     either - and it would give it up for the runs most worth pairing, since a run worth
     labelling is a run somebody meant to come back to. As a suffix both hold at once.
 
-    ## Resuming a label
+    ## Resuming is asked for, never inferred
 
-    A label reuses the MOST RECENT folder carrying it, which is how resuming a path already
-    behaves: point at the same thing and it continues. A label used for the first time gets a
-    new folder. The settings check still refuses a resume whose measurement differs, so reusing
-    a label across a change is caught rather than silently mixed.
+    WITHOUT `resume`, EVERY RUN IS A NEW FOLDER. A label gets the name this run would have had
+    anyway, so the rows carry their own transcript's name; a path that already holds a run is
+    refused rather than written into. Reusing a label is the ordinary way to take the same
+    measurement again, and a run that quietly continued an older folder instead would file its
+    rows under another run's name - an attempt that failed before measuring anything included.
 
-    EVERY TREE IS SEARCHED, not the one this run's kind names, because the kind says what a run
-    measures and a resume is the same measurement continuing - a folder must not be missed, and
-    a second one started beside it, over an argument about what to call the run.
+    WITH `resume`, a label continues the MOST RECENT folder carrying it and a path continues the
+    run it holds; either is refused where there is no run to continue, since asking to resume
+    something that is not there is a mistake about the name. The settings check still refuses a
+    resume whose measurement differs - see `write_run_record`.
+
+    EVERY TREE IS SEARCHED for a label's folder, not the one this run's kind names, because the
+    kind says what a run measures and a resume is the same measurement continuing - a folder
+    must not be missed, and a second one started beside it, over an argument about what to call
+    the run.
 
     THE NAME KEEPS THE FIRST REVISION, AND THAT IS A KNOWN COST. A resumed folder is named for
     the invocation that made it, so rows added later can have been measured at another commit
@@ -404,13 +410,26 @@ def folder_for(value, tool, verb, out_option, kind):
     so on stderr when it happens, and each invocation's own code is recorded under `resumed`.
     """
     if not is_label(value):
-        return Path(value)
+        folder = Path(value)
+        holds_a_run = (folder / RUN_RECORD).exists()
+        if resume and not holds_a_run:
+            refuse(f"{folder}: nothing to resume - no {RUN_RECORD} there")
+        if holds_a_run and not resume:
+            refuse(f"{folder} already holds a run; pass --resume to continue it, or name another folder")
+        return folder
 
-    existing = sorted(
-        (path for tree in KINDS for path in (ROOT / tree / LOGS).glob(f"*/*{LABEL_SEPARATOR}{value}") if path.is_dir()),
-        key=lambda path: path.stat().st_mtime,
-    )
-    if existing:
+    if resume:
+        existing = sorted(
+            (
+                path
+                for tree in KINDS
+                for path in (ROOT / tree / LOGS).glob(f"*/*{LABEL_SEPARATOR}{value}")
+                if path.is_dir()
+            ),
+            key=lambda path: path.stat().st_mtime,
+        )
+        if not existing:
+            refuse(f"{out_option} {value}: nothing to resume - no folder carries that label")
         return existing[-1]
     base = run_folder(tool, verb, out_option, kind)
     return base.with_name(base.name + LABEL_SEPARATOR + value)
