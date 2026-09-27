@@ -516,6 +516,30 @@ impl<'a> GuardCompiler<'a> {
         compiled
     }
 
+    /// Whether a check whose failure is recorded may be offered again somewhere in `states` -
+    /// the one answer to "is a failed check still closed?" for everything outside the searches.
+    ///
+    /// THE SEARCHES ASK [`Self::reopening_for`] AT EVERY STEP, and anything that decides a
+    /// failed check's fate before them - the trim cutting what lies behind it, the bridge
+    /// setting a menu's option apart as locked - has to agree with them, or a check the search
+    /// walks through is cut off or kept out of the contest. So they ask this, rather than
+    /// reading the failure flag alone.
+    ///
+    /// No reopening at all is never offered again. A manager with no room says it may, which
+    /// keeps a check open: closing one is what has to be shown.
+    pub fn failed_check_may_reopen(
+        &mut self,
+        node: &crate::graph::node::LookAheadNode,
+        states: &BDDFunction,
+    ) -> bool {
+        let Some(reopening) = &node.reopening else {
+            return false;
+        };
+        self.reopening_for(node.id, reopening)
+            .and(states)
+            .map_or(true, |held| held.satisfiable())
+    }
+
     /// Where `difficulty` plus the bonuses of the modifiers that hold is below the target the
     /// check was failed against - the game's rule, asked exactly.
     ///

@@ -820,6 +820,15 @@
               "options": [
                 { "entry": 960, "marker": "orange", "why": "its reality hub offers 545, the Esprit de Corps check the save failed at 15 against 13, which three -1 modifiers the save holds bring to 12 and so reopen - and past its pass lie 636:6 and 636:72, read in no save" }
               ]
+            },
+            {
+              "what": "the menu after 960, 'I've got some more questions about *reality*.'",
+              "inputs": ["6"],
+              "options": [
+                { "entry": 570, "marker": "none", "why": "it reaches the unread lines only by going back to the reality hub and passing 545, which leads there directly - so 545, not 570, is where they are" },
+                { "entry": 998, "marker": "none", "why": "the same: its only way to unread text is back through the hub and 545" },
+                { "entry": 31, "marker": "none", "why": "the same: its only way to unread text is back through the hub and 545" }
+              ]
             }
           ],
           "markers": "named",

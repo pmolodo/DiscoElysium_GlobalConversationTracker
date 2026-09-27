@@ -1782,14 +1782,21 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> SeenState>(
             &[StartBranch::Either]
         };
         // A LOCKED OPTION IS ONE CLOSED WHEN THE SEARCH STARTS FOR A REASON THE PLAYER COULD
-        // LIFT: a check whose failure slot is already set - the save failed it and the game
-        // will not offer it again - a price the purse cannot cover, or, for a red check's Pass
-        // half alone, a thought that forces every red roll to fail. A locked half is searched
-        // from a world with its locks lifted, so it can be answered as if it were open; the
-        // locks stay in the ordinary world, so nothing else can route through it.
+        // LIFT: a check whose failure slot is already set and whose modifiers do not reopen it
+        // - the save failed it and the game will not offer it again - a price the purse cannot
+        // cover, or, for a red check's Pass half alone, a thought that forces every red roll to
+        // fail. A locked half is searched from a world with its locks lifted, so it can be
+        // answered as if it were open; the locks stay in the ordinary world, so nothing else can
+        // route through it.
+        //
+        // A FAILED CHECK ITS MODIFIERS REOPEN IS NOT LOCKED, by the rule the searches walk it
+        // by - see `GuardCompiler::failed_check_may_reopen`. Set apart as locked, it would sit
+        // out the menu's rounds while its siblings looped back through it to claim, at a
+        // distance, what it leads to directly.
         let failed_check = (node.is_rolled()
             && node.failed_flag_slot >= 0
-            && started.is_set(node.failed_flag_slot as usize))
+            && started.is_set(node.failed_flag_slot as usize)
+            && !compiler.failed_check_may_reopen(node, seed))
         .then(|| graph.symbols().name_of(node.failed_flag_slot as usize))
         .flatten()
         .map(Lock::FailedCheck);
@@ -2329,6 +2336,100 @@ mod branch_wire_tests {
             StartBranch::Pass => Some("pass".to_string()),
             StartBranch::Fail => Some("fail".to_string()),
         }
+    }
+
+    /// A failed white check its modifiers reopen competes with its siblings, and wins by
+    /// distance what it leads to directly.
+    ///
+    /// ```text
+    ///   0   the hub, offering 1 and 2
+    ///   1   an option that only leads back to the hub
+    ///   2   a white check the save failed at 15 against 13, with three -1 modifiers
+    ///   3   past 2's pass, and on to 10, which no save has read
+    /// ```
+    ///
+    /// All three modifiers holding bring 2 to 12, below 13, so the game offers it again. 1 can
+    /// reach 10 only by going back to the hub and through 2, a choice further than 2's pass
+    /// reaches it - so the star is 2's. Were 2 set apart as locked, it would sit out the round
+    /// and 1 would claim 10 through it. With one modifier not holding, 2 is still failed: it is
+    /// locked and answered as if opened, and 1 reaches nothing through it.
+    #[test]
+    fn a_failed_check_its_modifiers_reopen_wins_what_it_leads_to() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1, 2]))
+            .add(Entry::new(1).player().links(&[0]))
+            .add(
+                Entry::new(2)
+                    .player()
+                    .kind(DialogueCheckKind::White)
+                    .flag("wc")
+                    .field("variable1", r#"Variable["one"]"#)
+                    .field("modifier1", "-1")
+                    .field("variable2", r#"Variable["two"]"#)
+                    .field("modifier2", "-1")
+                    .field("variable3", r#"Variable["three"]"#)
+                    .field("modifier3", "-1")
+                    .links(&[3, 4]),
+            )
+            .add(
+                Entry::new(3)
+                    .guard(r#"Variable["wc"] == true"#)
+                    .links(&[10]),
+            )
+            .add(Entry::new(4).guard(r#"Variable["wc"] == false"#))
+            .add(Entry::new(10))
+            .build();
+        let world = |third: bool| {
+            GameWorld::blank()
+                .set_variable("wc_failed", GuardValue::from_boolean(true))
+                .set_variable("one", GuardValue::from_boolean(true))
+                .set_variable("two", GuardValue::from_boolean(true))
+                .set_variable("three", GuardValue::from_boolean(third))
+                .with_failed_white_check(FailedWhiteCheck {
+                    flag: "wc".to_string(),
+                    difficulty: 15,
+                    last_target: 13,
+                })
+        };
+        let seen_state = |id: DialogueNodeId| {
+            if id == node(10) {
+                SeenState::UnseenAnyGame
+            } else {
+                SeenState::SeenThisGame
+            }
+        };
+        let unread = SeenState::UnseenAnyGame as i32;
+        let answer_of = |answers: &[LookAheadAnswer], start: i32, branch: StartBranch| {
+            answers
+                .iter()
+                .find(|answer| {
+                    answer.start == NodeRef::from(node(start))
+                        && answer.branch == branch_name(branch)
+                })
+                .expect("every outcome of every start comes back")
+                .clone()
+        };
+
+        let reopened = answer_menu(&graph, &world(true), &[node(1), node(2)], seen_state);
+        let pass = answer_of(&reopened, 2, StartBranch::Pass);
+        assert_eq!(pass.best, unread, "2's pass leads straight on to 10");
+        assert_ne!(
+            answer_of(&reopened, 1, StartBranch::Either).best,
+            unread,
+            "1 reaches 10 only back through 2, which is further"
+        );
+
+        let still_failed = answer_menu(&graph, &world(false), &[node(1), node(2)], seen_state);
+        assert_eq!(
+            answer_of(&still_failed, 2, StartBranch::Pass).best,
+            unread,
+            "a locked check is answered as if opened"
+        );
+        assert_ne!(
+            answer_of(&still_failed, 1, StartBranch::Either).best,
+            unread,
+            "nothing routes through a check that stays failed"
+        );
     }
 
     /// A check whose outcomes land on different rungs, both below the top one.

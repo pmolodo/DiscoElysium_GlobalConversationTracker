@@ -189,9 +189,10 @@ fn walk(
 ///
 /// EXCEPT A FAILED WHITE CHECK THAT CAN REOPEN. The game offers one again once its modifiers
 /// bring it below the target it was failed against, and the searches walk it wherever that may
-/// hold - see [`GuardCompiler::reopening_for`]. So a failure is closed for good only where the
-/// same rule cannot hold under `pins`; closing it anywhere else cuts off everything behind a
-/// check the search would have walked, and the menus before it lose the stars the check leads to.
+/// hold - see [`GuardCompiler::failed_check_may_reopen`]. So a failure is closed for good only
+/// where the same rule cannot hold under `pins`; closing it anywhere else cuts off everything
+/// behind a check the search would have walked, and the menus before it lose the stars the check
+/// leads to.
 fn recorded_for_good(
     compiler: &mut GuardCompiler<'_>,
     entry: &crate::graph::node::LookAheadNode,
@@ -201,25 +202,8 @@ fn recorded_for_good(
         return false;
     }
     pins.set_for_good(entry.flag_slot)
-        || (pins.set_for_good(entry.failed_flag_slot) && !may_reopen(compiler, entry, &pins.set))
-}
-
-/// Whether a failed check can be offered again anywhere `pins` allows.
-///
-/// A manager with no room says it may, which closes nothing: the trim only ever removes what
-/// it has shown cannot be walked.
-fn may_reopen(
-    compiler: &mut GuardCompiler<'_>,
-    entry: &crate::graph::node::LookAheadNode,
-    pins: &BDDFunction,
-) -> bool {
-    let Some(reopening) = &entry.reopening else {
-        return false;
-    };
-    compiler
-        .reopening_for(entry.id, reopening)
-        .and(pins)
-        .map_or(true, |held| held.satisfiable())
+        || (pins.set_for_good(entry.failed_flag_slot)
+            && !compiler.failed_check_may_reopen(entry, &pins.set))
 }
 
 /// Every slot no entry of `writers` can change, held at its starting value, as one set.
