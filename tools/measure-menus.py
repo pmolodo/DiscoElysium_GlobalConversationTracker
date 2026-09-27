@@ -15,6 +15,11 @@ Examples:
     tools/measure-menus.py 368 631      # just these two
     tools/measure-menus.py all          # every group in the game, resumably
     tools/measure-menus.py --workers 1 all   # every group one at a time
+    tools/measure-menus.py --runs 3 --out base all \
+        --arm shipped-defaults --arm first-link --menu first --targets link-deepest
+                                        # two arms, one build, a folder each: base-shipped-defaults
+                                        # and base-first-link; lines read [Arm 1/2][Run 1/4][Conv ...]
+                                        # everything after the first --arm is the arms'
 
 ONE PROCESS PER GROUP for the reason the other drivers give: a group can take its process
 down - conversation 28's deepest entries overflow the stack inside a recursive diagram
@@ -98,6 +103,7 @@ under the current default. A run therefore holds only rows that are measurements
 """
 
 import argparse
+import re
 import shlex
 import statistics
 import sys
@@ -350,7 +356,8 @@ def cost_of(rows):
     return f"{verdict} ms" if verdict.isdigit() else verdict
 
 
-def measure(out, conversations, workers, settle, menus, digest, groups, marking, driver):
+def measure(out, conversations, workers, settle, menus, digest, groups, marking, driver, prefix=""):
+    """Measures one run into `out`; `prefix` leads every progress line - see `progress_line`."""
     run = Run(out, menus, digest, marking, driver)
     run.header()
 
@@ -383,7 +390,14 @@ def measure(out, conversations, workers, settle, menus, digest, groups, marking,
         if rows.strip():
             run.append(rows)
         state["done"] += 1
-        line = progress_line(state["done"], len(todo), f"conversation {conversation}", note=cost_of(rows))
+        line = progress_line(
+            state["done"],
+            len(todo),
+            f"conversation {conversation}",
+            note=cost_of(rows),
+            prefix=prefix,
+            unit="Conv",
+        )
         print(line)
         # THE SAME LINE INTO THIS RUN'S OWN LOG. A multi-run pass interleaves every run into
         # the driver's log, so "how far into THIS run" is answerable there only by scrolling
@@ -710,6 +724,89 @@ def record_run(out, workers, settle, runs, named, kind, marking, driver):
     )
 
 
+def measure_arm(out, named, workers, settle, menus, digest, groups, args, driver, prefix):
+    """Every run of one arm into `out`, the cold one first, and their combination.
+
+    THE COLD RUN IS FIRST AND IS NOT COMBINED, and a run measuring anything but timing does not
+    take one at all. See COLD_FOLDER and `takes_cold_run`.
+
+    EVERY PASS IS COUNTED IN ITS PROGRESS LINES, the cold one first: a pass is a pass of waiting
+    whether or not its rows are combined, so `[Run 1/4]` is the cold run of three.
+    """
+    kind = common.run_kind(args.kind)
+    passes = args.runs + (1 if takes_cold_run(kind) else 0)
+
+    def measure_pass(folder, number):
+        where = f"{prefix}[Run {number}/{passes}]"
+        measure(folder, named, workers, settle, menus, digest, groups, args.marking, driver, where)
+
+    cold = None
+    if takes_cold_run(kind):
+        cold = out / COLD_FOLDER
+        print(f"\n=== cold run (discarded from the combination) -> {cold} ===")
+        measure_pass(cold, 1)
+    else:
+        print(f"\n=== {kind}: no cold run, its columns do not time ===")
+
+    folders = []
+    for number in range(1, args.runs + 1):
+        folder = out / RUN_FOLDER.format(number)
+        print(f"\n=== run {number} of {args.runs} -> {folder} ===")
+        measure_pass(folder, passes - args.runs + number)
+        folders.append(folder)
+    combine(folders, out, cold=cold)
+
+
+# What an arm may be called: a plain word, since it becomes part of a folder name.
+ARM_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
+
+
+# Where the arms begin on a command line, and what separates one from the next.
+ARM_OPTION = "--arm"
+
+
+def split_arms(argv):
+    """This tool's own arguments, and the arms after them as (name, driver arguments).
+
+    AN ARM IS EVERYTHING FROM ONE `--arm` TO THE NEXT: its name, then its driver's arguments as
+    plain words - `--arm first-link --menu first --targets link-deepest`. Nothing is quoted, so
+    nothing has to survive a shell's quoting or a second one's, which is where a string of
+    arguments inside one argument goes wrong. It also means the arms come LAST: everything
+    before the first `--arm` is this tool's, and nothing after it is.
+
+    One arm of no name and no arguments is what a command line with no `--arm` measures, so
+    every run - one arm or several - goes through the same loop.
+
+    ## Taken off the end, by argparse, one arm at a time
+
+    ARGPARSE READS THE `--arm` ITSELF, so every form it accepts is accepted - `--arm name`,
+    `--arm=name` - and a missing name is its own refusal. But asked of the whole line it keeps
+    only the last `--arm` and runs every arm's arguments together. Asked of a SUFFIX, it can
+    answer: the shortest suffix holding an `--arm` is the last arm and nothing else, its name
+    and its arguments. So the last arm is taken, the line is cut before it, and the same
+    question is asked again until no `--arm` is left - and what is left is this tool's own.
+    """
+    parser = argparse.ArgumentParser(prog=f"{TOOL} {ARM_OPTION}", add_help=False, allow_abbrev=False)
+    parser.add_argument(ARM_OPTION)
+    own = list(argv)
+    arms = []
+    while True:
+        for start in range(len(own) - 1, -1, -1):
+            found, words = parser.parse_known_args(own[start:])
+            if found.arm is not None:
+                break
+        else:
+            break
+        name = found.arm
+        if not ARM_NAME.fullmatch(name):
+            refuse(f"{ARM_OPTION} {name}: an arm's name is a plain word, since it names a folder")
+        if any(name == seen for seen, _ in arms):
+            refuse(f"{ARM_OPTION} {name}: named twice; every arm needs a folder of its own")
+        arms.insert(0, (name, words))
+        own = own[:start]
+    return own, arms or [(None, [])]
+
+
 def get_parser():
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -777,6 +874,29 @@ def get_parser():
             "See `menu_matrix --help` for what the driver takes"
         ),
     )
+    parser.add_argument(
+        ARM_OPTION,
+        nargs=argparse.REMAINDER,
+        metavar="NAME [ARG ...]",
+        help=(
+            "measure several arms in one invocation, one after another, and LAST on the line: "
+            "each --arm is a name and then that arm's driver arguments, unquoted, up to the next "
+            "--arm - --arm shipped-defaults --arm first-link --menu first --targets "
+            "link-deepest. Every arm gets its own folder, named by --out and the arm, and every "
+            "arm is measured by the same build. --driver still applies to all of them, ahead of "
+            "each arm's own arguments"
+        ),
+    )
+    parser.add_argument(
+        "--status-prefix",
+        default="",
+        metavar="TEXT",
+        help=(
+            "printed as given at the start of every progress line, ahead of this run's own "
+            "[Run i/N][Conv done/total] - for a caller running this as one of several passes, "
+            "to say which: --status-prefix='[Arm 1/4]'"
+        ),
+    )
     Settling.add_arguments(parser, SETTLE_MS)
     return parser
 
@@ -785,6 +905,10 @@ def main(argv=None):
     if argv is None:
         argv = sys.argv[1:]
     common.watchable_output()
+    # THE ARMS ARE SPLIT OFF BEFORE ARGPARSE SEES THE LINE, since what follows an arm's name is
+    # its driver's options, which argparse would read as this tool's. `--arm` stays in the
+    # parser for its help alone.
+    argv, arms = split_arms(argv)
     args = get_parser().parse_args(argv)
     if args.runs < 1:
         refuse(f"--runs {args.runs}: a run count is at least 1")
@@ -802,10 +926,17 @@ def main(argv=None):
     # THE KIND PLACES IT, transcript and rows alike: a dataset derived by this tool is filed
     # with the datasets rather than among the timings.
     kind = common.run_kind(args.kind)
-    if args.out:
-        out = common.folder_for(args.out, TOOL, VERB, OUT_OPTION, kind)
-    else:
-        out = common.run_folder(TOOL, VERB, OUT_OPTION, kind)
+    #
+    # AN ARM IS A FOLDER OF ITS OWN, named by --out and the arm together, so each is resumed,
+    # combined and checked exactly as a run of one arm would be.
+
+    def folder_of(arm):
+        label = "-".join(part for part in (args.out, arm) if part)
+        if label:
+            return common.folder_for(label, TOOL, VERB, OUT_OPTION, kind)
+        return common.run_folder(TOOL, VERB, OUT_OPTION, kind)
+
+    outs = [folder_of(name) for name, _ in arms]
 
     # WHAT WAS NAMED WINS, INCLUDING UPWARDS. `default_workers` answers what the machine affords
     # and is asked only when nothing was named; somebody who knows what their box can take is not
@@ -813,9 +944,12 @@ def main(argv=None):
     workers = args.workers if args.workers is not None else default_workers()
     settle = Settling.of(args)
     # SPLIT THE WAY A SHELL WOULD, so `--driver="--save a name with spaces"` means what it looks
-    # like it means whichever shell, or none, was between the person and this process.
-    driver = shlex.split(args.driver)
-    record_run(out, workers, settle, args.runs, named, kind, args.marking, driver)
+    # like it means whichever shell, or none, was between the person and this process. Every
+    # arm takes it, ahead of its own arguments.
+    shared = shlex.split(args.driver)
+    drivers = [shared + own for _, own in arms]
+    for out, driver in zip(outs, drivers):
+        record_run(out, workers, settle, args.runs, named, kind, args.marking, driver)
 
     # BUILT ONCE FOR THE WHOLE PASS, BEFORE THE FIRST RUN, so every run of it is the same
     # binary BY CONSTRUCTION. Building per run made that a matter of nobody having touched the
@@ -830,35 +964,27 @@ def main(argv=None):
     # AND ITS DIGEST IS TAKEN HERE and checked before every run, because building once only
     # binds what THIS process does. A cargo build started by hand in another window while a
     # pass is running relinks the file underneath it; see `Run.__init__`.
-    menus, did = build_measurement(MENUS, folder=out)
+    #
+    # ONE BUILD FOR EVERY ARM, for the same reason: arms compared against each other have to be
+    # the same binary, so each arm's folder records the one build rather than one of its own.
+    menus, did = build_measurement(MENUS, folder=outs[0])
     digest = did["sha256"]
-    common.add_build_record(out, did)
+    for out in outs:
+        common.add_build_record(out, did)
     # THE ENUMERATION IS ITS OWN COMMAND, so it is its own build. Not part of the pass's
     # digest check: it decides WHICH groups are measured, and the check is about the binary
     # whose milliseconds the rows carry.
-    groups, _ = build_measurement(GROUPS, folder=out, quiet=True)
+    groups, _ = build_measurement(GROUPS, folder=outs[0], quiet=True)
     try:
-        # ONE RUN AFTER ANOTHER, never side by side: two runs at once would each be measuring
-        # how busy the other made the machine. Each keeps its own folder, so a resume picks up
-        # the run that was interrupted and leaves the finished ones alone.
-        #
-        # THE COLD RUN IS FIRST AND IS NOT COMBINED, and a run measuring anything but timing
-        # does not take one at all. See COLD_FOLDER and `takes_cold_run`.
-        cold = None
-        if takes_cold_run(kind):
-            cold = out / COLD_FOLDER
-            print(f"\n=== cold run (discarded from the combination) -> {cold} ===")
-            measure(cold, named, workers, settle, menus, digest, groups, args.marking, driver)
-        else:
-            print(f"\n=== {kind}: no cold run, its columns do not time ===")
-
-        folders = []
-        for number in range(1, args.runs + 1):
-            folder = out / RUN_FOLDER.format(number)
-            print(f"\n=== run {number} of {args.runs} -> {folder} ===")
-            measure(folder, named, workers, settle, menus, digest, groups, args.marking, driver)
-            folders.append(folder)
-        combine(folders, out, cold=cold)
+        # ONE ARM AFTER ANOTHER, AND ONE RUN AFTER ANOTHER, never side by side: two at once
+        # would each be measuring how busy the other made the machine. Each keeps its own folder,
+        # so a resume picks up what was interrupted and leaves the finished ones alone.
+        for number, ((name, _), out, driver) in enumerate(zip(arms, outs, drivers), 1):
+            prefix = args.status_prefix
+            if len(arms) > 1:
+                prefix += f"[Arm {number}/{len(arms)}]"
+                print(f"\n##### arm {number} of {len(arms)}: {name} -> {out} #####")
+            measure_arm(out, named, workers, settle, menus, digest, groups, args, driver, prefix)
         return 0
     except KeyboardInterrupt:
         print("\ninterrupted; what finished is on disk and a re-run resumes it")

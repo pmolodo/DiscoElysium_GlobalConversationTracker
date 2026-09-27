@@ -229,6 +229,90 @@ class OptionsReachTheRun(unittest.TestCase):
                 self.parse("--driver", "--no-cache", "368")
 
 
+class ProgressLines(unittest.TestCase):
+    """A progress line says where it is in the whole pass, not only in the run it belongs to."""
+
+    def test_a_prefixed_line_reads_from_the_outside_in(self):
+        """The caller's prefix, then the run's, then the count - the line an arm of four reads."""
+        line = menus.common.progress_line(
+            427,
+            429,
+            "conversation 1150",
+            note="nothing to measure",
+            prefix="[Arm 1/4][Run 2/4]",
+            unit="Conv",
+        )
+        self.assertEqual(line, "[Arm 1/4][Run 2/4][Conv 427/429  99%] conversation 1150  nothing to measure")
+
+    def test_a_line_asked_for_nothing_more_is_as_it_was(self):
+        line = menus.common.progress_line(5, 429, "conversation 7", note="20 ms")
+        self.assertEqual(line, "[  5/429   1%] conversation 7  20 ms")
+
+    def test_the_status_prefix_reaches_the_run(self):
+        """Parsed, and empty where nothing is asked, so a plain run's lines start at the run."""
+        parse = menus.get_parser().parse_args
+        self.assertEqual(parse(["--status-prefix=[Arm 1/4]", "368"]).status_prefix, "[Arm 1/4]")
+        self.assertEqual(parse(["368"]).status_prefix, "")
+
+
+class Arms(unittest.TestCase):
+    """Several arms in one invocation: everything from one `--arm` to the next, unquoted."""
+
+    def test_no_arm_named_is_one_arm_of_no_name(self):
+        """So a run that names none goes through the same loop as one that names four."""
+        self.assertEqual(menus.split_arms(["--runs", "3", "all"]), (["--runs", "3", "all"], [(None, [])]))
+
+    def test_an_arm_is_its_name_and_the_words_up_to_the_next(self):
+        """The tool's own arguments come first; an arm's driver options are never read as them."""
+        own, arms = menus.split_arms(
+            [
+                "--runs",
+                "3",
+                "all",
+                "--arm",
+                "shipped-defaults",
+                "--arm",
+                "first-link",
+                "--menu",
+                "first",
+                "--targets",
+                "link-deepest",
+            ]
+        )
+        self.assertEqual(own, ["--runs", "3", "all"])
+        self.assertEqual(
+            arms,
+            [
+                ("shipped-defaults", []),
+                ("first-link", ["--menu", "first", "--targets", "link-deepest"]),
+            ],
+        )
+
+    def test_every_form_argparse_takes_is_an_arm(self):
+        """`--arm=name` as well as `--arm name`, and the two mixed on one line."""
+        self.assertEqual(
+            menus.split_arms(["all", "--arm=a", "--nolimit", "--arm", "b", "--menu", "first"]),
+            (["all"], [("a", ["--nolimit"]), ("b", ["--menu", "first"])]),
+        )
+
+    def test_what_is_left_parses_as_the_tools_own(self):
+        own, _ = menus.split_arms(["--workers", "1", "368", "--arm", "a", "--nolimit"])
+        parsed = menus.get_parser().parse_args(own)
+        self.assertEqual((parsed.workers, parsed.conversations), (1, ["368"]))
+
+    def test_an_arm_with_no_name_is_refused(self):
+        """`--arm --menu first` has lost its name, and would otherwise name a folder `--menu`."""
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+            menus.split_arms(["all", "--arm", "--menu", "first"])
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+            menus.split_arms(["all", "--arm"])
+
+    def test_an_arm_named_twice_is_refused(self):
+        """Two arms under one name would write into one folder."""
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+            menus.split_arms(["all", "--arm", "a", "--arm", "a", "--nolimit"])
+
+
 class CheapRun:
     """A pass whose every group costs the same few milliseconds, so it settles on the rule alone."""
 

@@ -116,7 +116,7 @@ def refuse(message, code=2):
     raise SystemExit(code)
 
 
-def progress_line(done, total, item, seconds=None, elapsed=None, estimate=None, note=""):
+def progress_line(done, total, item, seconds=None, elapsed=None, estimate=None, note="", prefix="", unit=""):
     """The one progress line every driver prints, in every phase.
 
     ## Why there is a function rather than four format strings
@@ -136,10 +136,19 @@ def progress_line(done, total, item, seconds=None, elapsed=None, estimate=None, 
     Returns the line rather than printing it, because a parallel phase buffers a group's output
     and prints it whole when the group is reaped - so that several groups at once do not
     interleave into something nobody can read.
+
+    ## Where in the larger pass, before the count
+
+    `prefix` is printed as given, ahead of the count: `[Arm 1/4][Run 2/4]`, say, from a caller
+    that knows it is one of several arms and a driver that knows it is one of several runs. One
+    line then answers "how far into all of it", where the count alone answers only "how far into
+    this pass" - and a log that holds four arms of four runs each has sixteen lines reading
+    `[427/429 99%]`. `unit` names what is being counted, inside the count's own brackets.
     """
     width = len(str(total))
     percent = done * 100 // max(1, total)
-    line = f"[{done:>{width}}/{total} {percent:>3}%] {item}"
+    counted = f"{unit} " if unit else ""
+    line = f"{prefix}[{counted}{done:>{width}}/{total} {percent:>3}%] {item}"
     if seconds is not None:
         line += f"  {seconds:>8.2f}s"
     if elapsed is not None:
