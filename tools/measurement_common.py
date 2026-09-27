@@ -840,6 +840,257 @@ def cpu_busy_percent():
     return {"total": total, "per_cpu": [percent for _, percent in sorted(per_cpu)]}
 
 
+def psutil_module():
+    """`psutil`, installed with uv into the interpreter running this where it is missing.
+
+    INSTALLED RATHER THAN DONE WITHOUT: a measurement that silently stopped recording the
+    machine's load would read as one taken on a quiet machine. A failed install stops the run.
+    """
+    try:
+        import psutil
+    except ImportError:
+        print(f"psutil is not installed for {sys.executable}; installing it with uv", file=sys.stderr)
+        subprocess.run(["uv", "pip", "install", "--python", sys.executable, "psutil"], check=True)
+        import psutil
+    return psutil
+
+
+def every_process():
+    """Every process on the machine as (pid, parent pid, name, created, CPU seconds), in one call.
+
+    ONE CALL TO `NtQuerySystemInformation` FOR THE WHOLE MACHINE, rather than psutil's question
+    per process. Windows refuses an ordinary user the per-process question for most of the
+    processes a machine runs, and psutil answers each refusal with this same whole-machine call -
+    measured 2026-09-27 at about 620 ms for 315 processes, against a few milliseconds asked once.
+
+    `created` is seconds since the epoch, like `time.time()`; the idle process is left out, since
+    its "CPU time" is the machine doing nothing.
+    """
+    import ctypes
+
+    from ctypes import wintypes
+
+    class UnicodeString(ctypes.Structure):
+        _fields_ = [("Length", wintypes.USHORT), ("MaximumLength", wintypes.USHORT), ("Buffer", wintypes.LPWSTR)]
+
+    class ProcessInformation(ctypes.Structure):
+        # SYSTEM_PROCESS_INFORMATION, as far as the fields read here; the rest of each entry,
+        # and its threads, are stepped over by NextEntryOffset.
+        _fields_ = [
+            ("NextEntryOffset", wintypes.ULONG),
+            ("NumberOfThreads", wintypes.ULONG),
+            ("WorkingSetPrivateSize", ctypes.c_longlong),
+            ("HardFaultCount", wintypes.ULONG),
+            ("NumberOfThreadsHighWatermark", wintypes.ULONG),
+            ("CycleTime", ctypes.c_ulonglong),
+            ("CreateTime", ctypes.c_longlong),
+            ("UserTime", ctypes.c_longlong),
+            ("KernelTime", ctypes.c_longlong),
+            ("ImageName", UnicodeString),
+            ("BasePriority", wintypes.LONG),
+            ("UniqueProcessId", ctypes.c_void_p),
+            ("InheritedFromUniqueProcessId", ctypes.c_void_p),
+        ]
+
+    system_process_information = 5
+    info_length_mismatch = 0xC0000004
+    query = ctypes.windll.ntdll.NtQuerySystemInformation
+    size = 1 << 20
+    while True:
+        buffer = ctypes.create_string_buffer(size)
+        needed = wintypes.ULONG()
+        status = query(system_process_information, buffer, size, ctypes.byref(needed)) & 0xFFFFFFFF
+        if status != info_length_mismatch:
+            break
+        size = max(size * 2, needed.value + (1 << 16))
+    if status != 0:
+        raise OSError(f"NtQuerySystemInformation refused the process list: status {status:#x}")
+
+    # FILETIME counts 100-nanosecond ticks from 1601; time.time() counts seconds from 1970.
+    ticks, epoch = 10_000_000, 11_644_473_600
+    processes = []
+    offset = 0
+    while True:
+        entry = ProcessInformation.from_buffer(buffer, offset)
+        pid = entry.UniqueProcessId or 0
+        if pid:
+            processes.append(
+                (
+                    pid,
+                    entry.InheritedFromUniqueProcessId or 0,
+                    (entry.ImageName.Buffer or "?").lower().removesuffix(".exe"),
+                    entry.CreateTime / ticks - epoch,
+                    (entry.UserTime + entry.KernelTime) / ticks,
+                )
+            )
+        if not entry.NextEntryOffset:
+            return processes
+        offset += entry.NextEntryOffset
+
+
+# How many of the busiest outside processes a load report names.
+BUSIEST_NAMED = 5
+
+# What share of one core polling may take, which sets how far apart the polls are. A poll walks
+# every process on the machine, and it runs in the process doing the timing.
+POLL_SHARE = 0.005
+POLL_EVERY_AT_LEAST_S = 5.0
+POLL_EVERY_AT_MOST_S = 60.0
+
+# The file a pass's load is written to, beside its rows.
+LOAD_RECORD = "load.json"
+
+
+class ForeignLoad:
+    """How much of the machine processes outside this measurement used while it ran.
+
+    ## Why
+
+    A row's milliseconds are a reading of the machine as much as of the search, and a busy
+    machine slows every group at once - which reads, in a comparison, exactly like a regression.
+    The snapshot `write_run_record` takes says how busy the machine was as a run STARTED; this
+    says how busy it stayed, and who was busy, so a slow pass can be told apart from a slow
+    build afterwards.
+
+    ## What counts as outside
+
+    Everything but this process and every process it started - found again at every poll, so a
+    group's process started since the last one is left out too - and the idle process, whose
+    "CPU time" is the machine doing nothing. Shares are of the WHOLE machine, every core, so 100%
+    is every core busy.
+
+    ## How often, and what that costs
+
+    One poll walks every process on the machine, in the process doing the timing. So the first
+    poll is timed, and the rest are spaced so that polling takes at most POLL_SHARE of one core -
+    never closer than POLL_EVERY_AT_LEAST_S nor further apart than POLL_EVERY_AT_MOST_S. The cost
+    and the spacing are both recorded, so what the tracking cost is on the page beside what it
+    found.
+
+    A process that starts and ends between two polls is not seen: what is recorded is a floor
+    under what else ran, never more than was there.
+    """
+
+    def __init__(self):
+        import threading
+
+        self._psutil = psutil_module()
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread = None
+        self._last = None
+        self._machine_seconds = 0.0
+        self._foreign_seconds = 0.0
+        self._by_name = {}
+        self._highest = 0.0
+        self._polls = 0
+        self.poll_ms = None
+        self.interval_s = None
+
+    def _snapshot(self):
+        """Every outside process's CPU seconds so far, keyed so a reused pid is not confused.
+
+        OURS IS WORKED OUT FROM THE SAME LIST, by parent, so this process and everything under
+        it are left out as the list stood at that instant.
+        """
+        processes = every_process()
+        children = {}
+        for pid, parent, _, _, _ in processes:
+            children.setdefault(parent, []).append(pid)
+        ours = set()
+        pending = [os.getpid()]
+        while pending:
+            pid = pending.pop()
+            if pid not in ours:
+                ours.add(pid)
+                pending.extend(children.get(pid, []))
+        used = {(pid, created): (name, seconds) for pid, _, name, created, seconds in processes if pid not in ours}
+        # WALL-CLOCK, because that is what a process's creation time is.
+        return time.time(), sum(self._psutil.cpu_times()), used
+
+    def _poll(self):
+        began = time.perf_counter()
+        now = self._snapshot()
+        cost = time.perf_counter() - began
+        with self._lock:
+            if self._last is not None:
+                polled_then, machine_then, used_then = self._last
+                _, machine_now, used_now = now
+                machine = machine_now - machine_then
+                foreign = 0.0
+                for key, (name, seconds) in used_now.items():
+                    earlier = used_then.get(key)
+                    if earlier is None:
+                        # STARTED SINCE THE LAST POLL, so all of its time is this interval's. One
+                        # that was there and could not be read then is left out: its time since
+                        # is not known.
+                        created = key[1]
+                        if created is None or created < polled_then:
+                            continue
+                        spent = seconds
+                    else:
+                        spent = max(0.0, seconds - earlier[1])
+                    foreign += spent
+                    self._by_name[name] = self._by_name.get(name, 0.0) + spent
+                if machine > 0:
+                    self._machine_seconds += machine
+                    self._foreign_seconds += foreign
+                    self._highest = max(self._highest, 100 * foreign / machine)
+            self._last = now
+            self._polls += 1
+        return cost
+
+    def start(self):
+        """Takes the first poll, and polls on from a thread of its own until `stop`."""
+        import threading
+
+        cost = self._poll()
+        self.poll_ms = round(cost * 1000, 1)
+        self.interval_s = round(min(POLL_EVERY_AT_MOST_S, max(POLL_EVERY_AT_LEAST_S, cost / POLL_SHARE)), 1)
+
+        def poll_until_stopped():
+            while not self._stop.wait(self.interval_s):
+                self._poll()
+
+        self._thread = threading.Thread(target=poll_until_stopped, name="foreign-load", daemon=True)
+        self._thread.start()
+        return self
+
+    def stop(self):
+        """Stops polling, taking one last poll so the whole of the pass is counted."""
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join()
+        self._poll()
+        return self.summary()
+
+    def summary(self):
+        """What was found, as `load.json` holds it."""
+        with self._lock:
+            machine = self._machine_seconds
+            share = (lambda seconds: round(100 * seconds / machine, 1)) if machine else (lambda _: None)
+            busiest = sorted(self._by_name.items(), key=lambda item: item[1], reverse=True)[:BUSIEST_NAMED]
+            return {
+                "percent": share(self._foreign_seconds),
+                "highest_percent": round(self._highest, 1),
+                "busiest": [{"name": name, "percent": share(seconds)} for name, seconds in busiest],
+                "polls": self._polls,
+                "interval_s": self.interval_s,
+                "poll_ms": self.poll_ms,
+            }
+
+
+def load_line(summary):
+    """One line saying what else used the machine, for a log and a summary."""
+    if not summary or summary.get("percent") is None:
+        return "other processes: not measured"
+    busiest = ", ".join(f"{entry['name']} {entry['percent']}%" for entry in summary["busiest"])
+    return (
+        f"other processes: {summary['percent']}% of the machine on average, "
+        f"{summary['highest_percent']}% at most over one {summary['interval_s']}s poll; busiest: {busiest}"
+    )
+
+
 def hardware_of(record):
     """The machine a run record was taken on, as far as it is compared: name, cores and memory."""
     machine = record.get("machine") or {}

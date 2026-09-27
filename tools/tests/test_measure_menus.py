@@ -255,6 +255,58 @@ class ProgressLines(unittest.TestCase):
         self.assertEqual(parse(["368"]).status_prefix, "")
 
 
+class ForeignLoadSums(unittest.TestCase):
+    """What else used the machine is worked out from two readings the way the docstring says."""
+
+    def test_shares_are_of_the_whole_machine_and_count_only_what_is_known(self):
+        """8 cores over 10 s is 80 CPU seconds, and three processes' growth is counted.
+
+        a grows 8 s and b 1 s; c started since the first reading, so all 4 of its seconds are
+        this interval's; d was there before but not read then, so its time is not known and it
+        is left out.
+        """
+        readings = iter(
+            [
+                (100.0, 0.0, {(1, 50.0): ("a", 10.0), (2, 50.0): ("b", 1.0)}),
+                (
+                    110.0,
+                    80.0,
+                    {
+                        (1, 50.0): ("a", 18.0),
+                        (2, 50.0): ("b", 2.0),
+                        (3, 105.0): ("c", 4.0),
+                        (4, 90.0): ("d", 5.0),
+                    },
+                ),
+            ]
+        )
+        load = menus.common.ForeignLoad()
+        load._snapshot = lambda: next(readings)
+        load._poll()
+        load._poll()
+        found = load.summary()
+        self.assertEqual((found["percent"], found["highest_percent"]), (16.2, 16.2))
+        self.assertEqual(
+            found["busiest"],
+            [{"name": "a", "percent": 10.0}, {"name": "c", "percent": 5.0}, {"name": "b", "percent": 1.2}],
+        )
+
+    def test_the_line_names_the_busiest(self):
+        line = menus.common.load_line(
+            {
+                "percent": 12.3,
+                "highest_percent": 41.0,
+                "busiest": [{"name": "msmpeng", "percent": 5.1}, {"name": "dwm", "percent": 3.2}],
+                "interval_s": 5.0,
+            }
+        )
+        self.assertEqual(
+            line,
+            "other processes: 12.3% of the machine on average, 41.0% at most over one 5.0s poll; "
+            "busiest: msmpeng 5.1%, dwm 3.2%",
+        )
+
+
 class Arms(unittest.TestCase):
     """Several arms in one invocation: everything from one `--arm` to the next, unquoted."""
 

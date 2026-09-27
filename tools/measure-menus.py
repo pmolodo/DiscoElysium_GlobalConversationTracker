@@ -103,6 +103,7 @@ under the current default. A run therefore holds only rows that are measurements
 """
 
 import argparse
+import json
 import re
 import shlex
 import statistics
@@ -412,13 +413,22 @@ def measure(out, conversations, workers, settle, menus, digest, groups, marking,
             if errors.strip():
                 handle.write(f"=== {conversation} ===\n{errors}")
 
-    serial_done = serial_phase(run, conversations, already, workers, settle, reap)
+    # WHAT ELSE USED THE MACHINE MEANWHILE, beside the rows it slowed - see `common.ForeignLoad`.
+    # A resumed pass records the load of the part it measured, which is the part its new rows
+    # were taken under.
+    load = common.ForeignLoad().start()
+    try:
+        serial_done = serial_phase(run, conversations, already, workers, settle, reap)
 
-    remaining = [c for c in conversations[serial_done:] if c not in already]
-    if remaining:
-        run_groups(remaining, run.measure, workers, reap)
+        remaining = [c for c in conversations[serial_done:] if c not in already]
+        if remaining:
+            run_groups(remaining, run.measure, workers, reap)
+    finally:
+        found = load.stop()
+        common.write_lf(Path(out) / common.LOAD_RECORD, json.dumps(found, indent=2) + "\n")
 
     print(f"\n{state['done']} group(s) measured -> {run.rows}")
+    print(common.load_line(found))
     if run.log.exists():
         print(f"what the groups said on stderr is in {run.log}")
     return 0
@@ -568,6 +578,22 @@ def agreed(rows, column):
     return "|".join(sorted({row.get(column, "-") for row in rows}))
 
 
+def load_lines(folders, cold):
+    """What else used the machine during each pass, the cold one first - see `common.ForeignLoad`.
+
+    IN THE SUMMARY, beside the totals it explains: a run whose total is out of line with the
+    others and whose load is too was slowed by the machine, not by the code.
+    """
+    lines = ["other processes by run:"]
+    for name, folder in ([("cold", cold)] if cold is not None else []) + [
+        (f"run {number}", folder) for number, folder in enumerate(folders, 1)
+    ]:
+        path = folder / common.LOAD_RECORD
+        found = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+        lines.append(f"  {name}: {common.load_line(found)}")
+    return lines
+
+
 def cold_line(cold, totals):
     """What the discarded run cost, and how much warmer the kept ones were.
 
@@ -676,6 +702,7 @@ def combine(folders, out, cold=None):
         f"groups whose rounds, settled or starred differ between runs: {unsteady or 'none'}",
         *nodes_drift_lines(drifting, len(measured)),
         cold_line(cold, totals),
+        *load_lines(folders, cold),
         "",
         f"the {HARDEST} costliest groups by median menu_ms:",
         f"  {'conv':>6}  {'median':>8}  {'min-max':>13}  {'nodes':>10}  rounds  settled  starred",
