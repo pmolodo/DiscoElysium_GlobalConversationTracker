@@ -1081,6 +1081,96 @@ class ForeignLoad:
             }
 
 
+# The elevated helper that records Microsoft Defender's performance - see its own description -
+# and the files it and a measurement talk through, in the arm's folder.
+DEFENDER_HELPER = ROOT / "tools" / "defender-recording.ps1"
+DEFENDER_STARTED = "defender.started"
+DEFENDER_STOP = "defender.stop"
+DEFENDER_DONE = "defender.done"
+DEFENDER_FAILED = "defender.failed"
+DEFENDER_REPORT = "defender-report.txt"
+# How long to wait for the helper: to start, which includes a person answering the UAC prompt,
+# and to finish, which includes Get-MpPerformanceReport reading the whole recording.
+DEFENDER_START_WAIT_S = 120
+DEFENDER_STOP_WAIT_S = 600
+
+
+class DefenderRecording:
+    """Microsoft Defender's performance recording across a stretch of a run, and its report.
+
+    What Defender scanned while a measurement ran, and what it cost. A group's process is started
+    hundreds of times over a run, and every start is a file Defender may scan; this says how much
+    of a slow run that was.
+
+    ELEVATED IN A PROCESS OF ITS OWN. The recording needs administrator rights and a measurement
+    does not have them, so `tools/defender-recording.ps1` is started with a UAC prompt and does
+    the recording, and this waits for it at both ends: nothing is measured until the helper says
+    the recording is running, and the arm is not finished until it says the recording is saved.
+    """
+
+    def __init__(self, folder):
+        self.folder = Path(folder)
+        self.report = self.folder / DEFENDER_REPORT
+
+    def _wait(self, marker, seconds, what):
+        """Waits for the helper to write `marker`, and stops the run on its failure or silence."""
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if (self.folder / DEFENDER_FAILED).exists():
+                said = (self.folder / DEFENDER_FAILED).read_text(encoding="utf-8", errors="replace")
+                refuse(f"the Defender recording failed {what}:\n{said}")
+            if (self.folder / marker).exists():
+                return
+            time.sleep(0.5)
+        refuse(f"the Defender recording did not say it had {what} within {seconds} s")
+
+    def start(self):
+        """Starts the helper, elevated, and returns once it says the recording is running."""
+        self.folder.mkdir(parents=True, exist_ok=True)
+        for marker in (DEFENDER_STARTED, DEFENDER_STOP, DEFENDER_DONE, DEFENDER_FAILED):
+            (self.folder / marker).unlink(missing_ok=True)
+        print("starting the Defender recording: answer the UAC prompt to let it run elevated")
+        arguments = ", ".join(
+            f"'{argument}'"
+            for argument in (
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(DEFENDER_HELPER),
+                "-Folder",
+                str(self.folder),
+                "-Watch",
+                str(os.getpid()),
+            )
+        )
+        launched = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                f"Start-Process -Verb RunAs -WindowStyle Hidden -FilePath powershell -ArgumentList {arguments}",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if launched.returncode != 0:
+            refuse(f"the Defender recording could not be started elevated:\n{launched.stdout}{launched.stderr}")
+        self._wait(DEFENDER_STARTED, DEFENDER_START_WAIT_S, "started")
+        print("the Defender recording is running")
+        return self
+
+    def stop(self):
+        """Asks the helper to stop, and returns the report once it says both files are written."""
+        write_lf(self.folder / DEFENDER_STOP, datetime.now().astimezone().isoformat(timespec="seconds") + "\n")
+        self._wait(DEFENDER_DONE, DEFENDER_STOP_WAIT_S, "stopped and written its report")
+        # THE MARKERS HAVE SAID ALL THEY WERE FOR once the recording is saved; a failure's
+        # is kept, since it says what went wrong.
+        for marker in (DEFENDER_STARTED, DEFENDER_STOP, DEFENDER_DONE):
+            (self.folder / marker).unlink(missing_ok=True)
+        return self.report
+
+
 def load_line(summary):
     """One line saying what else used the machine, for a log and a summary."""
     if not summary or summary.get("percent") is None:

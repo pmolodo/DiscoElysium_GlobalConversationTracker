@@ -767,20 +767,27 @@ def measure_arm(out, named, workers, settle, menus, digest, groups, args, driver
         where = f"{prefix}[Run {number}/{passes}]"
         measure(folder, named, workers, settle, menus, digest, groups, args.marking, driver, where)
 
-    cold = None
-    if takes_cold_run(kind):
-        cold = out / COLD_FOLDER
-        print(f"\n=== cold run (discarded from the combination) -> {cold} ===")
-        measure_pass(cold, 1)
-    else:
-        print(f"\n=== {kind}: no cold run, its columns do not time ===")
+    # DEFENDER IS RECORDED ACROSS THE WHOLE ARM, every pass of it, into the arm's own folder -
+    # and stopped whatever happens, since a recording left running is WPR's to the next caller.
+    recording = common.DefenderRecording(out).start() if args.defender_recording else None
+    try:
+        cold = None
+        if takes_cold_run(kind):
+            cold = out / COLD_FOLDER
+            print(f"\n=== cold run (discarded from the combination) -> {cold} ===")
+            measure_pass(cold, 1)
+        else:
+            print(f"\n=== {kind}: no cold run, its columns do not time ===")
 
-    folders = []
-    for number in range(1, args.runs + 1):
-        folder = out / RUN_FOLDER.format(number)
-        print(f"\n=== run {number} of {args.runs} -> {folder} ===")
-        measure_pass(folder, passes - args.runs + number)
-        folders.append(folder)
+        folders = []
+        for number in range(1, args.runs + 1):
+            folder = out / RUN_FOLDER.format(number)
+            print(f"\n=== run {number} of {args.runs} -> {folder} ===")
+            measure_pass(folder, passes - args.runs + number)
+            folders.append(folder)
+    finally:
+        if recording is not None:
+            print(f"Defender's report -> {recording.stop()}")
     combine(folders, out, cold=cold)
 
 
@@ -912,6 +919,18 @@ def get_parser():
             "link-deepest. Every arm gets its own folder, named by --out and the arm, and every "
             "arm is measured by the same build. --driver still applies to all of them, ahead of "
             "each arm's own arguments"
+        ),
+    )
+    parser.add_argument(
+        "--defender-recording",
+        action="store_true",
+        help=(
+            "record Microsoft Defender's performance across each arm, as New-MpPerformanceRecording "
+            "does, into defender.etl in the arm's folder, with the paths its scans cost most in "
+            "beside it in defender-report.txt. The recording is kept: Get-MpPerformanceReport "
+            "-Path <it> gives any other view. It needs administrator rights and this run does not, "
+            "so tools/defender-recording.ps1 is started with a UAC prompt, and nothing is measured "
+            "until it says the recording is running"
         ),
     )
     parser.add_argument(
