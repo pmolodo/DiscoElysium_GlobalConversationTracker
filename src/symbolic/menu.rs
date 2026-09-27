@@ -26,14 +26,17 @@
 //! and costs more than the single-target passes it replaces.
 //!
 //! WHAT IS LEFT IS RULING TARGETS OUT, and two things cut it, both measured on the same menu.
-//! Where the least can beat the best, the walk asks first the contenders in the conversation of
-//! the target the pooled pass names, which is where the target at the least usually is. And a
-//! level whose reachability pass meets is asked again a conversation at a time, so a
-//! conversation none of whose targets is reachable is ruled out by one pass rather than one per
-//! target. Together they took Wild Pines from 61 passes and about 600 ms to 24 and about 375,
-//! with the same answer. Halving a level that meets instead, down to 4, 8 or 16 targets, was
-//! measured too and cost half as many nodes again as not splitting at all: a reachability pass
-//! over half a level costs more than the single passes it spares, and here most halves meet.
+//! Where the least can beat the best, the walk asks first those contenders in the conversation
+//! of the target the pooled pass names that could be at the least - bounded no further than it -
+//! which is where the target at the least usually is; the name is only a hint, and a target
+//! bounded beyond the least cannot be the one at it. And a level spanning several conversations
+//! is asked a conversation at a time, so a conversation none of whose targets is reachable is
+//! ruled out by one pass rather than one per target. On Wild Pines, with its failed Esprit de
+//! Corps check reopened and walked, they take the option from 1.1 million diagram nodes and 30
+//! passes to 264 thousand and 21, with the same answer. Halving a level that meets instead,
+//! down to 4, 8 or 16 targets, was measured too and cost half as many nodes again as not
+//! splitting at all: a reachability pass over half a level costs more than the single passes it
+//! spares, and there most halves met.
 //! Following every target the pooled pass's fronts could have come from, rather than the one it
 //! names, saved passes but no nodes - the fronts merge near the menu, so nearly every target is
 //! among them.
@@ -810,7 +813,8 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
             // which target the least belongs to - its fronts merge - but it names the one whose
             // front first reached the entry the option was met from, and a target at the least
             // distance is most often in that same conversation. So the contenders from that
-            // conversation are asked first, in bound order, and the rest after them. The walk
+            // conversation that could be at the least - bounded no further than it - are asked
+            // first, in bound order, and the rest after them, still in bound order. The walk
             // still stops at the first target found at the least, so this changes only which of
             // two targets tied at it wins - see CLAUDE.md on why that is no defect.
             //
@@ -822,11 +826,14 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
             // the Wild Pines menu (de-yvue): 458 targets proven unreachable one at a time in
             // 5.8 s took four such passes.
             //
-            // AND WHERE ONE CAN, A CONVERSATION AT A TIME. A level that meets is usually met by
-            // one conversation, and every target of the others costs a whole pass to rule out;
-            // so a level spanning several conversations asks the same question of each
-            // conversation's part before its targets are asked one at a time. Only targets
-            // proven unreachable are skipped, so neither changes an answer.
+            // AND A CONVERSATION AT A TIME, where the level spans several. A level is usually
+            // met by one conversation, and every target of the others costs a whole pass to
+            // rule out - so each conversation's part is asked the same question before its
+            // targets are asked one at a time. The parts are asked INSTEAD of the whole level,
+            // not after it: the pass over the union costs more than the passes over its parts
+            // together - 278 thousand nodes against 77 thousand for Wild Pines' 75-target level
+            // - because one front from every conversation grows diagrams none of the parts do.
+            // Only targets proven unreachable are skipped, so none of this changes an answer.
             let mut order = in_play.clone();
             // Whether the least pass has moved a conversation forward, after which the bounds
             // are no longer in order and a bound that cannot beat the best skips its target
@@ -888,11 +895,15 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
                                     let bound = proven.entry(id).or_insert(distance);
                                     *bound = (*bound).max(distance);
                                 }
+                                // ONLY WHAT COULD BE AT THE LEAST moves forward: a bound is a
+                                // floor under the distance, so a target bounded beyond the least
+                                // cannot be the one at it, and asking it first spends passes on
+                                // what the walk would stop before reaching.
                                 if distance < nearest {
                                     let (first, rest): (Vec<DialogueNodeId>, Vec<_>) =
                                         order[here..].iter().copied().partition(|id| {
                                             id.conversation_id == origin.conversation_id
-                                                && bounds[id] < nearest
+                                                && bounds[id] <= distance
                                         });
                                     order.truncate(here);
                                     order.extend(first);
@@ -926,7 +937,10 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
                         .copied()
                         .filter(|id| bounds[id] == level)
                         .collect();
-                    if group.len() > 1 {
+                    let first = group.first().map(|id| id.conversation_id);
+                    if group.iter().any(|id| Some(id.conversation_id) != first) {
+                        levels_split.insert(level);
+                    } else if group.len() > 1 {
                         match any_reachable(
                             search.reborrow(),
                             &group,
@@ -936,12 +950,7 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
                             began,
                             &mut answer,
                         ) {
-                            Ok(true) => {
-                                let first = group[0].conversation_id;
-                                if group.iter().any(|id| id.conversation_id != first) {
-                                    levels_split.insert(level);
-                                }
-                            }
+                            Ok(true) => {}
                             Ok(false) => unreachable.extend(group),
                             Err(stopped) => {
                                 failure = Some(stopped);

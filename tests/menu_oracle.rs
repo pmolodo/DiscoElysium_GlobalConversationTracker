@@ -162,16 +162,17 @@ fn compare_under(
 ///                    401-402    behind 9 only - unreachable
 /// ```
 ///
-/// Every target shares one level, and its pass meets. The walk takes conversation 1 first, and
-/// one pass rules all three of its targets out. It finds 200 at 2, which leaves nineteen targets
+/// Every target shares one level, and the level spans four conversations, so it is asked a
+/// conversation at a time. The walk takes conversation 1 first, and one pass rules all three of
+/// its targets out. It finds 200 at 2, which leaves nineteen targets
 /// whose bounds could beat that - enough for one pass to find the least, 1, and to name 400 as
 /// the target whose front met the option. So conversation 4 is asked next: one pass says its
 /// part is reachable, and 400 alone is at 1, which ends the round without asking any of the
 /// sixteen in conversation 3.
 ///
-/// SEVEN PASSES: the round's reachability, the level, conversation 1, 200, the least,
-/// conversation 4 and 400. Asked in bound order one target at a time, the same round takes
-/// twenty-four, asking every one of the nineteen unreachable targets on its own.
+/// SIX PASSES: the round's reachability, conversation 1, 200, the least, conversation 4 and 400.
+/// Asked in bound order one target at a time, the same round takes twenty-four, asking every one
+/// of the nineteen unreachable targets on its own.
 #[test]
 fn a_round_rules_targets_out_a_conversation_at_a_time() {
     let unreachable_behind = |door: i32, targets: std::ops::RangeInclusive<i32>| {
@@ -206,7 +207,7 @@ fn a_round_rules_targets_out_a_conversation_at_a_time() {
         }
     });
     assert_eq!(answer.marks[0].witness.map(|id| id.entry_id), Some(400));
-    assert_eq!(answer.passes, 7);
+    assert_eq!(answer.passes, 6);
 }
 
 #[test]
