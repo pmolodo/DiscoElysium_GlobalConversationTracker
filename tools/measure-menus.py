@@ -767,27 +767,20 @@ def measure_arm(out, named, workers, settle, menus, digest, groups, args, driver
         where = f"{prefix}[Run {number}/{passes}]"
         measure(folder, named, workers, settle, menus, digest, groups, args.marking, driver, where)
 
-    # DEFENDER IS RECORDED ACROSS THE WHOLE ARM, every pass of it, into the arm's own folder -
-    # and stopped whatever happens, since a recording left running is WPR's to the next caller.
-    recording = common.DefenderRecording(out).start() if args.defender_recording else None
-    try:
-        cold = None
-        if takes_cold_run(kind):
-            cold = out / COLD_FOLDER
-            print(f"\n=== cold run (discarded from the combination) -> {cold} ===")
-            measure_pass(cold, 1)
-        else:
-            print(f"\n=== {kind}: no cold run, its columns do not time ===")
+    cold = None
+    if takes_cold_run(kind):
+        cold = out / COLD_FOLDER
+        print(f"\n=== cold run (discarded from the combination) -> {cold} ===")
+        measure_pass(cold, 1)
+    else:
+        print(f"\n=== {kind}: no cold run, its columns do not time ===")
 
-        folders = []
-        for number in range(1, args.runs + 1):
-            folder = out / RUN_FOLDER.format(number)
-            print(f"\n=== run {number} of {args.runs} -> {folder} ===")
-            measure_pass(folder, passes - args.runs + number)
-            folders.append(folder)
-    finally:
-        if recording is not None:
-            print(f"Defender's report -> {recording.stop()}")
+    folders = []
+    for number in range(1, args.runs + 1):
+        folder = out / RUN_FOLDER.format(number)
+        print(f"\n=== run {number} of {args.runs} -> {folder} ===")
+        measure_pass(folder, passes - args.runs + number)
+        folders.append(folder)
     combine(folders, out, cold=cold)
 
 
@@ -925,12 +918,12 @@ def get_parser():
         "--defender-recording",
         action="store_true",
         help=(
-            "record Microsoft Defender's performance across each arm, as New-MpPerformanceRecording "
-            "does, into defender.etl in the arm's folder, with the paths its scans cost most in "
-            "beside it in defender-report.txt. The recording is kept: Get-MpPerformanceReport "
-            "-Path <it> gives any other view. It needs administrator rights and this run does not, "
-            "so tools/defender-recording.ps1 is started with a UAC prompt, and nothing is measured "
-            "until it says the recording is running"
+            "record Microsoft Defender's performance across the whole invocation, every arm, as "
+            "New-MpPerformanceRecording does, into defender.etl in the first arm's folder, with the "
+            "paths its scans cost most in beside it in defender-report.txt. The recording is kept: "
+            "Get-MpPerformanceReport -Path <it> gives any other view. It needs administrator rights "
+            "and this run does not, so tools/defender-recording.ps1 is started with one UAC prompt, "
+            "and nothing is measured until it says the recording is running"
         ),
     )
     parser.add_argument(
@@ -1022,15 +1015,23 @@ def main(argv=None):
     # whose milliseconds the rows carry.
     groups, _ = build_measurement(GROUPS, folder=outs[0], quiet=True)
     try:
-        # ONE ARM AFTER ANOTHER, AND ONE RUN AFTER ANOTHER, never side by side: two at once
-        # would each be measuring how busy the other made the machine. Each keeps its own folder,
-        # so a resume picks up what was interrupted and leaves the finished ones alone.
-        for number, ((name, _), out, driver) in enumerate(zip(arms, outs, drivers), 1):
-            prefix = args.status_prefix
-            if len(arms) > 1:
-                prefix += f"[Arm {number}/{len(arms)}]"
-                print(f"\n##### arm {number} of {len(arms)}: {name} -> {out} #####")
-            measure_arm(out, named, workers, settle, menus, digest, groups, args, driver, prefix)
+        # DEFENDER IS RECORDED ACROSS EVERY ARM AT ONCE, into the first arm's folder - one
+        # recording, and so one UAC prompt, for the whole invocation - and stopped whatever
+        # happens, since a recording left running is WPR's to the next caller.
+        recording = common.DefenderRecording(outs[0]).start() if args.defender_recording else None
+        try:
+            # ONE ARM AFTER ANOTHER, AND ONE RUN AFTER ANOTHER, never side by side: two at once
+            # would each be measuring how busy the other made the machine. Each keeps its own
+            # folder, so a resume picks up what was interrupted and leaves the finished ones alone.
+            for number, ((name, _), out, driver) in enumerate(zip(arms, outs, drivers), 1):
+                prefix = args.status_prefix
+                if len(arms) > 1:
+                    prefix += f"[Arm {number}/{len(arms)}]"
+                    print(f"\n##### arm {number} of {len(arms)}: {name} -> {out} #####")
+                measure_arm(out, named, workers, settle, menus, digest, groups, args, driver, prefix)
+        finally:
+            if recording is not None:
+                print(f"\nDefender's report, over every arm -> {recording.stop()}")
         return 0
     except KeyboardInterrupt:
         print("\ninterrupted; what finished is on disk and a re-run resumes it")
