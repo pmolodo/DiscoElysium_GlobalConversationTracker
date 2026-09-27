@@ -840,28 +840,30 @@ def cpu_busy_percent():
     return {"total": total, "per_cpu": [percent for _, percent in sorted(per_cpu)]}
 
 
-def psutil_module():
-    """`psutil`, installed with uv into the interpreter running this where it is missing.
+def machine_cpu_seconds():
+    """Every core's time so far, busy or idle, in seconds - the whole machine's clock for CPU.
 
-    INSTALLED RATHER THAN DONE WITHOUT: a measurement that silently stopped recording the
-    machine's load would read as one taken on a quiet machine. A failed install stops the run.
+    FROM `GetSystemTimes`, whose kernel time already includes the idle time, so kernel plus
+    user is every core's time. A share of the machine is a process's CPU seconds over the
+    growth of this.
     """
-    try:
-        import psutil
-    except ImportError:
-        print(f"psutil is not installed for {sys.executable}; installing it with uv", file=sys.stderr)
-        subprocess.run(["uv", "pip", "install", "--python", sys.executable, "psutil"], check=True)
-        import psutil
-    return psutil
+    import ctypes
+
+    idle, kernel, user = (ctypes.c_ulonglong() for _ in range(3))
+    if not ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)):
+        raise ctypes.WinError()
+    # FILETIME counts 100-nanosecond ticks.
+    return (kernel.value + user.value) / 10_000_000
 
 
 def every_process():
     """Every process on the machine as (pid, parent pid, name, created, CPU seconds), in one call.
 
-    ONE CALL TO `NtQuerySystemInformation` FOR THE WHOLE MACHINE, rather than psutil's question
-    per process. Windows refuses an ordinary user the per-process question for most of the
-    processes a machine runs, and psutil answers each refusal with this same whole-machine call -
-    measured 2026-09-27 at about 620 ms for 315 processes, against a few milliseconds asked once.
+    ONE CALL TO `NtQuerySystemInformation` FOR THE WHOLE MACHINE, rather than a question per
+    process. Windows refuses an ordinary user the per-process question for most of the processes
+    a machine runs, and the usual answer to each refusal is this same whole-machine call - which
+    is how asking psutil per process was measured, 2026-09-27, at about 620 ms for 315 processes,
+    against a few milliseconds asked once.
 
     `created` is seconds since the epoch, like `time.time()`; the idle process is left out, since
     its "CPU time" is the machine doing nothing.
@@ -974,7 +976,6 @@ class ForeignLoad:
     def __init__(self):
         import threading
 
-        self._psutil = psutil_module()
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = None
@@ -1006,7 +1007,7 @@ class ForeignLoad:
                 pending.extend(children.get(pid, []))
         used = {(pid, created): (name, seconds) for pid, _, name, created, seconds in processes if pid not in ours}
         # WALL-CLOCK, because that is what a process's creation time is.
-        return time.time(), sum(self._psutil.cpu_times()), used
+        return time.time(), machine_cpu_seconds(), used
 
     def _poll(self):
         began = time.perf_counter()
