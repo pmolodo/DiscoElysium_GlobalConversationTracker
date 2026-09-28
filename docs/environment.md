@@ -143,7 +143,7 @@ The rows below are generated and pasted; the list above is the one to read.
 | `DEGCT_NO_RUN_LOG` | `DEVELOPING.md`, `tools/GameAutomation/RunLog.cs`, `tools/GameHarness/Program.cs` |
 | `DEGCT_PROFILE_DIR` | `tools/GameAutomation/GameProfile.cs` |
 | `DEGCT_RUN_KIND` | `AGENTS.md`, `CLAUDE.md`, `tools/measure-menus.py`, `tools/measurement_common.py`, `tools/run-logged.sh` |
-| `DEGCT_RUN_LOG` | `tools/measurement_common.py`, `tools/run-logged.sh` |
+| `DEGCT_RUN_LOG` | `tools/measurement_common.py`, `tools/run-logged.sh`, `tools/tests/test_measure_menus.py` |
 | `DEGCT_RUN_LOG_DIR` | `tools/measure-symbolic.sh`, `tools/measurement_common.py`, `tools/run-logged.sh` |
 
 ## Keeping this current
