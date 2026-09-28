@@ -348,13 +348,14 @@ pub fn mark_onward<F: Fn(DialogueNodeId) -> SeenState>(
 
         // THE GATE, and it is one pass rather than one per option: what the whole menu can
         // reach with nothing of its own cut. Where that is nothing, no option can do better.
-        let mut together = shape.known_from(graph, contestants[hunting[0]].position.option);
-        for &i in &hunting {
-            let position = &contestants[i].position;
-            for &entry in &position.entries {
-                together = together.from(entry, &position.holding);
-            }
-        }
+        let Ok(together) = known_at(
+            graph,
+            shape,
+            hunting.iter().map(|&i| &contestants[i].position),
+        ) else {
+            failure = Some((StoppedBy::Incomplete, true));
+            break 'classes;
+        };
         let left = budget.wall.saturating_sub(began.elapsed());
         if left.is_zero() {
             failure = Some((StoppedBy::Time, false));
@@ -401,10 +402,10 @@ pub fn mark_onward<F: Fn(DialogueNodeId) -> SeenState>(
             if own_targets.is_empty() {
                 continue;
             }
-            let mut known = shape.known_from(graph, position.option);
-            for &entry in &position.entries {
-                known = known.from(entry, &position.holding);
-            }
+            let Ok(known) = known_at(graph, shape, [position]) else {
+                failure = Some((StoppedBy::Incomplete, true));
+                break 'classes;
+            };
             let left = budget.wall.saturating_sub(began.elapsed());
             if left.is_zero() {
                 failure = Some((StoppedBy::Time, false));
@@ -498,10 +499,8 @@ pub fn reached_onward(
         if !choice_bounds(graph, position, &cut).contains_key(&target) {
             continue;
         }
-        let mut known = shape.known_from(graph, position.option);
-        for &entry in &position.entries {
-            known = known.from(entry, &position.holding);
-        }
+        let known =
+            known_at(graph, shape, [position]).map_err(|_| (StoppedBy::Incomplete, true))?;
         let left = budget.wall.saturating_sub(began.elapsed());
         if left.is_zero() {
             return Err((StoppedBy::Time, false));
@@ -534,6 +533,31 @@ fn returned_outside(
     options: &HashSet<DialogueNodeId>,
 ) -> Vec<DialogueNodeId> {
     returned.difference(options).copied().collect()
+}
+
+/// What a backward pass can meet: every entry each of `positions` begins at, with what it holds
+/// arriving there.
+///
+/// Ordered from the first position's option, which is only a matter of how many pops a pass
+/// takes. Two outcomes of one rolled check begin at the same entry holding different states, and
+/// [`Known::from`] keeps both. `Err` where the manager has no room for that union.
+fn known_at<'p>(
+    graph: &LookAheadGraph,
+    shape: &GroupShape,
+    positions: impl IntoIterator<Item = &'p Position>,
+) -> Result<Known, oxidd::util::OutOfMemory> {
+    let mut positions = positions.into_iter().peekable();
+    let first = positions
+        .peek()
+        .expect("a menu asks about at least one position")
+        .option;
+    let mut known = shape.known_from(graph, first);
+    for position in positions {
+        for &entry in &position.entries {
+            known = known.from(entry, &position.holding)?;
+        }
+    }
+    Ok(known)
 }
 
 /// Whether this option could be improved on by the class being hunted.
@@ -743,28 +767,10 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> SeenState>(
                 break;
             }
             in_play.sort_by_key(|id| (bounds[id], id.conversation_id, id.entry_id));
-            // A shape-only Known preserves every outcome's states separately. Meeting
-            // states are unioned explicitly so two outcomes at one entry cannot overwrite.
-            let mut known = shape.known_from(graph, positions[0].option);
-            let mut beginnings = HashMap::new();
-            for position in &positions {
-                for &entry in &position.entries {
-                    let states = beginnings
-                        .entry(entry)
-                        .or_insert_with(|| search.compiler.vars().bottom());
-                    use oxidd::BooleanFunction;
-                    match states.or(&position.holding) {
-                        Ok(union) => *states = union,
-                        Err(_) => {
-                            failure = Some((StoppedBy::Incomplete, true));
-                            break 'classes;
-                        }
-                    }
-                }
-            }
-            for (id, states) in beginnings {
-                known = known.from(id, &states);
-            }
+            let Ok(known) = known_at(graph, shape, &positions) else {
+                failure = Some((StoppedBy::Incomplete, true));
+                break 'classes;
+            };
             let pass_budget = |left| PassBudget {
                 time: budget.each.min(left),
                 steps: usize::MAX,

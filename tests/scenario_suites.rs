@@ -29,7 +29,8 @@
 //! ## The two things it checks, and why they are different
 //!
 //! MARKERS, for the scenarios that name options. Those are claims about a menu, and this
-//! checks the options a row names.
+//! checks the options a row names - and, under an everyCheck branch policy, both words of
+//! every rolled check's Pass / Fail line, by the rule `BranchLine.Half` follows.
 //!
 //! CLAIMS, for the suites whose subject is a rule rather than a menu. Those are asked of
 //! every entry in the conversation's group, which no in-game run can do - it only ever sees
@@ -42,7 +43,9 @@
 //! policy - that no OTHER option in the menu is marked - because only the game can say what
 //! else the menu offered. This checks the options a scenario names and says so.
 
-use lookahead_engine::bridge::{DataKind, LookAheadAnswer, LookAheadRequest, NodeRef, answer};
+use lookahead_engine::bridge::{
+    DataKind, FAIL, LookAheadAnswer, LookAheadRequest, NodeRef, PASS, answer,
+};
 use lookahead_engine::core::types::{DialogueNodeId, SeenState};
 use lookahead_engine::index::read_index;
 
@@ -50,7 +53,7 @@ use gct_measure::common;
 
 use common::fixtures;
 use common::staging::{
-    EVERY_MENU_FINISHES_IN_BUDGET, UNSEEN_ANY_GAME, drawn, play_stops, silent, stage,
+    EVERY_MENU_FINISHES_IN_BUDGET, UNSEEN_ANY_GAME, drawn, drawn_half, play_stops, silent, stage,
 };
 use common::suites::{self, TABLE};
 use gct_measure::plugin_defaults::Budgets;
@@ -278,24 +281,38 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
                     response.error,
                 );
 
+                // THE ANSWER THAT NAMES NO OUTCOME, as `MarkerFor` looks it up. A rolled check
+                // comes back as two answers for one start, one per outcome, and draws no marker
+                // of its own - its halves are checked below, against the scenario's pass and
+                // fail rows.
                 let by_start: std::collections::HashMap<NodeRef, &LookAheadAnswer> = response
                     .answers
                     .iter()
+                    .filter(|reply| reply.branch.is_none())
                     .map(|reply| (reply.start, reply))
+                    .collect();
+                let rolled: std::collections::HashSet<NodeRef> = response
+                    .answers
+                    .iter()
+                    .filter(|reply| reply.branch.is_some())
+                    .map(|reply| reply.start)
                     .collect();
 
                 for option in stop.options {
                     let start = offered(option.entry)[0];
-                    let Some(reply) = by_start.get(&start) else {
-                        failures.push(format!(
-                            "{}/{}: nothing came back for {}:{}",
-                            suite.suite, scenario.save, start.conversation, start.entry,
-                        ));
-                        continue;
-                    };
-
                     let own = staged.seen_state_of(start);
-                    let got = drawn(own, reply);
+                    let reply = by_start.get(&start);
+                    let got = match reply {
+                        Some(reply) => drawn(own, reply),
+                        None if rolled.contains(&start) => "none",
+                        None => {
+                            failures.push(format!(
+                                "{}/{}: nothing came back for {}:{}",
+                                suite.suite, scenario.save, start.conversation, start.entry,
+                            ));
+                            continue;
+                        }
+                    };
                     checked += 1;
 
                     if got != option.marker {
@@ -304,6 +321,20 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
                         // disagreement is then readable without a second run: either the
                         // line it found is one the row overlooked, or the row is right and
                         // the route to that line is one the search should not have had.
+                        let Some(reply) = reply else {
+                            failures.push(format!(
+                                "{}/{} ({}): {}:{} should be {} - {} - and it is a rolled \
+                                 check, which draws no marker of its own",
+                                suite.suite,
+                                scenario.save,
+                                stop.what,
+                                start.conversation,
+                                start.entry,
+                                option.marker,
+                                option.why,
+                            ));
+                            continue;
+                        };
                         let witness = match reply.witness {
                             Some(node) => format!("{}:{}", node.conversation, node.entry),
                             None => "nothing".to_string(),
@@ -326,6 +357,52 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
                                 "gave up"
                             },
                             reply.nodes_reached,
+                            suite.suite,
+                        ));
+                    }
+                }
+
+                // EVERY ROLLED CHECK ON THE MENU, as the in-game run holds an everyCheck
+                // scenario: which checks a menu offers is the menu's business, and the rule
+                // is stated for whatever it turns out to hold.
+                if scenario.branches != "everyCheck" {
+                    continue;
+                }
+                for reply in &response.answers {
+                    let expected = match reply.branch.as_deref() {
+                        Some(PASS) => &scenario.pass,
+                        Some(FAIL) => &scenario.fail,
+                        _ => continue,
+                    };
+                    let Some(expected) = expected else {
+                        failures.push(format!(
+                            "{}/{}: everyCheck names no {} half",
+                            suite.suite,
+                            scenario.save,
+                            reply.branch.as_deref().unwrap_or_default(),
+                        ));
+                        continue;
+                    };
+                    let got = drawn_half(reply);
+                    checked += 1;
+                    if &got != expected {
+                        failures.push(format!(
+                            "{}/{} ({}): {}:{}'s {} half should be {expected} and the engine \
+                             draws {got}: destination {}, best {}, {} - run it in game with \
+                             --suite {}",
+                            suite.suite,
+                            scenario.save,
+                            stop.what,
+                            reply.start.conversation,
+                            reply.start.entry,
+                            reply.branch.as_deref().unwrap_or_default(),
+                            reply.destination,
+                            reply.best,
+                            if reply.complete {
+                                "finished"
+                            } else {
+                                "gave up"
+                            },
                             suite.suite,
                         ));
                     }

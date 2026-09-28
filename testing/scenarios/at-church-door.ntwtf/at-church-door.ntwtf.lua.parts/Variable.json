@@ -1,0 +1,10 @@
+{
+  "_format": "sparse-diff",
+  "_formatVersion": 2,
+  "_base": "../../at-joyce3.ntwtf/at-joyce3.ntwtf.lua.parts/Variable.json",
+  "_changes": {
+    "church.churchdoor_used_hankerchief": true,
+    "Conversant": "Church Doors",
+    "ConversantIndex": "Church_Doors"
+  }
+}

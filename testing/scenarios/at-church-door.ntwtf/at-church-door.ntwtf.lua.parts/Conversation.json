@@ -1,0 +1,18 @@
+{
+  "_format": "sparse-diff",
+  "_formatVersion": 2,
+  "_base": "../../at-joyce3.ntwtf/at-joyce3.ntwtf.lua.parts/Conversation.json",
+  "_changes": {
+    "350": {
+      "Dialog": {
+        "_changes": {
+          "WasDisplayed": "32,69,110,176",
+          "WasOffered": "154,177"
+        },
+        "_remove": {
+          "WasOffered": "32"
+        }
+      }
+    }
+  }
+}

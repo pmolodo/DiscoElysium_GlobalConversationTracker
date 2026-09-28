@@ -1,0 +1,192 @@
+{
+  "_base": "../at-joyce3.ntwtf/at-joyce3.2nd.ntwtf.json",
+  "_changes": {
+    "aquiredJournalTasks": {
+      "LastActiveTask": "Inspect victim's body",
+      "LastDoneTask": ""
+    },
+    "characterSheet": {
+      "selectedPanelName": ""
+    },
+    "containerSourceState": {
+      "itemRegistry": {
+        "Interactable/Harbour/Patrol Cloak Schedule/Patrol Cloak Placeholder Prefab/Hanging_Cloak/Hanging-Cloak1": [
+          {
+            "$ref": "1841"
+          }
+        ],
+        "Karaoke Prefab 2f(Clone)/NPCs Karaoke/Clubber Man 5/ClubberMan5/doomspiral_rig/doomspiral_SHJntGrp/doomspiral_ROOTSHJnt/doomspiral_Spine_01SHJnt/doomspiral_Spine_02SHJnt/doomspiral_Spine_TopSHJnt/doomspiral_r_Arm_ClavicleSHJnt/doomspiral_r_Arm_ShoulderSHJnt/doomspiral_r_Arm_ElbowSHJnt/doomspiral_r_Arm_WristSHJnt/doomspiral_r_Finger_02_01SHJnt/doomspiral_r_Finger_02_02SHJnt/empty_bottle1": [
+          {
+            "$id": "1680",
+            "bonusLoot": false,
+            "calculatedValue": 0,
+            "deviation": 0,
+            "name": "plastic_tare",
+            "probability": 1,
+            "value": 0
+          }
+        ],
+        "Karaoke Prefab(Clone)/NPCs Karaoke/Clubber Man 5/ClubberMan5/doomspiral_rig/doomspiral_SHJntGrp/doomspiral_ROOTSHJnt/doomspiral_Spine_01SHJnt/doomspiral_Spine_02SHJnt/doomspiral_Spine_TopSHJnt/doomspiral_r_Arm_ClavicleSHJnt/doomspiral_r_Arm_ShoulderSHJnt/doomspiral_r_Arm_ElbowSHJnt/doomspiral_r_Arm_WristSHJnt/doomspiral_r_Finger_02_01SHJnt/doomspiral_r_Finger_02_02SHJnt/empty_bottle1": [
+          {
+            "$id": "1937",
+            "bonusLoot": false,
+            "calculatedValue": 0,
+            "deviation": 0,
+            "name": "glass_tare",
+            "probability": 1,
+            "value": 0
+          }
+        ],
+        "Patrol Cloak Placeholder Prefab(Clone)/Hanging_Cloak/Hanging-Cloak1": [
+          {
+            "$id": "1841",
+            "bonusLoot": false,
+            "calculatedValue": 0,
+            "deviation": 0,
+            "name": "jacket_patrol_cloak",
+            "probability": 1,
+            "value": 0
+          }
+        ],
+        "Props whirling f2/Karaoke f2/Karaoke Prefab 2f/NPCs Karaoke/Clubber Man 5/ClubberMan5/doomspiral_rig/doomspiral_SHJntGrp/doomspiral_ROOTSHJnt/doomspiral_Spine_01SHJnt/doomspiral_Spine_02SHJnt/doomspiral_Spine_TopSHJnt/doomspiral_r_Arm_ClavicleSHJnt/doomspiral_r_Arm_ShoulderSHJnt/doomspiral_r_Arm_ElbowSHJnt/doomspiral_r_Arm_WristSHJnt/doomspiral_r_Finger_02_01SHJnt/doomspiral_r_Finger_02_02SHJnt/empty_bottle1": [
+          {
+            "$ref": "1680"
+          }
+        ],
+        "Props/Karaoke/Karaoke Prefab/NPCs Karaoke/Clubber Man 5/ClubberMan5/doomspiral_rig/doomspiral_SHJntGrp/doomspiral_ROOTSHJnt/doomspiral_Spine_01SHJnt/doomspiral_Spine_02SHJnt/doomspiral_Spine_TopSHJnt/doomspiral_r_Arm_ClavicleSHJnt/doomspiral_r_Arm_ShoulderSHJnt/doomspiral_r_Arm_ElbowSHJnt/doomspiral_r_Arm_WristSHJnt/doomspiral_r_Finger_02_01SHJnt/doomspiral_r_Finger_02_02SHJnt/empty_bottle1": [
+          {
+            "$ref": "1937"
+          }
+        ]
+      }
+    },
+    "failedWhiteChecksHolder": {
+      "ReopenedWhiteChecksByActorName": {
+        "Church Doors": {
+          "church.churchdoor_got_sticker": [
+            {
+              "Actor": {
+                "$id": "359",
+                "alternatePortraits": [],
+                "fields": [
+                  {
+                    "title": "Name",
+                    "type": "Text",
+                    "typeString": "",
+                    "value": "Church Doors"
+                  },
+                  {
+                    "title": "IsPlayer",
+                    "type": "Boolean",
+                    "typeString": "CustomFieldType_Boolean",
+                    "value": "False"
+                  },
+                  {
+                    "title": "Pictures",
+                    "type": "Text",
+                    "typeString": "",
+                    "value": "[broken-stained-glass-window-1.jpg]"
+                  },
+                  {
+                    "title": "Description",
+                    "type": "Text",
+                    "typeString": "",
+                    "value": ""
+                  },
+                  {
+                    "title": "character_short_name",
+                    "type": "Text",
+                    "typeString": "",
+                    "value": "churchdoors"
+                  },
+                  {
+                    "title": "Articy Id",
+                    "type": "Text",
+                    "typeString": "",
+                    "value": "0x0100000B0000002D"
+                  }
+                ],
+                "id": 140,
+                "portrait": null,
+                "spritePortrait": null,
+                "spritePortraits": []
+              },
+              "ActorsPortraitsBundleManager": null,
+              "CheckModifiers": {
+                "church.churchdoor_used_hankerchief": [
+                  {
+                    "bonus": -2,
+                    "expression": "Variable[\"church.churchdoor_used_hankerchief\"]",
+                    "fallbackExplanation": "You dried your hands.",
+                    "localizedExplanation": {
+                      "Term": "tooltip1/0x010000040000230E"
+                    }
+                  }
+                ]
+              },
+              "FlagName": "church.churchdoor_got_sticker",
+              "LastSkillValue": 0,
+              "LastTargetValue": 10,
+              "SkillType": "INTERFACING",
+              "checkPrecondition": "Variable[\"church.churchdoor_inspected_sticker\"]",
+              "checkTargetArticyId": "0x0000000000000000",
+              "difficulty": 10,
+              "isOnlySeen": false
+            }
+          ]
+        }
+      },
+      "SeenWhiteCheckCache": {
+        "church.churchdoor_got_sticker": {
+          "Actor": {
+            "$ref": "359"
+          },
+          "LastTargetValue": 8
+        }
+      },
+      "WhiteCheckCache": {
+        "pier.joyce_conceptualization_white_what_world": {
+          "Actor": {
+            "$id": "833"
+          }
+        },
+        "pier.joyce_esprit_service_history": {
+          "Actor": {
+            "$ref": "833"
+          }
+        },
+        "whirling.mirror_expression_source_located": {
+          "Actor": {
+            "$id": "374"
+          }
+        },
+        "whirling.mirror_subdued_expression": {
+          "Actor": {
+            "$ref": "374"
+          }
+        }
+      }
+    },
+    "playerCharacter": {
+      "healingPools": {
+        "VOLITION": 2
+      }
+    },
+    "sunshineClockTimeHolder": {
+      "time": {
+        "dayMinutes": 645,
+        "seconds": 10
+      }
+    }
+  },
+  "_format": "json-diff",
+  "_formatVersion": 1,
+  "_remove": [
+    "/failedWhiteChecksHolder/SeenWhiteCheckCache/church.churchdoor_got_sticker/Actor/alternatePortraits",
+    "/failedWhiteChecksHolder/SeenWhiteCheckCache/church.churchdoor_got_sticker/Actor/fields",
+    "/failedWhiteChecksHolder/SeenWhiteCheckCache/church.churchdoor_got_sticker/Actor/id",
+    "/failedWhiteChecksHolder/SeenWhiteCheckCache/church.churchdoor_got_sticker/Actor/portrait",
+    "/failedWhiteChecksHolder/SeenWhiteCheckCache/church.churchdoor_got_sticker/Actor/spritePortrait",
+    "/failedWhiteChecksHolder/SeenWhiteCheckCache/church.churchdoor_got_sticker/Actor/spritePortraits"
+  ]
+}

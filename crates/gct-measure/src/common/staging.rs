@@ -20,7 +20,7 @@ use lookahead_engine::service::Service;
 use lookahead_engine::walkthrough::{Walkthrough, walk_inputs};
 
 use super::fixtures;
-use super::suites::{Scenario, Suite};
+use super::suites::{BranchHalfRow, Scenario, Suite};
 use crate::plugin_defaults::Budgets;
 
 /// The offline claim that every menu a suite's scenarios reach is answered inside the budgets
@@ -131,6 +131,35 @@ pub fn drawn(own: i32, answer: &LookAheadAnswer) -> &'static str {
         "orange"
     } else {
         "red"
+    }
+}
+
+/// What the mod would draw for one outcome of a rolled check, as a suite's half spells it.
+///
+/// The rule `BranchLine.Half` follows in the plugin: the word is coloured by where the outcome
+/// LANDS, and a marker follows where something beyond it outranks that. An outcome that lands
+/// on the top rung has nothing to outrank it, so it carries no marker even from a search that
+/// gave up.
+pub fn drawn_half(answer: &LookAheadAnswer) -> BranchHalfRow {
+    let colour = match answer.destination {
+        UNSEEN_ANY_GAME => "orange",
+        UNSEEN_THIS_GAME => "red",
+        _ => "darkRed",
+    };
+    let marker = if answer.best > answer.destination {
+        Some(if answer.best == UNSEEN_ANY_GAME {
+            "orange"
+        } else {
+            "red"
+        })
+    } else if answer.destination >= UNSEEN_ANY_GAME || answer.complete {
+        None
+    } else {
+        Some("gaveUp")
+    };
+    BranchHalfRow {
+        colour: colour.to_string(),
+        marker: marker.map(str::to_string),
     }
 }
 

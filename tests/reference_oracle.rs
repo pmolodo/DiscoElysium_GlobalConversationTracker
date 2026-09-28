@@ -176,7 +176,9 @@ fn the_backward_search_finds_what_the_reference_walk_reaches() {
             // and told this - because an unsound early exit would show up here and nowhere
             // else: this is the only test that checks a backward answer against a walk
             // rather than against another symbolic search.
-            let known = Known::of(&graph).from(start, &seed);
+            let known = Known::of(&graph)
+                .from(start, &seed)
+                .expect("room for the start's states");
 
             let began = std::time::Instant::now();
             let mut missed: Vec<DialogueNodeId> = Vec::new();

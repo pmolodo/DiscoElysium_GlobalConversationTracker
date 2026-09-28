@@ -106,6 +106,17 @@ pub struct Scenario {
     /// How much the scenario claims about the markers: named, noneAnywhere or ignored.
     #[serde(default = "named")]
     pub markers: String,
+    /// How much it claims about its rolled checks' Pass / Fail lines: everyCheck, noneAnywhere
+    /// or ignored. Under everyCheck, every rolled check on every stop is held to `pass` and
+    /// `fail`.
+    #[serde(default = "ignored")]
+    pub branches: String,
+    /// What the word "Pass" must be drawn as, under everyCheck.
+    #[serde(default)]
+    pub pass: Option<BranchHalfRow>,
+    /// What the word "Fail" must be drawn as, under everyCheck.
+    #[serde(default)]
+    pub fail: Option<BranchHalfRow>,
     /// The menus this scenario is held to, in the order its walk reaches them.
     ///
     /// ONE SHAPE RATHER THAN TWO. A scenario of one menu writes one stop; a scenario that
@@ -191,6 +202,30 @@ pub struct StopRow {
 
 fn named() -> String {
     "named".to_string()
+}
+
+fn ignored() -> String {
+    "ignored".to_string()
+}
+
+/// One word of a rolled check's Pass / Fail line: the colour it is drawn in, which is where
+/// that outcome lands, and the marker after it, which is what lies beyond.
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+pub struct BranchHalfRow {
+    /// orange, red or darkRed.
+    pub colour: String,
+    /// orange, red or gaveUp, and absent for no marker.
+    #[serde(default)]
+    pub marker: Option<String>,
+}
+
+impl std::fmt::Display for BranchHalfRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.marker {
+            Some(marker) => write!(f, "{} with {marker}", self.colour),
+            None => write!(f, "{}", self.colour),
+        }
+    }
 }
 
 /// What one option must carry. `OptionRow` because `Option` is taken and this is a row.

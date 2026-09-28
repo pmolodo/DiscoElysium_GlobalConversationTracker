@@ -1,0 +1,13 @@
+{
+  "_format": "sparse-diff",
+  "_formatVersion": 2,
+  "_base": "../../at-joyce3.ntwtf/at-joyce3.ntwtf.lua.parts/Actor.json",
+  "_changes": {
+    "Kim_Kitsuragi": {
+      "Position_Martinaise_ext": "67.13165,3.529832,-109.2457,0,0.9824204,0,-0.1866822,Martinaise-ext"
+    },
+    "You": {
+      "Position_Martinaise_ext": "67.7964,3.529832,-109.6713,0,0.9824204,0,-0.1866822,Martinaise-ext"
+    }
+  }
+}

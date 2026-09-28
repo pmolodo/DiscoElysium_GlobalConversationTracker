@@ -1,0 +1,31 @@
+{
+  "_format": "expanded-save-diff",
+  "_formatVersion": 1,
+  "base": "../at-joyce3.ntwtf",
+  "members": [
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-church-door.states.lua",
+      "suffix": ".states.lua"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-church-door.1st.ntwtf.json",
+      "suffix": ".1st.ntwtf.json"
+    },
+    {
+      "diff": "at-church-door.2nd.ntwtf.json",
+      "kind": "json",
+      "name": "at-church-door.2nd.ntwtf.json",
+      "suffix": ".2nd.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-church-door.FOW.json",
+      "suffix": ".FOW.json"
+    }
+  ]
+}

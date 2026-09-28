@@ -199,9 +199,25 @@ impl Known {
     /// ADDS RATHER THAN REPLACES, because one outcome of a rolled check begins at several
     /// destinations at once and a meet at any of them proves the same thing. Calling this
     /// once per destination is how a caller says so.
-    pub fn from(mut self, start: DialogueNodeId, arriving: &BDDFunction) -> Self {
-        self.beginnings.insert(start, arriving.clone());
-        self
+    ///
+    /// AND AN ENTRY NAMED TWICE HOLDS BOTH, not the last. A menu asked about as a whole names
+    /// every outcome of every option, and the two outcomes of one rolled check begin at the same
+    /// entry - the fork after the roll - holding different states. Keeping only one of them
+    /// leaves the other outcome's routes unmet, and a settled pass then refuses what that outcome
+    /// reaches.
+    ///
+    /// `Err` where the manager has no room for the union.
+    pub fn from(
+        mut self,
+        start: DialogueNodeId,
+        arriving: &BDDFunction,
+    ) -> Result<Self, oxidd::util::OutOfMemory> {
+        let states = match self.beginnings.remove(&start) {
+            Some(already) => already.or(arriving)?,
+            None => arriving.clone(),
+        };
+        self.beginnings.insert(start, states);
+        Ok(self)
     }
 
     /// The order to take entries in.

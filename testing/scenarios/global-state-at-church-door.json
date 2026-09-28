@@ -1,0 +1,15 @@
+{
+  "_base": "global-state-at-joyce3.json",
+  "_changes": {
+    "conversations": {
+      "WasDisplayed": {
+        "350": "0,6,9,17,30,32,41,44,54,62,64-65,69,71-72,93,110,115-117,130-131,141,147,151-152,154-155,165,175-178,182,184-185,197,220,235"
+      },
+      "WasOffered": {
+        "350": "95"
+      }
+    }
+  },
+  "_format": "json-diff",
+  "_formatVersion": 1
+}

@@ -812,6 +812,41 @@
     {
       "scenarios": [
         {
+          "conversation": 350,
+          "stops": [
+            {
+              "what": "the church door's main hub, after the sticker check failed and Kim's handkerchief dried your hands",
+              "inputs": [],
+              "options": [
+                { "entry": 32, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" }
+              ]
+            }
+          ],
+          "branches": "everyCheck",
+          "pass": { "colour": "red", "marker": "orange" },
+          "fail": { "colour": "darkRed", "marker": "red" },
+          "branchesWhy": "Passing the sticker check lands on 165, read in another game, and goes on to 95, which another game only offered - so the word is red and it carries an orange marker. Failing lands on 176, read in this save, and goes on to 154, which this save only offered - dark red with a red marker.",
+          "markers": "named",
+          "save": "at-church-door"
+        }
+      ],
+      "settings": {
+        "KeepLookAheadRequests": "true",
+        "KeepLookAheadStats": "true",
+        "LogLookAheadBudgetExceeded": "true",
+        "LookAheadMemoryBudgetMb": "300",
+        "LookAheadMenuTimeBudgetMs": "3000",
+        "LookAheadTimeBudgetMs": "1000"
+      },
+      "settingsWhy": "The shipped budgets, with the overflow log and the requests kept, so a run in game can be set beside the offline one.",
+      "state": "global-state-at-church-door.json",
+      "suite": "church-door-sticker",
+      "what": "the church door on day four with the player's own global state, where a reopened white check's Pass outcome leads to a line no save has shown",
+      "why": "From a real playthrough: the sticker check's Pass outcome drew no marker, though the first option past it is orange. Both outcomes of a rolled check begin at the same entry, the fork after the roll, and the menu-wide reachability gate kept only the Fail outcome's states there - so it proved nothing orange reachable and skipped the round."
+    },
+    {
+      "scenarios": [
+        {
           "conversation": 631,
           "stops": [
             {
